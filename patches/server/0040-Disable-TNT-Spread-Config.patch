@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 18:01:18 +0100
+Subject: [PATCH] Disable TNT Spread Config
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 5ff0adb741c1c326d37e315c71b130105932f143..90c1801e11be6e1b0a27b7894fee56e75733d8f1 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -32,9 +32,13 @@ public class PrimedTnt extends Entity {
+     public PrimedTnt(Level world, double x, double y, double z, @Nullable LivingEntity igniter) {
+         this(EntityType.TNT, world);
+         this.setPos(x, y, z);
+-        double d3 = this.random.nextDouble() * 6.2831854820251465D; // Paper - don't use world random in entity constructor
++        // Entropy start - disable tnt spread
++        if(!EntropyConfig.disableTNTSpread) {
++            double d3 = this.random.nextDouble() * 6.2831854820251465D; // Paper - don't use world random in entity constructor
+ 
+-        this.setDeltaMovement(-Math.sin(d3) * 0.02D, 0.20000000298023224D, -Math.cos(d3) * 0.02D);
++            this.setDeltaMovement(-Math.sin(d3) * 0.02D, 0.20000000298023224D, -Math.cos(d3) * 0.02D);
++        }
++        // Entropy end
+         this.setFuse(80);
+         this.xo = x;
+         this.yo = y;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index e28631afd427eb08a7282964cc605808058b8c63..e841426dd908dcd97a65a2a2f48b3d127088df1f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -228,9 +228,12 @@ public class EntropyConfig {
+     }
+ 
+     public static boolean disableWaterPushingTNT;
++    public static boolean disableTNTSpread;
+     private static void cannoningConfiguration() {
+         disableWaterPushingTNT = getBoolean("entropy.cannons.disable-water-pushing-tnt", true,
+                 "Disable TNT getting pushed by water (aka. Waterflow).");
++        disableTNTSpread = getBoolean("entropy.cannons.disable-tnt-spread", true,
++                "Disable the random velocity TNT gets when ignited.");
+ 
+         setComment("entropy.cannons", "Settings related to cannoning");
+     }
