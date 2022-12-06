@@ -171,14 +171,16 @@ index 9c9b4d7e0637348a94befce9377fdb69c1239694..a999834a9ecc90be79123d9dccc52135
  // CraftBukkit end
  
  public class ServerPlayer extends Player {
-@@ -1989,7 +1915,9 @@ public class ServerPlayer extends Player {
+@@ -1989,7 +1915,11 @@ public class ServerPlayer extends Player {
      }
  
      public void sendServerStatus(ServerStatus metadata) {
 -        this.connection.send(new ClientboundServerDataPacket(metadata.getDescription(), metadata.getFavicon(), metadata.previewsChat(), metadata.enforcesSecureChat()));
++        // Entropy start - disable chat message verification
 +        boolean enforcesSecureChat = metadata.enforcesSecureChat();
 +        if(EntropyConfig.disableChatMessageVerification) enforcesSecureChat = true;
 +        this.connection.send(new ClientboundServerDataPacket(metadata.getDescription(), metadata.getFavicon(), metadata.previewsChat(), enforcesSecureChat));
++        // Entropy end
      }
  
      @Override
@@ -317,7 +319,7 @@ index 3be9352ae9b0b84acf07064b45562ceffd30391b..c45f09dead62c41b3cad199caa9c938f
      private void broadcastChatMessage(PlayerChatMessage message, Predicate<ServerPlayer> shouldSendFiltered, @Nullable ServerPlayer sender, ChatSender sourceProfile, ChatType.Bound params, @Nullable Function<net.kyori.adventure.audience.Audience, Component> unsignedFunction) {
          // Paper end
 -        boolean flag = this.verifyChatTrusted(message, sourceProfile);
-+        boolean flag = EntropyConfig.disableChatMessageVerification || this.verifyChatTrusted(message, sourceProfile);
++        boolean flag = EntropyConfig.disableChatMessageVerification || this.verifyChatTrusted(message, sourceProfile); // Entropy - disable chat message verification
  
          this.server.logChatMessage((unsignedFunction == null ? message : message.withUnsignedContent(unsignedFunction.apply(this.server.console))).serverContent(), params, flag ? null : "Not Secure"); // Paper
          OutgoingPlayerChatMessage outgoingplayerchatmessage = OutgoingPlayerChatMessage.create(message);

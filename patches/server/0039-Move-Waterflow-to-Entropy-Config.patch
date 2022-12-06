@@ -90,7 +90,7 @@ index 438de71a17d7bfaed8fbb1b4f7aa7f53538603a2..5ff0adb741c1c326d37e315c71b13010
  
          // Paper start - Optional prevent TNT from moving in water
 -        if (!this.isRemoved() && this.wasTouchingWater && this.level.paperConfig().fixes.preventTntFromMovingInWater) {
-+        if (!this.isRemoved() && this.wasTouchingWater && EntropyConfig.disableWaterPushingTNT) {
++        if (!this.isRemoved() && this.wasTouchingWater && EntropyConfig.disableWaterPushingTNT) { // Entropy - Move Waterflow to Entropy Config
              /*
               * Author: Jedediah Smith <jedediah@silencegreys.com>
               */
@@ -99,7 +99,7 @@ index 438de71a17d7bfaed8fbb1b4f7aa7f53538603a2..5ff0adb741c1c326d37e315c71b13010
      @Override
      public boolean isPushedByFluid() {
 -        return !level.paperConfig().fixes.preventTntFromMovingInWater && super.isPushedByFluid();
-+        return EntropyConfig.disableWaterPushingTNT && super.isPushedByFluid();
++        return EntropyConfig.disableWaterPushingTNT && super.isPushedByFluid();  // Entropy - Move Waterflow to Entropy Config
      }
      // Paper end
  }
