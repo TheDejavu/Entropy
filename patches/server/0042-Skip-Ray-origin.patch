@@ -5,7 +5,7 @@ Subject: [PATCH] Skip Ray origin
 
 
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
-index 6e64cd086e8e9a7d8661e12fa78ef550f4492de5..4d460d58ee5de2ae8691ce40a83e1fd2d4da1dea 100644
+index fd2a9ba1290c180327a288113adf62e92f30d0ff..dff864fcb9a17d645ca97282e1a168bc2ab9fc18 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -155,6 +155,11 @@ public class Explosion {
@@ -19,7 +19,7 @@ index 6e64cd086e8e9a7d8661e12fa78ef550f4492de5..4d460d58ee5de2ae8691ce40a83e1fd2
 +
          // Entropy start - explosion submerged check
          boolean doBlockBreakCheck = true;
-         if(EntropyConfig.explosionWaterCheck) {
+         if(EntropyConfig.explosionWaterCheck && this.source != null) {
 @@ -179,6 +184,19 @@ public class Explosion {
                          double d5 = this.y;
                          double d6 = this.z;
