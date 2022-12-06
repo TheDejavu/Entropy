@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 18:40:59 +0100
+Subject: [PATCH] Skip Ray origin
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 6e64cd086e8e9a7d8661e12fa78ef550f4492de5..4d460d58ee5de2ae8691ce40a83e1fd2d4da1dea 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -155,6 +155,11 @@ public class Explosion {
+         int i;
+         int j;
+ 
++        // Entropy start - skip ray origin
++        boolean originCached = false;
++        Optional<Float> cachedOriginResistance = Optional.empty();
++        // Entropy end
++
+         // Entropy start - explosion submerged check
+         boolean doBlockBreakCheck = true;
+         if(EntropyConfig.explosionWaterCheck) {
+@@ -179,6 +184,19 @@ public class Explosion {
+                         double d5 = this.y;
+                         double d6 = this.z;
+ 
++                        // Entropy start - skip ray origin
++                        if(originCached && EntropyConfig.skipRayOrigin) {
++                            if(cachedOriginResistance.isPresent()){
++                                f-= (cachedOriginResistance.get() + 0.3F) * 0.3F;
++                            }
++
++                            d4 += d0 * 0.30000001192092896D;
++                            d5 += d1 * 0.30000001192092896D;
++                            d6 += d2 * 0.30000001192092896D;
++                            f -= 0.22500001F;
++                        }
++                        //Entropy end
++
+                         for (float f1 = 0.3F; f > 0.0F; f -= 0.22500001F) {
+                             BlockPos blockposition = new BlockPos(d4, d5, d6);
+                             BlockState iblockdata = this.level.getBlockState(blockposition);
+@@ -195,6 +213,13 @@ public class Explosion {
+                                 f -= ((Float) optional.get() + 0.3F) * 0.3F;
+                             }
+ 
++                            // Entropy start - skip ray origin
++                            if (!originCached) {
++                                cachedOriginResistance = optional;
++                                originCached = true;
++                            }
++                            // Entropy end
++
+                             // Entropy start - explode waterlogged blocks and lava
+                             if (EntropyConfig.explodeWaterloggedBlocks && !iblockdata.getFluidState().isEmpty() && !iblockdata.getMaterial().isLiquid()) {
+                                 set.add(blockposition);
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 9e9140f3cb410198362eda69fdd8533a04b9cb45..6e2189f5c5ec78e4292dc018a54ebe8370739032 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -232,6 +232,7 @@ public class EntropyConfig {
+     public static boolean explosionWaterCheck;
+     public static boolean explodeWaterloggedBlocks;
+     public static boolean explodeLava;
++    public static boolean skipRayOrigin;
+     private static void cannoningConfiguration() {
+         disableWaterPushingTNT = getBoolean("entropy.cannons.disable-water-pushing-tnt", true,
+                 "Disable TNT getting pushed by water (aka. Waterflow).");
+@@ -245,6 +246,8 @@ public class EntropyConfig {
+         explodeLava= getBoolean("entropy.cannons.explode-lava", false,
+                 "Lava will be destroyed by explosions.",
+                 "Use this for non-regen servers.");
++        skipRayOrigin= getBoolean("entropy.cannons.skip-ray-origin", true,
++                "Skip the origin of explosion rays, as it gets checked with every ray.");
+ 
+         setComment("entropy.cannons", "Settings related to cannoning");
+     }
