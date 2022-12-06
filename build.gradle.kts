@@ -50,13 +50,9 @@ paperweight {
     remapRepo.set("https://maven.fabricmc.net/")
     decompileRepo.set("https://files.minecraftforge.net/maven/")
 
-    useStandardUpstream("pufferfish")
+    usePaperUpstream(providers.gradleProperty("paperRef"))
     {
-        url.set(github("pufferfish-gg", "Pufferfish"))
-        ref.set(providers.gradleProperty("pufferfishRef"))
-        withStandardPatcher {
-            apiSourceDirPath.set("Pufferfish-API")
-            serverSourceDirPath.set("Pufferfish-Server")
+        withPaperPatcher {
 
             apiPatchDir.set(layout.projectDirectory.dir("patches/api"))
             serverPatchDir.set(layout.projectDirectory.dir("patches/server"))

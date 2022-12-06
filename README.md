@@ -1,5 +1,5 @@
 # Entropy
-1.19.2 Cannoning/Factions Jar based on [Pufferfish](https://github.com/pufferfish-gg/Pufferfish).
+1.19.2 Cannoning/Factions Jar based on [Paper](https://github.com/PaperMC/Paper).
 
  - [FragmentMC Discord](http://fragmentmc.xyz)
 
