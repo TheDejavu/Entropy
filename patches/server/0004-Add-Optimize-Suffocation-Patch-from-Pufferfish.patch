@@ -1,0 +1,196 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 15:47:03 +0100
+Subject: [PATCH] Add Optimize Suffocation Patch from Pufferfish
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 11d7c42d65b91bf57b7bba7812aa17e60e018c67..3a37663af932f7e4150c846339b3784bb9f161ff 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.entity;
+ 
+-import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent; // Paper
++import com.destroystokyo.paper.event.player.PlayerArmorChangeEvent;
++import com.google.common.base.Function;
+ import com.google.common.base.Objects;
+ import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableMap;
+@@ -10,15 +11,6 @@ import com.mojang.datafixers.util.Pair;
+ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.DataResult;
+ import com.mojang.serialization.Dynamic;
+-import java.util.Collection;
+-import java.util.ConcurrentModificationException;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.Optional;
+-import java.util.UUID;
+-import java.util.function.Predicate;
+-import javax.annotation.Nullable;
+ import net.minecraft.BlockUtil;
+ import net.minecraft.advancements.CriteriaTriggers;
+ import net.minecraft.commands.arguments.EntityAnchorArgument;
+@@ -28,18 +20,9 @@ import net.minecraft.core.NonNullList;
+ import net.minecraft.core.particles.BlockParticleOption;
+ import net.minecraft.core.particles.ItemParticleOption;
+ import net.minecraft.core.particles.ParticleTypes;
+-import net.minecraft.nbt.CompoundTag;
+-import net.minecraft.nbt.FloatTag;
+-import net.minecraft.nbt.IntTag;
+-import net.minecraft.nbt.ListTag;
+-import net.minecraft.nbt.NbtOps;
+-import net.minecraft.nbt.Tag;
++import net.minecraft.nbt.*;
+ import net.minecraft.network.protocol.Packet;
+-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+-import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+-import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
++import net.minecraft.network.protocol.game.*;
+ import net.minecraft.network.syncher.EntityDataAccessor;
+ import net.minecraft.network.syncher.EntityDataSerializers;
+ import net.minecraft.network.syncher.SynchedEntityData;
+@@ -51,11 +34,7 @@ import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.sounds.SoundSource;
+ import net.minecraft.stats.Stats;
+-import net.minecraft.tags.BlockTags;
+-import net.minecraft.tags.EntityTypeTags;
+-import net.minecraft.tags.FluidTags;
+-import net.minecraft.tags.ItemTags;
+-import net.minecraft.tags.TagKey;
++import net.minecraft.tags.*;
+ import net.minecraft.util.Mth;
+ import net.minecraft.util.RandomSource;
+ import net.minecraft.world.Difficulty;
+@@ -69,13 +48,7 @@ import net.minecraft.world.effect.MobEffectInstance;
+ import net.minecraft.world.effect.MobEffectUtil;
+ import net.minecraft.world.effect.MobEffects;
+ import net.minecraft.world.entity.ai.Brain;
+-import net.minecraft.world.entity.ai.attributes.Attribute;
+-import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+-import net.minecraft.world.entity.ai.attributes.AttributeMap;
+-import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+-import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+-import net.minecraft.world.entity.ai.attributes.Attributes;
+-import net.minecraft.world.entity.ai.attributes.DefaultAttributes;
++import net.minecraft.world.entity.ai.attributes.*;
+ import net.minecraft.world.entity.ai.targeting.TargetingConditions;
+ import net.minecraft.world.entity.animal.Animal;
+ import net.minecraft.world.entity.animal.FlyingAnimal;
+@@ -84,14 +57,7 @@ import net.minecraft.world.entity.boss.wither.WitherBoss;
+ import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.entity.projectile.AbstractArrow;
+ import net.minecraft.world.food.FoodProperties;
+-import net.minecraft.world.item.ArmorItem;
+-import net.minecraft.world.item.AxeItem;
+-import net.minecraft.world.item.BlockItem;
+-import net.minecraft.world.item.ElytraItem;
+-import net.minecraft.world.item.Item;
+-import net.minecraft.world.item.ItemStack;
+-import net.minecraft.world.item.Items;
+-import net.minecraft.world.item.UseAnim;
++import net.minecraft.world.item.*;
+ import net.minecraft.world.item.alchemy.PotionUtils;
+ import net.minecraft.world.item.enchantment.EnchantmentHelper;
+ import net.minecraft.world.item.enchantment.Enchantments;
+@@ -99,14 +65,7 @@ import net.minecraft.world.item.enchantment.FrostWalkerEnchantment;
+ import net.minecraft.world.level.ClipContext;
+ import net.minecraft.world.level.GameRules;
+ import net.minecraft.world.level.Level;
+-import net.minecraft.world.level.block.AbstractSkullBlock;
+-import net.minecraft.world.level.block.BedBlock;
+-import net.minecraft.world.level.block.Blocks;
+-import net.minecraft.world.level.block.HoneyBlock;
+-import net.minecraft.world.level.block.LadderBlock;
+-import net.minecraft.world.level.block.PowderSnowBlock;
+-import net.minecraft.world.level.block.SoundType;
+-import net.minecraft.world.level.block.TrapDoorBlock;
++import net.minecraft.world.level.block.*;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.level.material.Fluid;
+@@ -120,29 +79,20 @@ import net.minecraft.world.phys.EntityHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.scores.PlayerTeam;
+-import org.slf4j.Logger;
+-
+-// CraftBukkit start
+-import java.util.ArrayList;
+-import java.util.HashSet;
+-import java.util.Set;
+-import com.google.common.base.Function;
+ import org.bukkit.Location;
+ import org.bukkit.craftbukkit.attribute.CraftAttributeMap;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.craftbukkit.inventory.CraftItemStack;
+ import org.bukkit.entity.Player;
+-import org.bukkit.event.entity.ArrowBodyCountChangeEvent;
+-import org.bukkit.event.entity.EntityDamageEvent;
++import org.bukkit.event.entity.*;
+ import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
+-import org.bukkit.event.entity.EntityPotionEffectEvent;
+-import org.bukkit.event.entity.EntityRegainHealthEvent;
+-import org.bukkit.event.entity.EntityResurrectEvent;
+-import org.bukkit.event.entity.EntityTeleportEvent;
+ import org.bukkit.event.player.PlayerItemConsumeEvent;
+-// CraftBukkit end
++import org.slf4j.Logger;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+-import co.aikar.timings.MinecraftTimings; // Paper
++import javax.annotation.Nullable;
++import java.util.*;
++import java.util.function.Predicate;
+ 
+ public abstract class LivingEntity extends Entity {
+ 
+@@ -400,7 +350,7 @@ public abstract class LivingEntity extends Entity {
+         if (this.isAlive()) {
+             boolean flag = this instanceof net.minecraft.world.entity.player.Player;
+ 
+-            if (this.isInWall()) {
++            if ((!EntropyConfig.enableSuffocationOptimization || (tickCount % 10 == 0 && couldPossiblyBeHurt(1.0F))) && this.isInWall()) { // Pufferfish - optimize suffocation
+                 this.hurt(DamageSource.IN_WALL, 1.0F);
+             } else if (flag && !this.level.getWorldBorder().isWithinBounds(this.getBoundingBox())) {
+                 double d0 = this.level.getWorldBorder().getDistanceToBorder(this) + this.level.getWorldBorder().getDamageSafeZone();
+@@ -1328,6 +1278,15 @@ public abstract class LivingEntity extends Entity {
+         return this.getHealth() <= 0.0F;
+     }
+ 
++    // Pufferfish start - optimize suffocation
++    public boolean couldPossiblyBeHurt(float amount) {
++        if ((float) this.invulnerableTime > (float) this.invulnerableDuration / 2.0F && amount <= this.lastHurt) {
++            return false;
++        }
++        return true;
++    }
++    // Pufferfish end
++
+     @Override
+     public boolean hurt(DamageSource source, float amount) {
+         if (this.isInvulnerableTo(source)) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index cf99f551a42594b17a14c146120f8cce394c304e..236009cb5c08cce08f55159062c49ab0e01259c8 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -126,4 +126,14 @@ public class EntropyConfig {
+     private static List<String> getStringList(String key, @Nullable String oldKey, List<String> defaultValue, String... comment) {
+         ensureDefault(key, defaultValue, comment);return config.getStringList(key);
+     }
++
++    public static boolean enableSuffocationOptimization;
++    private static void suffocationOptimization() {
++        enableSuffocationOptimization = getBoolean("pufferfish.enable-suffocation-optimization", true,
++                "Optimizes the suffocation check by selectively skipping",
++                "the check in a way that still appears vanilla. This should",
++                "be left enabled on most servers, but is provided as a",
++                "configuration option if the vanilla deviation is undesirable.")
++        ;
++    }
+ }
