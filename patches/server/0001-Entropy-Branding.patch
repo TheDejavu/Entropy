@@ -111,12 +111,11 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..6fd5022d06a101cfe1794da7867e648dfa621210
 --- /dev/null
 +++ b/src/main/java/xyz/fragmentmc/entropy/EntropyVersionFetcher.java
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,22 @@
 +package xyz.fragmentmc.entropy;
 +
 +import com.destroystokyo.paper.util.VersionFetcher;
 +import net.kyori.adventure.text.Component;
-+import net.kyori.adventure.text.JoinConfiguration;
 +import org.bukkit.craftbukkit.CraftServer;
 +import org.jetbrains.annotations.NotNull;
 +

@@ -177,23 +177,25 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..a48e77582e4b1974c09ee0cfc32601c7b2a303b4
 --- /dev/null
 +++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
-@@ -0,0 +1,44 @@
+@@ -0,0 +1,46 @@
 +package xyz.fragmentmc.entropy.command;
 +
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.TextComponent;
++import net.kyori.adventure.text.format.NamedTextColor;
++import net.kyori.adventure.text.format.Style;
 +import net.kyori.adventure.text.format.TextColor;
 +import net.kyori.adventure.text.format.TextDecoration;
-+import net.md_5.bungee.api.ChatColor;
 +import org.bukkit.command.Command;
 +import org.bukkit.command.CommandSender;
 +import org.jetbrains.annotations.NotNull;
 +
 +import java.util.Arrays;
-+import java.util.List;
 +
 +public abstract class EntropyCommandBase extends Command {
 +    private final EntropyCommandData commandData;
 +
-+    protected final String prefix = TextColor.color(0x12fff6) + "" + TextDecoration.BOLD + "Entropy » " + TextColor.color(0xe8f9f9);
++    protected final TextComponent.Builder prefix = Component.text().append(Component.text("Entropy » ", Style.style(TextColor.color(0xbd30ff), TextDecoration.BOLD))).append(Component.text("", NamedTextColor.WHITE));
 +
 +    public EntropyCommandData getCommandData() {
 +        return commandData;
@@ -203,7 +205,7 @@ index 0000000000000000000000000000000000000000..a48e77582e4b1974c09ee0cfc32601c7
 +    public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
 +        if (!testPermission(sender)) return true;
 +        if (args.length != 1) {
-+            sender.sendMessage(prefix + "Usage: " + usageMessage);
++            sender.sendMessage(prefix.append(Component.text("Usage: " + usageMessage)).build());
 +            return true;
 +        }
 +
@@ -246,13 +248,10 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..867c8357d2950d5fb9e5513d82c935bee45473af
 --- /dev/null
 +++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,15 @@
 +package xyz.fragmentmc.entropy.command;
 +
-+import com.google.common.base.Strings;
-+import io.netty.util.internal.StringUtil;
 +import net.minecraft.server.MinecraftServer;
-+import org.apache.commons.lang.StringUtils;
 +import org.bukkit.command.Command;
 +import xyz.fragmentmc.entropy.command.commands.EntropyCommand;
 +
@@ -270,12 +269,11 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..0469cf83ccd46b70b8191cd51aa41d15890492e7
 --- /dev/null
 +++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,52 @@
 +package xyz.fragmentmc.entropy.command.commands;
 +
 +import net.kyori.adventure.text.Component;
 +import net.kyori.adventure.text.format.NamedTextColor;
-+import net.md_5.bungee.api.ChatColor;
 +import net.minecraft.server.MinecraftServer;
 +import org.bukkit.Bukkit;
 +import org.bukkit.Location;
@@ -316,9 +314,9 @@ index 0000000000000000000000000000000000000000..0469cf83ccd46b70b8191cd51aa41d15
 +            }
 +            console.server.reloadCount++;
 +
-+            Command.broadcastCommandMessage(sender, prefix + "Entropy configuration has been reloaded.");
++            Command.broadcastCommandMessage(sender, prefix.append(Component.text("Entropy configuration has been reloaded.")).build());
 +        } else if (args[0].equalsIgnoreCase("version")) {
-+            Command.broadcastCommandMessage(sender, prefix + "This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")");
++            Command.broadcastCommandMessage(sender, prefix.append(Component.text("This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")")).build());
 +        }
 +
 +        return true;
