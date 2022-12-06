@@ -97,7 +97,7 @@ index e841426dd908dcd97a65a2a2f48b3d127088df1f..e48584a178242af1743b17d80e65b9f1
 +        explodeWaterloggedBlocks= getBoolean("entropy.cannons.explode-waterlogged-blocks", true,
 +                "Waterlogged blocks will be destroyed by explosions.",
 +                "This can be used to prevent unraidable bases.");
-+        explodeLava= getBoolean("entropy.cannons.explosion-submerged-check", false,
++        explodeLava= getBoolean("entropy.cannons.explode-lava", false,
 +                "Lava will be destroyed by explosions.",
 +                "Use this for non-regen servers.");
  
