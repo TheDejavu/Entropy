@@ -66,13 +66,14 @@ index 38b75351cded6c73efcff193c487a0ef735e2488..e4cafbaeea1e84af57b6c08a8bf795e0
      private static void cannoningConfiguration() {
          disableWaterPushingTNT = getBoolean("entropy.cannons.disable-water-pushing-tnt", true,
                  "Disable TNT getting pushed by water (aka. Waterflow).");
-@@ -258,6 +260,11 @@ public class EntropyConfig {
+@@ -258,6 +260,12 @@ public class EntropyConfig {
          chunkLoadAliveTicks= getInt("entropy.cannons.chunks.load-alive-ticks", 2,
                  "For how many ticks a chunk that got loaded by tnt or a falling block should stay loaded.",
                  "If there is performance issues with fast shooting cannons loading chunks this can be set to ~100 ticks.");
 +        explosionProofItems= getBoolean("entropy.cannons.explosion-proof-items.enabled", true,
 +                "Enable a list of items that can not be blown up by explosions.");
 +        explosionProofList= getStringList("entropy.cannons.explosion-proof-items.items", List.of("spawner"));
++        ExplosionProofItems.loadFromConfig();
 +
 +
  
