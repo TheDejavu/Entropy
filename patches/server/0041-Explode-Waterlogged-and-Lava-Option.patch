@@ -52,7 +52,7 @@ index 31708d1e94b557896d42199aa0bc6ed26a4c6d8a..6e64cd086e8e9a7d8661e12fa78ef550
  
 +        // Entropy start - explosion submerged check
 +        boolean doBlockBreakCheck = true;
-+        if(EntropyConfig.explosionWaterCheck) {
++        if(EntropyConfig.explosionWaterCheck && this.source != null) {
 +            BlockState blockState = this.level.getBlockState(this.source.blockPosition);
 +            doBlockBreakCheck=!(EntropyConfig.explodeLava ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
 +        }
