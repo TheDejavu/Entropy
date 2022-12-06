@@ -1,0 +1,286 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 17:19:02 +0100
+Subject: [PATCH] Add option to disable out of order chat patch from Pufferfish
+
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index d31a345edfffe39f127073fc3aec8b3489bae79c..7d6939dbe4bfda79fd9e9216748d1e5d720dd63b 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -7,33 +7,13 @@ import com.mojang.brigadier.StringReader;
+ import com.mojang.brigadier.exceptions.CommandSyntaxException;
+ import com.mojang.datafixers.util.Pair;
+ import com.mojang.logging.LogUtils;
++import io.papermc.paper.adventure.ChatProcessor;
++import io.papermc.paper.adventure.PaperAdventure;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
+ import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+ import it.unimi.dsi.fastutil.objects.ObjectIterator;
+-import java.time.Instant;
+-import java.util.Collections;
+-import java.util.Iterator;
+-import java.util.List;
+-import java.util.Map;
+-import java.util.Objects;
+-import java.util.Optional;
+-import java.util.Set;
+-import java.util.concurrent.CancellationException;
+-import java.util.concurrent.CompletableFuture;
+-import java.util.concurrent.atomic.AtomicReference;
+-import java.util.function.BiFunction;
+-import java.util.function.Consumer;
+-import java.util.function.UnaryOperator;
+-import java.util.stream.Collectors;
+-import java.util.stream.Stream;
+-import javax.annotation.Nullable;
+-import net.minecraft.ChatFormatting;
+-import net.minecraft.CrashReport;
+-import net.minecraft.CrashReportCategory;
+-import net.minecraft.ReportedException;
+-import net.minecraft.SharedConstants;
+-import net.minecraft.Util;
++import net.minecraft.*;
+ import net.minecraft.advancements.Advancement;
+ import net.minecraft.advancements.CriteriaTriggers;
+ import net.minecraft.commands.CommandSigningContext;
+@@ -49,89 +29,10 @@ import net.minecraft.nbt.StringTag;
+ import net.minecraft.network.Connection;
+ import net.minecraft.network.PacketSendListener;
+ import net.minecraft.network.TickablePacketListener;
+-import net.minecraft.network.chat.ChatMessageContent;
+-import net.minecraft.network.chat.ChatPreviewCache;
+-import net.minecraft.network.chat.ChatPreviewThrottler;
+-import net.minecraft.network.chat.ChatSender;
+-import net.minecraft.network.chat.ChatType;
+-import net.minecraft.network.chat.Component;
+-import net.minecraft.network.chat.FilterMask;
+-import net.minecraft.network.chat.LastSeenMessages;
+-import net.minecraft.network.chat.LastSeenMessagesValidator;
+-import net.minecraft.network.chat.MessageSignature;
+-import net.minecraft.network.chat.MessageSigner;
+-import net.minecraft.network.chat.MutableComponent;
+-import net.minecraft.network.chat.PlayerChatMessage;
+-import net.minecraft.network.chat.PreviewableCommand;
+-import net.minecraft.network.chat.SignedMessageChain;
++import net.minecraft.network.chat.*;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketUtils;
+-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
+-import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+-import net.minecraft.network.protocol.game.ClientboundChatPreviewPacket;
+-import net.minecraft.network.protocol.game.ClientboundCommandSuggestionsPacket;
+-import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+-import net.minecraft.network.protocol.game.ClientboundDisconnectPacket;
+-import net.minecraft.network.protocol.game.ClientboundKeepAlivePacket;
+-import net.minecraft.network.protocol.game.ClientboundMoveVehiclePacket;
+-import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+-import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+-import net.minecraft.network.protocol.game.ClientboundTagQueryPacket;
+-import net.minecraft.network.protocol.game.ServerGamePacketListener;
+-import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
+-import net.minecraft.network.protocol.game.ServerboundBlockEntityTagQuery;
+-import net.minecraft.network.protocol.game.ServerboundChangeDifficultyPacket;
+-import net.minecraft.network.protocol.game.ServerboundChatAckPacket;
+-import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
+-import net.minecraft.network.protocol.game.ServerboundChatPacket;
+-import net.minecraft.network.protocol.game.ServerboundChatPreviewPacket;
+-import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
+-import net.minecraft.network.protocol.game.ServerboundClientInformationPacket;
+-import net.minecraft.network.protocol.game.ServerboundCommandSuggestionPacket;
+-import net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket;
+-import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+-import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
+-import net.minecraft.network.protocol.game.ServerboundCustomPayloadPacket;
+-import net.minecraft.network.protocol.game.ServerboundEditBookPacket;
+-import net.minecraft.network.protocol.game.ServerboundEntityTagQuery;
+-import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+-import net.minecraft.network.protocol.game.ServerboundJigsawGeneratePacket;
+-import net.minecraft.network.protocol.game.ServerboundKeepAlivePacket;
+-import net.minecraft.network.protocol.game.ServerboundLockDifficultyPacket;
+-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+-import net.minecraft.network.protocol.game.ServerboundMoveVehiclePacket;
+-import net.minecraft.network.protocol.game.ServerboundPaddleBoatPacket;
+-import net.minecraft.network.protocol.game.ServerboundPickItemPacket;
+-import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
+-import net.minecraft.network.protocol.game.ServerboundPlayerAbilitiesPacket;
+-import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+-import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+-import net.minecraft.network.protocol.game.ServerboundPlayerInputPacket;
+-import net.minecraft.network.protocol.game.ServerboundPongPacket;
+-import net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket;
+-import net.minecraft.network.protocol.game.ServerboundRecipeBookSeenRecipePacket;
+-import net.minecraft.network.protocol.game.ServerboundRenameItemPacket;
+-import net.minecraft.network.protocol.game.ServerboundResourcePackPacket;
+-import net.minecraft.network.protocol.game.ServerboundSeenAdvancementsPacket;
+-import net.minecraft.network.protocol.game.ServerboundSelectTradePacket;
+-import net.minecraft.network.protocol.game.ServerboundSetBeaconPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetCommandBlockPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetCommandMinecartPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetJigsawBlockPacket;
+-import net.minecraft.network.protocol.game.ServerboundSetStructureBlockPacket;
+-import net.minecraft.network.protocol.game.ServerboundSignUpdatePacket;
+-import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+-import net.minecraft.network.protocol.game.ServerboundTeleportToEntityPacket;
+-import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+-import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
++import net.minecraft.network.protocol.game.*;
+ import net.minecraft.resources.ResourceKey;
+ import net.minecraft.resources.ResourceLocation;
+ import net.minecraft.server.MinecraftServer;
+@@ -144,38 +45,22 @@ import net.minecraft.util.StringUtil;
+ import net.minecraft.world.InteractionHand;
+ import net.minecraft.world.InteractionResult;
+ import net.minecraft.world.effect.MobEffects;
+-import net.minecraft.world.entity.Entity;
+-import net.minecraft.world.entity.ExperienceOrb;
+-import net.minecraft.world.entity.HasCustomInventoryScreen;
+-import net.minecraft.world.entity.LivingEntity;
+-import net.minecraft.world.entity.Mob;
+-import net.minecraft.world.entity.MoverType;
+-import net.minecraft.world.entity.PlayerRideableJumping;
++import net.minecraft.world.entity.*;
++import net.minecraft.world.entity.animal.Bucketable;
++import net.minecraft.world.entity.animal.allay.Allay;
++import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.entity.player.ChatVisiblity;
+ import net.minecraft.world.entity.player.Inventory;
+ import net.minecraft.world.entity.player.ProfilePublicKey;
+ import net.minecraft.world.entity.projectile.AbstractArrow;
+ import net.minecraft.world.entity.vehicle.Boat;
+-import net.minecraft.world.item.BlockItem;
+-import net.minecraft.world.item.BucketItem;
+-import net.minecraft.world.item.Item;
+-import net.minecraft.world.item.ItemStack;
+-import net.minecraft.world.item.Items;
++import net.minecraft.world.inventory.*;
++import net.minecraft.world.item.*;
+ import net.minecraft.world.item.crafting.Recipe;
+-import net.minecraft.world.level.BaseCommandBlock;
+-import net.minecraft.world.level.ClipContext;
+-import net.minecraft.world.level.GameRules;
+-import net.minecraft.world.level.GameType;
+-import net.minecraft.world.level.Level;
+-import net.minecraft.world.level.LevelReader;
++import net.minecraft.world.level.*;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.CommandBlock;
+-import net.minecraft.world.level.block.entity.BlockEntity;
+-import net.minecraft.world.level.block.entity.CommandBlockEntity;
+-import net.minecraft.world.level.block.entity.JigsawBlockEntity;
+-import net.minecraft.world.level.block.entity.SignBlockEntity;
+-import net.minecraft.world.level.block.entity.StructureBlockEntity;
+-import net.minecraft.world.level.block.state.BlockBehaviour;
++import net.minecraft.world.level.block.entity.*;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.BlockHitResult;
+@@ -185,24 +70,6 @@ import net.minecraft.world.phys.shapes.BooleanOp;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.apache.commons.lang3.StringUtils;
+-import org.slf4j.Logger;
+-
+-// CraftBukkit start
+-import io.papermc.paper.adventure.ChatProcessor; // Paper
+-import io.papermc.paper.adventure.PaperAdventure; // Paper
+-import java.util.Arrays;
+-import java.util.concurrent.ExecutionException;
+-import java.util.concurrent.atomic.AtomicInteger;
+-import net.minecraft.network.chat.OutgoingPlayerChatMessage;
+-import net.minecraft.world.entity.animal.Bucketable;
+-import net.minecraft.world.entity.animal.allay.Allay;
+-import net.minecraft.world.entity.item.ItemEntity;
+-import net.minecraft.world.inventory.AbstractContainerMenu;
+-import net.minecraft.world.inventory.AnvilMenu;
+-import net.minecraft.world.inventory.BeaconMenu;
+-import net.minecraft.world.inventory.MerchantMenu;
+-import net.minecraft.world.inventory.RecipeBookMenu;
+-import net.minecraft.world.inventory.Slot;
+ import org.bukkit.Location;
+ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+@@ -216,33 +83,29 @@ import org.bukkit.event.Event;
+ import org.bukkit.event.block.Action;
+ import org.bukkit.event.block.SignChangeEvent;
+ import org.bukkit.event.inventory.ClickType;
+-import org.bukkit.event.inventory.CraftItemEvent;
+-import org.bukkit.event.inventory.InventoryAction;
+-import org.bukkit.event.inventory.InventoryClickEvent;
+-import org.bukkit.event.inventory.InventoryCloseEvent; // Paper
+-import org.bukkit.event.inventory.InventoryCreativeEvent;
++import org.bukkit.event.inventory.*;
+ import org.bukkit.event.inventory.InventoryType.SlotType;
+-import org.bukkit.event.inventory.SmithItemEvent;
+-import org.bukkit.event.player.AsyncPlayerChatEvent;
+-import org.bukkit.event.player.PlayerAnimationEvent;
+-import org.bukkit.event.player.PlayerAnimationType;
+-import org.bukkit.event.player.PlayerChatEvent;
+-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+-import org.bukkit.event.player.PlayerInteractAtEntityEvent;
+-import org.bukkit.event.player.PlayerInteractEntityEvent;
+-import org.bukkit.event.player.PlayerItemHeldEvent;
+-import org.bukkit.event.player.PlayerKickEvent;
+-import org.bukkit.event.player.PlayerMoveEvent;
+-import org.bukkit.event.player.PlayerResourcePackStatusEvent;
+-import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+-import org.bukkit.event.player.PlayerTeleportEvent;
+-import org.bukkit.event.player.PlayerToggleFlightEvent;
+-import org.bukkit.event.player.PlayerToggleSneakEvent;
+-import org.bukkit.event.player.PlayerToggleSprintEvent;
++import org.bukkit.event.player.*;
+ import org.bukkit.inventory.CraftingInventory;
+ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.InventoryView;
+ import org.bukkit.inventory.SmithingInventory;
++import org.slf4j.Logger;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
++import javax.annotation.Nullable;
++import java.time.Instant;
++import java.util.*;
++import java.util.concurrent.CancellationException;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ExecutionException;
++import java.util.concurrent.atomic.AtomicInteger;
++import java.util.concurrent.atomic.AtomicReference;
++import java.util.function.BiFunction;
++import java.util.function.Consumer;
++import java.util.function.UnaryOperator;
++import java.util.stream.Collectors;
++import java.util.stream.Stream;
+ // CraftBukkit end
+ 
+ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, TickablePacketListener, ServerGamePacketListener {
+@@ -2337,6 +2200,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+ 
+     private boolean tryHandleChat(String message, Instant timestamp, LastSeenMessages.Update acknowledgment) {
+         if (!this.updateChatOrder(timestamp)) {
++            if (EntropyConfig.disableOutOfOrderChat) return true;
+             ServerGamePacketListenerImpl.LOGGER.warn("{} sent out-of-order chat: '{}': {} > {}", this.player.getName().getString(), message, this.lastChatTimeStamp.get().getEpochSecond(), timestamp.getEpochSecond()); // Paper
+             this.server.scheduleOnMain(() -> { // Paper - push to main
+             this.disconnect(Component.translatable("multiplayer.disconnect.out_of_order_chat"), org.bukkit.event.player.PlayerKickEvent.Cause.OUT_OF_ORDER_CHAT); // Paper - kick event cause
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 2e00587cd0a0b42d3e9f71c2397abb67c8bae2d9..f9d0d1fb81cec33a052cf9141c878945b2a93c80 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -220,8 +220,10 @@ public class EntropyConfig {
+     }
+ 
+     public static boolean disableMethodProfiler;
++    public static boolean disableOutOfOrderChat;
+     private static void miscSettings() {
+         disableMethodProfiler = getBoolean("pufferfish.misc.disable-method-profiler", true);
++        disableOutOfOrderChat = getBoolean("pufferfish.misc.disable-out-of-order-chat", false);
+         setComment("pufferfish.misc", "Settings for things that don't belong elsewhere");
+     }
+ }
