@@ -195,7 +195,7 @@ index 0000000000000000000000000000000000000000..a48e77582e4b1974c09ee0cfc32601c7
 +public abstract class EntropyCommandBase extends Command {
 +    private final EntropyCommandData commandData;
 +
-+    protected final TextComponent.Builder prefix = Component.text().append(Component.text("Entropy » ", Style.style(TextColor.color(0xbd30ff), TextDecoration.BOLD))).append(Component.text("", NamedTextColor.WHITE));
++    protected final TextComponent prefix = Component.text().append(Component.text("Entropy » ", Style.style(TextColor.color(0xbd30ff), TextDecoration.BOLD))).append(Component.text("", NamedTextColor.WHITE)).build();
 +
 +    public EntropyCommandData getCommandData() {
 +        return commandData;
@@ -205,7 +205,7 @@ index 0000000000000000000000000000000000000000..a48e77582e4b1974c09ee0cfc32601c7
 +    public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
 +        if (!testPermission(sender)) return true;
 +        if (args.length != 1) {
-+            sender.sendMessage(prefix.append(Component.text("Usage: " + usageMessage)).build());
++            sender.sendMessage(prefix.toBuilder().append(Component.text("Usage: " + usageMessage)).build());
 +            return true;
 +        }
 +
@@ -314,9 +314,9 @@ index 0000000000000000000000000000000000000000..0469cf83ccd46b70b8191cd51aa41d15
 +            }
 +            console.server.reloadCount++;
 +
-+            Command.broadcastCommandMessage(sender, prefix.append(Component.text("Entropy configuration has been reloaded.")).build());
++            Command.broadcastCommandMessage(sender, prefix.toBuilder().append(Component.text("Entropy configuration has been reloaded.")).build());
 +        } else if (args[0].equalsIgnoreCase("version")) {
-+            Command.broadcastCommandMessage(sender, prefix.append(Component.text("This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")")).build());
++            Command.broadcastCommandMessage(sender, prefix.toBuilder().append(Component.text("This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")")).build());
 +        }
 +
 +        return true;
