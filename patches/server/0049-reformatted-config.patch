@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 22:47:01 +0100
+Subject: [PATCH] reformatted config
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index deefedb71c635699c186c91d9792bbbeb318f9c2..3a729450ef20642f38b0f2613faadcce06b06051 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -268,7 +268,6 @@ public class EntropyConfig {
+         explodeLava= getBoolean("entropy.patches.explode-lava", false,
+                 "Lava will be destroyed by explosions.",
+                 "Use this for non-regen servers.");
+-
+         mergeEntities= getBoolean("entropy.optimizations.merge-entities", true,
+                 "Merge tnt and falling blocks and move them together.");
+         combinedExplosions= getBoolean("entropy.optimizations.combined-explosions", true,

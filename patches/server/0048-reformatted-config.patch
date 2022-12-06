@@ -21,7 +21,7 @@ index 488ea5221b52f4a858b4100dc450cfd994955e26..deefedb71c635699c186c91d9792bbbe
      public static boolean skipRayOrigin;
      public static boolean tntLoadChunks;
      public static boolean fallingBlockLoadChunks;
-@@ -255,54 +257,46 @@ public class EntropyConfig {
+@@ -255,54 +257,47 @@ public class EntropyConfig {
      public static String durabilityCheckItem;
      public static String durabilityCheckMessage;
      public static Map<String, Integer> unbreakableMap;
@@ -45,6 +45,7 @@ index 488ea5221b52f4a858b4100dc450cfd994955e26..deefedb71c635699c186c91d9792bbbe
                  "Lava will be destroyed by explosions.",
                  "Use this for non-regen servers.");
 -        skipRayOrigin= getBoolean("entropy.cannons.skip-ray-origin", true,
++
 +        mergeEntities= getBoolean("entropy.optimizations.merge-entities", true,
 +                "Merge tnt and falling blocks and move them together.");
 +        combinedExplosions= getBoolean("entropy.optimizations.combined-explosions", true,
