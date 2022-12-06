@@ -1,0 +1,326 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 14:51:54 +0100
+Subject: [PATCH] Add Command System and Config
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index a53084309ebc07b29f5cba068fee66ec8814ae78..391d26cbc9088e2a5e3c7178fcd390f3d5d4a7ab 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -46,6 +46,13 @@ dependencies {
+     runtimeOnly("org.apache.maven.resolver:maven-resolver-connector-basic:1.7.3")
+     runtimeOnly("org.apache.maven.resolver:maven-resolver-transport-http:1.7.3")
+ 
++    // Entropy start
++    implementation("org.yaml:snakeyaml:1.32")
++    implementation ("me.carleslc.Simple-YAML:Simple-Yaml:1.8.2") {
++        exclude(group="org.yaml", module="snakeyaml")
++    }
++    // Entropy end
++
+     testImplementation("io.github.classgraph:classgraph:4.8.47") // Paper - mob goal test
+     testImplementation("junit:junit:4.13.2")
+     testImplementation("org.hamcrest:hamcrest-library:1.3")
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index ff3eced0e20c39b825586897ee2fed01dd471d88..00476f6f1f7f9af37b10590fecfeec705e0a0b62 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -226,6 +226,10 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         com.destroystokyo.paper.VersionHistoryManager.INSTANCE.getClass(); // load version history now
+         io.papermc.paper.brigadier.PaperBrigadierProviderImpl.INSTANCE.getClass(); // init PaperBrigadierProvider
+         // Paper end
++        // Entropy start
++        xyz.fragmentmc.entropy.EntropyConfig.load();
++        xyz.fragmentmc.entropy.command.EntropyCommandLoader.loadCommands();
++        // Entropy end
+ 
+         this.setPvpAllowed(dedicatedserverproperties.pvp);
+         this.setFlightAllowed(dedicatedserverproperties.allowFlight);
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..cf99f551a42594b17a14c146120f8cce394c304e
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -0,0 +1,129 @@
++package xyz.fragmentmc.entropy;
++
++import net.minecraft.server.MinecraftServer;
++import org.bukkit.configuration.ConfigurationSection;
++import org.bukkit.configuration.MemoryConfiguration;
++import org.simpleyaml.configuration.comments.CommentType;
++import org.simpleyaml.configuration.file.YamlFile;
++import org.simpleyaml.exceptions.InvalidConfigurationException;
++
++import javax.annotation.Nullable;
++import java.io.File;
++import java.io.IOException;
++import java.lang.reflect.Method;
++import java.lang.reflect.Modifier;
++import java.util.List;
++
++public class EntropyConfig {
++    private static final YamlFile config = new YamlFile();
++	private static int updates = 0;
++
++    private static ConfigurationSection convertToBukkit(org.simpleyaml.configuration.ConfigurationSection section) {
++        ConfigurationSection newSection = new MemoryConfiguration();
++        for (String key : section.getKeys(false)) {
++            if (section.isConfigurationSection(key)) {
++                newSection.set(key, convertToBukkit(section.getConfigurationSection(key)));
++            } else {
++                newSection.set(key, section.get(key));
++            }
++        }
++        return newSection;
++    }
++
++    public static ConfigurationSection getConfigCopy() {
++        return convertToBukkit(config);
++    }
++
++    public static int getUpdates() {
++        return updates;
++    }
++
++    public static void load() throws IOException {
++        File configFile = new File("entropy.yml");
++        if (configFile.exists()) {
++            try {
++                config.load(configFile);
++            } catch (InvalidConfigurationException e) {
++                throw new IOException(e);
++            }
++        }
++
++        getString("info.version", "1.0");
++        setComment("info",
++                "====================================",
++                "Entropy Cannoning Jar by FragmentMC",
++                "Support: http://fragmentmc.xyz",
++                "====================================");
++
++        for (Method method : EntropyConfig.class.getDeclaredMethods()) {
++            if (Modifier.isStatic(method.getModifiers()) && Modifier.isPrivate(method.getModifiers()) && method.getParameterCount() == 0 &&
++                    method.getReturnType() == Void.TYPE && !method.getName().startsWith("lambda")) {
++                method.setAccessible(true);
++                try {
++                    method.invoke(null);
++                } catch (Throwable t) {
++                    MinecraftServer.LOGGER.warn("Failed to load configuration option from " + method.getName(), t);
++                }
++            }
++        }
++        updates++;
++        config.save(configFile);
++    }
++
++    private static void setComment(String key, String... comment) {
++        if (config.contains(key)) {
++            config.setComment(key, String.join("\n", comment), CommentType.BLOCK);
++        }
++    }
++
++    private static void ensureDefault(String key, Object defaultValue, String... comment) {
++        if (!config.contains(key)) {
++            config.set(key, defaultValue);
++            config.setComment(key, String.join("\n", comment), CommentType.BLOCK);
++        }
++    }
++
++    private static boolean getBoolean(String key, boolean defaultValue, String... comment) {
++        return getBoolean(key, null, defaultValue, comment);
++    }
++
++    private static boolean getBoolean(String key, @Nullable String oldKey, boolean defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        return config.getBoolean(key, defaultValue);
++    }
++
++    private static int getInt(String key, int defaultValue, String... comment) {
++        return getInt(key, null, defaultValue, comment);
++    }
++
++    private static int getInt(String key, @Nullable String oldKey, int defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        return config.getInt(key, defaultValue);
++    }
++
++    private static double getDouble(String key, double defaultValue, String... comment) {
++        return getDouble(key, null, defaultValue, comment);
++    }
++
++    private static double getDouble(String key, @Nullable String oldKey, double defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        return config.getDouble(key, defaultValue);
++    }
++
++    private static String getString(String key, String defaultValue, String... comment) {
++        return getOldString(key, null, defaultValue, comment);
++    }
++
++    private static String getOldString(String key, @Nullable String oldKey, String defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        return config.getString(key, defaultValue);
++    }
++
++    private static List<String> getStringList(String key, List<String> defaultValue, String... comment) {
++        return getStringList(key, null, defaultValue, comment);
++    }
++
++    private static List<String> getStringList(String key, @Nullable String oldKey, List<String> defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);return config.getStringList(key);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a48e77582e4b1974c09ee0cfc32601c7b2a303b4
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+@@ -0,0 +1,44 @@
++package xyz.fragmentmc.entropy.command;
++
++import net.kyori.adventure.text.format.TextColor;
++import net.kyori.adventure.text.format.TextDecoration;
++import net.md_5.bungee.api.ChatColor;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandSender;
++import org.jetbrains.annotations.NotNull;
++
++import java.util.Arrays;
++import java.util.List;
++
++public abstract class EntropyCommandBase extends Command {
++    private final EntropyCommandData commandData;
++
++    protected final String prefix = TextColor.color(0x12fff6) + "" + TextDecoration.BOLD + "Entropy » " + TextColor.color(0xe8f9f9);
++
++    public EntropyCommandData getCommandData() {
++        return commandData;
++    }
++
++    @Override
++    public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
++        if (!testPermission(sender)) return true;
++        if (args.length != 1) {
++            sender.sendMessage(prefix + "Usage: " + usageMessage);
++            return true;
++        }
++
++        return run(sender, commandLabel, args);
++    }
++
++    protected EntropyCommandBase() {
++        super("");
++        commandData = this.getClass().getAnnotation(EntropyCommandData.class);
++        this.setName(commandData.name());
++        this.setDescription(commandData.description());
++        this.setUsage(commandData.usageMessage());
++        this.setAliases(Arrays.stream(commandData.aliases()).toList());
++        this.setPermission(commandData.permission());
++    }
++
++    protected abstract boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args);
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..7f1936d2e2365db28a52558531b8ce02bcfb444e
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+@@ -0,0 +1,13 @@
++package xyz.fragmentmc.entropy.command;
++
++import java.lang.annotation.Retention;
++import java.lang.annotation.RetentionPolicy;
++
++@Retention(RetentionPolicy.RUNTIME)
++public @interface EntropyCommandData {
++    String name() default "default";
++    String description() default "This is the default command description";
++    String usageMessage() default "/default";
++    String[] aliases() default {};
++    String permission() default "entropy.command.default";
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..867c8357d2950d5fb9e5513d82c935bee45473af
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
+@@ -0,0 +1,18 @@
++package xyz.fragmentmc.entropy.command;
++
++import com.google.common.base.Strings;
++import io.netty.util.internal.StringUtil;
++import net.minecraft.server.MinecraftServer;
++import org.apache.commons.lang.StringUtils;
++import org.bukkit.command.Command;
++import xyz.fragmentmc.entropy.command.commands.EntropyCommand;
++
++public class EntropyCommandLoader {
++    public static void loadCommands() {
++        load(new EntropyCommand());
++    }
++
++    private static void load(Command command) {
++        MinecraftServer.getServer().server.getCommandMap().register(command.getName(), command.getName(), command);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java b/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0469cf83ccd46b70b8191cd51aa41d15890492e7
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
+@@ -0,0 +1,53 @@
++package xyz.fragmentmc.entropy.command.commands;
++
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.format.NamedTextColor;
++import net.md_5.bungee.api.ChatColor;
++import net.minecraft.server.MinecraftServer;
++import org.bukkit.Bukkit;
++import org.bukkit.Location;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandSender;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.command.EntropyCommandBase;
++import xyz.fragmentmc.entropy.command.EntropyCommandData;
++
++import java.io.IOException;
++import java.util.Collections;
++import java.util.List;
++import java.util.stream.Collectors;
++import java.util.stream.Stream;
++
++@EntropyCommandData(name = "entropy", description = "Entropy related commands", usageMessage = "/entropy [reload | version]", permission = "entropy.command.entropy")
++public class EntropyCommand extends EntropyCommandBase {
++    @Override
++    public @NotNull List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, String[] args, Location location) throws IllegalArgumentException {
++        if (args.length == 1) {
++            return Stream.of("reload", "version").filter(arg -> arg.startsWith(args[0].toLowerCase())).collect(Collectors.toList());
++        }
++        return Collections.emptyList();
++    }
++
++
++    @Override
++    protected boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
++        if (args[0].equalsIgnoreCase("reload")) {
++            MinecraftServer console = MinecraftServer.getServer();
++            try {
++                EntropyConfig.load();
++            } catch (IOException e) {
++                sender.sendMessage(Component.text("Failed to reload.", NamedTextColor.RED));
++                e.printStackTrace();
++                return true;
++            }
++            console.server.reloadCount++;
++
++            Command.broadcastCommandMessage(sender, prefix + "Entropy configuration has been reloaded.");
++        } else if (args[0].equalsIgnoreCase("version")) {
++            Command.broadcastCommandMessage(sender, prefix + "This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")");
++        }
++
++        return true;
++    }
++}
