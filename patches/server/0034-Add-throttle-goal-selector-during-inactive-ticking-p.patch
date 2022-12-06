@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 6 Dec 2022 17:12:06 +0100
+Subject: [PATCH] Add throttle goal selector during inactive ticking patch from
+ Pufferfish
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Mob.java b/src/main/java/net/minecraft/world/entity/Mob.java
+index 34f1e860ef017b006b7ed6c6f8fb681f93179766..f81a9a5890a65aa054925e5cb932bc608f10c981 100644
+--- a/src/main/java/net/minecraft/world/entity/Mob.java
++++ b/src/main/java/net/minecraft/world/entity/Mob.java
+@@ -56,6 +56,7 @@ import org.bukkit.craftbukkit.entity.CraftLivingEntity;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.*;
+ import org.bukkit.event.entity.EntityUnleashEvent.UnleashReason;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ import javax.annotation.Nullable;
+ import java.util.*;
+@@ -185,11 +186,13 @@ public abstract class Mob extends LivingEntity {
+         return this.lookControl;
+     }
+ 
++    int _pufferfish_inactiveTickDisableCounter = 0; // Pufferfish - throttle inactive goal selector ticking
+     // Paper start
+     @Override
+     public void inactiveTick() {
+         super.inactiveTick();
+-        if (this.goalSelector.inactiveTick(this.activatedPriority, true)) { // Pufferfish - pass activated priroity
++        boolean isThrottled = EntropyConfig.throttleInactiveGoalSelectorTick && _pufferfish_inactiveTickDisableCounter++ % 20 != 0; // Pufferfish - throttle inactive goal selector ticking
++        if (this.goalSelector.inactiveTick(this.activatedPriority, true) && !isThrottled) { // Pufferfish - pass activated priroity // Pufferfish - throttle inactive goal selector ticking
+             this.goalSelector.tick();
+         }
+         if (this.targetSelector.inactiveTick(this.activatedPriority, true)) { // Pufferfish - pass activated priority
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index ae1a4191a83d7b9ebe0f2821aa3727b86d9bc2e5..395650d88be6816d61e8daeb86c05d0c1127322d 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -193,6 +193,13 @@ public class EntropyConfig {
+         setComment("pufferfish.dab", "Optimizes entity brains when", "they're far away from the player");
+     }
+ 
++    public static boolean throttleInactiveGoalSelectorTick;
++	private static void inactiveGoalSelectorThrottle() {
++        		getBoolean("inactive-goal-selector-throttle", "inactive-goal-selector-disable", true,
++                        "Throttles the AI goal selector in entity inactive ticks.",
++                        "This can improve performance by a few percent, but has minor gameplay implications.");
++    }
++
+     public static boolean disableMethodProfiler;
+     private static void miscSettings() {
+         disableMethodProfiler = getBoolean("pufferfish.misc.disable-method-profiler", true);
