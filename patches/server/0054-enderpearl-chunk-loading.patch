@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Fri, 9 Dec 2022 13:14:50 +0100
+Subject: [PATCH] enderpearl chunk loading
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index bbca3a09bdc56f7c9f525e2921ac1a1aa900d19d..c6bd406ea54e78397c699fd216d997c2425793ed 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -50,6 +50,7 @@ import net.minecraft.world.entity.item.FallingBlockEntity;
+ import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.entity.item.PrimedTnt;
+ import net.minecraft.world.entity.player.Player;
++import net.minecraft.world.entity.projectile.ThrownEnderpearl;
+ import net.minecraft.world.entity.vehicle.Boat;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.item.ItemStack;
+@@ -1349,7 +1350,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+             }
+ 
+             // Entropy start - tnt and falling block chunk loading
+-            boolean load = (EntropyConfig.tntLoadChunks && this instanceof PrimedTnt) || (EntropyConfig.fallingBlockLoadChunks && this instanceof FallingBlockEntity);
++            boolean load = (EntropyConfig.tntLoadChunks && this instanceof PrimedTnt) || (EntropyConfig.fallingBlockLoadChunks && this instanceof FallingBlockEntity) || (EntropyConfig.enderPearlLoadChunks && this instanceof ThrownEnderpearl);
+             io.papermc.paper.util.CollisionUtil.getCollisions(world, this, collisionBox, potentialCollisions, load, this.level.paperConfig().chunks.preventMovingIntoUnloadedChunks,
+                 false, false, null, null);
+             // Entropy end
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index c445b85ae406113a0ee3f1173dad7d288545efb6..50d7f70217c58a77ff9643c6c5deb9c770f5854f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -250,6 +250,7 @@ public class EntropyConfig {
+     public static boolean skipRayOrigin;
+     public static boolean tntLoadChunks;
+     public static boolean fallingBlockLoadChunks;
++    public static boolean enderPearlLoadChunks;
+     public static int chunkLoadAliveTicks;
+     public static boolean explosionProofItems;
+     public static List<String> explosionProofList;
+@@ -288,6 +289,8 @@ public class EntropyConfig {
+         "If TNT tries to travel through an unloaded chunk that chunk will be loaded.");
+         fallingBlockLoadChunks= getBoolean("entropy.chunks.fallingblock-loads-chunks", true,
+                 "If a FallingBlock tries to travel through an unloaded chunk that chunk will be loaded.");
++        enderPearlLoadChunks= getBoolean("entropy.chunks.enderpearl-loads-chunks", false,
++                "If an Ender Pearl tries to traven through an unloaded chunk that chunk will be loaded.");
+         chunkLoadAliveTicks= getInt("entropy.chunks.load-alive-ticks", 2,
+                 "For how many ticks a chunk that got loaded by tnt or a falling block should stay loaded.",
+                 "If there is performance issues with fast shooting cannons loading chunks this can be set to ~100 ticks.");
