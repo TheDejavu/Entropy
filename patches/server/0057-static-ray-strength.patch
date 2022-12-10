@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Sat, 10 Dec 2022 14:52:29 +0100
+Subject: [PATCH] static ray strength
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 1640eb2a451e8be7bba54eaa6b8be725919935f7..2efc9eb6966bd5fe36ac2caff6a02128e33ba287 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -188,7 +188,7 @@ public class Explosion {
+                         d0 /= d3;
+                         d1 /= d3;
+                         d2 /= d3;
+-                        float f = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
++                        float f = this.radius * (EntropyConfig.staticRayStrenght ? 1.3f : (0.7F + this.level.random.nextFloat() * 0.6F)); // Entropy - static ray strength
+                         double d4 = this.x;
+                         double d5 = this.y;
+                         double d6 = this.z;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index bd0a52114ccaa2d32c6388fb0447e1c81c70c38f..7e342e92a3eccb8bd28c3f4c284a9a0242b70f2f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -249,6 +249,7 @@ public class EntropyConfig {
+     public static boolean explosionWaterCheck;
+     public static boolean skipRayOrigin;
+     public static boolean cacheExplosionDamage;
++    public static boolean staticRayStrenght;
+     public static boolean tntLoadChunks;
+     public static boolean fallingBlockLoadChunks;
+     public static boolean enderPearlLoadChunks;
+@@ -286,6 +287,8 @@ public class EntropyConfig {
+                 "Skip the origin of explosion rays, as it gets checked with every ray.");
+         cacheExplosionDamage= getBoolean("entropy.optimizations.cache-explosion-damage", true,
+                 "Cache explosion damage values");
++        staticRayStrenght= getBoolean("entropy.optimizations.static-ray-strength", true,
++                "Remove the random component in explosion damage, CAN change behavior slightly but should not be noticeable.");
+         setComment("entropy.optimizations", "Changes that improve cannoning performance");
+ 
+         tntLoadChunks= getBoolean("entropy.chunks.tnt-loads-chunks", true,
