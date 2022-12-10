@@ -49,7 +49,7 @@ index 05245e97448e14d34a41b6491cedaeb6121aef40..c445b85ae406113a0ee3f1173dad7d28
                  "For how many ticks a chunk that got loaded by tnt or a falling block should stay loaded.",
                  "If there is performance issues with fast shooting cannons loading chunks this can be set to ~100 ticks.");
 -        explosionProofItems= getBoolean("entropy..explosion-proof-items.enabled", true,
-+        setComment("entropy.optimizations", "Chunk loading related settings");
++        setComment("entropy.chunks", "Chunk loading related settings");
 +
 +        explosionProofItems= getBoolean("entropy.explosion-proof-items.enabled", true,
                  "Enable a list of items that can not be blown up by explosions.");
