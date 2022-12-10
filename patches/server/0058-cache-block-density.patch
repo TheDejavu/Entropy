@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Sat, 10 Dec 2022 15:18:02 +0100
+Subject: [PATCH] cache block density
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 2efc9eb6966bd5fe36ac2caff6a02128e33ba287..04ae1e7c7e557f986aa34b73859f82291b9e9153 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -43,9 +43,7 @@ import org.bukkit.Location;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.block.BlockExplodeEvent;
+ import org.bukkit.event.entity.EntityExplodeEvent;
+-import xyz.fragmentmc.entropy.CachedEntityExplosionDamageCalculator;
+-import xyz.fragmentmc.entropy.EntropyConfig;
+-import xyz.fragmentmc.entropy.ExplosionProofItems;
++import xyz.fragmentmc.entropy.*;
+ 
+ import javax.annotation.Nullable;
+ import java.util.*;
+@@ -70,6 +68,7 @@ public class Explosion {
+     private final ObjectArrayList<BlockPos> toBlow;
+     private final Map<Player, Vec3> hitPlayers;
+     public boolean wasCanceled = false; // CraftBukkit - add field
++    private final DensityCache densityCache = new DensityCache(); // Entropy - cache block density
+ 
+     public Explosion(Level world, @Nullable Entity entity, double x, double y, double z, float power) {
+         this(world, entity, x, y, z, power, false, Explosion.BlockInteraction.DESTROY);
+@@ -108,7 +107,7 @@ public class Explosion {
+         return entity == null ? Explosion.EXPLOSION_DAMAGE_CALCULATOR : EntropyConfig.cacheExplosionDamage ? new CachedEntityExplosionDamageCalculator(entity) : new EntityBasedExplosionDamageCalculator(entity); // Entropy - cache explosion damage
+     }
+ 
+-    public static float getSeenPercent(Vec3 source, Entity entity) {
++    public float getSeenPercent(Vec3 source, Entity entity) { // Entropy - cache block density
+         AABB axisalignedbb = entity.getBoundingBox();
+         double d0 = 1.0D / ((axisalignedbb.maxX - axisalignedbb.minX) * 2.0D + 1.0D);
+         double d1 = 1.0D / ((axisalignedbb.maxY - axisalignedbb.minY) * 2.0D + 1.0D);
+@@ -119,6 +118,10 @@ public class Explosion {
+         if (d0 >= 0.0D && d1 >= 0.0D && d2 >= 0.0D) {
+             int i = 0;
+             int j = 0;
++            // Entropy start - cache block density
++            final long key = entity.blockPosition().asLong();
++            final BlockDensity blockDensity = densityCache.getDensity(key);
++            // Entropy end
+ 
+             for (double d5 = 0.0D; d5 <= 1.0D; d5 += d0) {
+                 for (double d6 = 0.0D; d6 <= 1.0D; d6 += d1) {
+@@ -128,16 +131,21 @@ public class Explosion {
+                         double d10 = Mth.lerp(d7, axisalignedbb.minZ, axisalignedbb.maxZ);
+                         Vec3 vec3d1 = new Vec3(d8 + d3, d9, d10 + d4);
+ 
+-                        if (entity.level.clip(new ClipContext(vec3d1, source, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)).getType() == HitResult.Type.MISS) {
++                        // Entropy start - cache block density
++                        if(EntropyConfig.cacheBlockDensity && blockDensity != null && blockDensity.aabb.contains(vec3d1)) {
++                            i += blockDensity.density;
++                        }
++                        else if (entity.level.clip(new ClipContext(vec3d1, source, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)).getType() == HitResult.Type.MISS) {
+                             ++i;
+                         }
++                        // Entropy end
+ 
+                         ++j;
+                     }
+                 }
+             }
+ 
+-            return (float) i / (float) j;
++            return densityCache.checkDensity(i, j, blockDensity, axisalignedbb, key); // Entropy - cache block density
+         } else {
+             return 0.0F;
+         }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/BlockDensity.java b/src/main/java/xyz/fragmentmc/entropy/BlockDensity.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1fd1feeef3e975be0ed655083f9ca9c967484787
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/BlockDensity.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy;
++
++import net.minecraft.world.phys.AABB;
++
++public class BlockDensity {
++    public AABB aabb;
++    public float density;
++
++    public BlockDensity(AABB aabb, float density) {
++        this.aabb = aabb;
++        this.density = density;
++    }
++
++    public boolean intersectsWith(AABB aabb2) {
++        return (aabb.minX <= aabb2.minX && aabb.maxX >= aabb2.minX || aabb.minX <= aabb2.maxX && aabb.maxX >= aabb2.maxX)
++                && (aabb.minY <= aabb2.minY && aabb.maxY >= aabb2.minY || aabb.minY <= aabb2.maxY && aabb.maxY >= aabb2.maxY)
++                && (aabb.minZ <= aabb2.minZ && aabb.maxZ >= aabb2.minZ || aabb.minZ <= aabb2.maxZ && aabb.maxZ >= aabb2.maxZ);
++    }
++
++    public void minmaxWith(AABB aabb2) {
++        aabb = aabb.minmax(aabb2);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/DensityCache.java b/src/main/java/xyz/fragmentmc/entropy/DensityCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ca92eceda9f7d296fd19d4c6ab3db0639093a249
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/DensityCache.java
+@@ -0,0 +1,26 @@
++package xyz.fragmentmc.entropy;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.world.phys.AABB;
++
++public class DensityCache {
++    public final Long2ObjectMap<BlockDensity> cache = new Long2ObjectOpenHashMap<>();
++
++    public BlockDensity getDensity(long key) {
++        return cache.get(key);
++    }
++
++    public float checkDensity(float i, float j, BlockDensity densityData, AABB aabb, long key) {
++        final float density = i/j;
++        if (EntropyConfig.cacheBlockDensity) {
++            if (densityData != null && density == densityData.density && densityData.intersectsWith(aabb)) {
++                densityData.minmaxWith(aabb);
++            }
++            else if (density == 0.0f || density == 1.0f) {
++                cache.put(key, new BlockDensity(aabb, density));
++            }
++        }
++        return density;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 7e342e92a3eccb8bd28c3f4c284a9a0242b70f2f..03b8a0fa50352a8e37abe0e426490c498a3b3a50 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -249,6 +249,7 @@ public class EntropyConfig {
+     public static boolean explosionWaterCheck;
+     public static boolean skipRayOrigin;
+     public static boolean cacheExplosionDamage;
++    public static boolean cacheBlockDensity;
+     public static boolean staticRayStrenght;
+     public static boolean tntLoadChunks;
+     public static boolean fallingBlockLoadChunks;
+@@ -287,6 +288,8 @@ public class EntropyConfig {
+                 "Skip the origin of explosion rays, as it gets checked with every ray.");
+         cacheExplosionDamage= getBoolean("entropy.optimizations.cache-explosion-damage", true,
+                 "Cache explosion damage values");
++        cacheBlockDensity= getBoolean("entropy.optimizations.cache-block-density", true,
++                "Cache block density for each explosion.");
+         staticRayStrenght= getBoolean("entropy.optimizations.static-ray-strength", true,
+                 "Remove the random component in explosion damage, CAN change behavior slightly but should not be noticeable.");
+         setComment("entropy.optimizations", "Changes that improve cannoning performance");
