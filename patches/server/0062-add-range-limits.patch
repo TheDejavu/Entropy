@@ -1,0 +1,164 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Mon, 12 Dec 2022 19:55:48 +0100
+Subject: [PATCH] add range limits
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index e5358db7d0549d77222c65375c6edaef981cb6cd..770901dff845dfd6fc954b5fe3b036a7e04bc255 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -37,7 +37,9 @@ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
++import org.bukkit.util.Vector;
+ import org.slf4j.Logger;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ import javax.annotation.Nullable;
+ import java.util.Iterator;
+@@ -143,6 +145,18 @@ public class FallingBlockEntity extends Entity {
+ 
+             this.move(MoverType.SELF, this.getDeltaMovement());
+ 
++            // Entropy start - cannon range limit
++            if(EntropyConfig.cannonRangeLimit) {
++                Vector origin = this.getOriginVector();
++                if (origin != null &&
++                        (
++                                Math.abs(this.position().x - origin.getX()) > EntropyConfig.cannonRangeLimitChunks * 16 ||
++                                Math.abs(this.position().z - origin.getZ()) > EntropyConfig.cannonRangeLimitChunks * 16
++                        )
++                ) this.discard();
++            }
++            // Entropy end
++
+             // Paper start - fix sand duping
+             if (this.isRemoved()) {
+                 return;
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 61d6ecf593598f17a4214e193cd446723ec52681..8ff1967cd4eb5b084419b7004009aa6b7ac7df5c 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -11,6 +11,7 @@ import net.minecraft.world.entity.*;
+ import net.minecraft.world.level.Explosion;
+ import net.minecraft.world.level.Level;
+ import org.bukkit.event.entity.ExplosionPrimeEvent;
++import org.bukkit.util.Vector;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ import javax.annotation.Nullable;
+@@ -102,6 +103,18 @@ public class PrimedTnt extends Entity {
+             this.setDeltaMovement(this.getDeltaMovement().multiply(0.7D, -0.5D, 0.7D));
+         }
+ 
++        // Entropy start - cannon range limit
++        if(EntropyConfig.cannonRangeLimit) {
++            Vector origin = this.getOriginVector();
++            if (origin != null &&
++                    (
++                            Math.abs(this.position().x - origin.getX()) > EntropyConfig.cannonRangeLimitChunks * 16 ||
++                            Math.abs(this.position().z - origin.getZ()) > EntropyConfig.cannonRangeLimitChunks * 16
++                    )
++            ) this.discard();
++        }
++        // Entropy end
++
+         int i = this.getFuse() - 1;
+ 
+         this.setFuse(i);
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/ThrownEnderpearl.java b/src/main/java/net/minecraft/world/entity/projectile/ThrownEnderpearl.java
+index 23f77dfc6df93ef6a70e14a7e410263d39fae2cb..297b7496cd229d80f0b9941b897d5de695d13348 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/ThrownEnderpearl.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/ThrownEnderpearl.java
+@@ -1,6 +1,5 @@
+ package net.minecraft.world.entity.projectile;
+ 
+-import javax.annotation.Nullable;
+ import net.minecraft.core.particles.ParticleTypes;
+ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.ServerPlayer;
+@@ -16,11 +15,14 @@ import net.minecraft.world.level.GameRules;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.phys.EntityHitResult;
+ import net.minecraft.world.phys.HitResult;
+-// CraftBukkit start
+ import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.CreatureSpawnEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent;
++import org.bukkit.util.Vector;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
++import javax.annotation.Nullable;
+ // CraftBukkit end
+ 
+ public class ThrownEnderpearl extends ThrowableItemProjectile {
+@@ -108,6 +110,15 @@ public class ThrownEnderpearl extends ThrowableItemProjectile {
+             super.tick();
+         }
+ 
++        // Entropy start - pearl range limit
++        if(EntropyConfig.pearlRangeLimit) {
++            Vector origin = this.getOriginVector();
++            if(origin != null && Math.sqrt(Math.pow(Math.abs(position().x - origin.getX()), 2) + Math.pow(Math.abs(position().z - origin.getZ()), 2)) > EntropyConfig.pearlRangeLimitChunks * 16) {
++                this.setDeltaMovement(0, this.getDeltaMovement().y, 0);
++                this.moveTo(this.xOld, this.position().y, this.zOld);
++            }
++        }
++        // Entropy end
+     }
+ 
+     @Nullable
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index a9cae0f3e04421c272e36166939d9a3de153345a..142d18ab9d423a12d8e7016125226a91fa1e4e60 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -18,7 +18,7 @@ import java.util.*;
+ 
+ public class EntropyConfig {
+     private static final YamlFile config = new YamlFile();
+-    private static int updates = 1;
++    private static int updates = 2;
+ 
+     private static ConfigurationSection convertToBukkit(org.simpleyaml.configuration.ConfigurationSection section) {
+         ConfigurationSection newSection = new MemoryConfiguration();
+@@ -50,7 +50,7 @@ public class EntropyConfig {
+             }
+         }
+ 
+-        getString("info.version", "1.1");
++        getString("info.version", "1.2");
+         setComment("info",
+                 "====================================",
+                 "Entropy Cannoning Jar by FragmentMC",
+@@ -264,6 +264,10 @@ public class EntropyConfig {
+     public static String durabilityCheckItem;
+     public static String durabilityCheckMessage;
+     public static Map<Integer, Integer> unbreakableMap;
++    public static boolean cannonRangeLimit;
++    public static int cannonRangeLimitChunks;
++    public static boolean pearlRangeLimit;
++    public static int pearlRangeLimitChunks;
+     private static void cannoningConfiguration() {
+         disableWaterPushingTNT = getBoolean("entropy.patches.disable-water-pushing-tnt", true,
+                 "Disable TNT getting pushed by water (aka. Waterflow).");
+@@ -326,6 +330,17 @@ public class EntropyConfig {
+         durabilityCheckMessage= getString("entropy.unbreakable-breaker.durability-check-message", "&a[+] &7This block has %dura%/%max% durability.",
+                 "Message that shows when checking the durability of an unbreakable block.");
+         unbreakableMap= UnbreakableDurability.initMap(getStringIntMap("entropy.unbreakable-breaker.blocks", UnbreakableDurability.getDefaults()));
++
++        cannonRangeLimit= getBoolean("entropy.limits.cannon-range-limit", false,
++                "Delete cannon entities if they are shot past a certain range.",
++                "X and Z axis are separate so the allowed are has a square shape.");
++        cannonRangeLimitChunks = getInt("entropy.limits.cannon-range-limit-chunks", 40,
++                "How far cannons are allowed to shoot.");
++        pearlRangeLimit= getBoolean("entropy.limits.pearl-range-limit", false,
++                "Remove a pearls x and z velocity if it travels a certain distance, checking radius is circular.");
++        pearlRangeLimitChunks= getInt("entropy.limits.pearl-range-limit-chunks", 10,
++                "How far are pearls allowed to travel.");
++        setComment("entropy.limits", "Enforces different cannoning and non cannoning related parameters");
+     }
+ 
+     public static boolean disableChatMessageVerification;
