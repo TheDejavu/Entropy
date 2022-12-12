@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Mon, 12 Dec 2022 21:46:13 +0100
+Subject: [PATCH] player ignore tnt damage option
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index d952c181d03f7778da02630cb4f8d7f7569eedef..a30c15dd0fcc5c190888de0395ee75ba8e484cd3 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -343,7 +343,7 @@ public class Explosion {
+                                     entityComplexPart.hurt(this.getDamageSource(), (float) ((int) ((d13 * d13 + d13) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                                 }
+                             }
+-                        } else {
++                        } else if(!(EntropyConfig.playerIgnoreTntDamage && this.source instanceof PrimedTnt)) { // Entropy - player ignore tnt damage
+                             entity.hurt(this.getDamageSource(), (float) ((int) ((d13 * d13 + d13) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                         }
+ 
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 142d18ab9d423a12d8e7016125226a91fa1e4e60..16f9d30bf8d351a40b69c41c033f105cc6d9e2cb 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -244,6 +244,7 @@ public class EntropyConfig {
+     public static boolean entityEyeHeightParity;
+     public static boolean explodeWaterloggedBlocks;
+     public static boolean explodeLava;
++
+     public static boolean mergeEntities;
+     public static boolean combinedExplosions;
+     public static boolean explosionWaterCheck;
+@@ -253,21 +254,27 @@ public class EntropyConfig {
+     public static boolean staticRayStrenght;
+     public static boolean reduceRays;
+     public static int rayProjectionSize;
++
+     public static boolean tntLoadChunks;
+     public static boolean fallingBlockLoadChunks;
+     public static boolean enderPearlLoadChunks;
+     public static int chunkLoadAliveTicks;
++
+     public static boolean explosionProofItems;
+     public static List<String> explosionProofList;
++
+     public static boolean unbreakableBreaker;
+     public static boolean unbreakableCreeper;
+     public static String durabilityCheckItem;
+     public static String durabilityCheckMessage;
+     public static Map<Integer, Integer> unbreakableMap;
++
+     public static boolean cannonRangeLimit;
+     public static int cannonRangeLimitChunks;
+     public static boolean pearlRangeLimit;
+     public static int pearlRangeLimitChunks;
++
++    public static boolean playerIgnoreTntDamage;
+     private static void cannoningConfiguration() {
+         disableWaterPushingTNT = getBoolean("entropy.patches.disable-water-pushing-tnt", true,
+                 "Disable TNT getting pushed by water (aka. Waterflow).");
+@@ -341,6 +348,10 @@ public class EntropyConfig {
+         pearlRangeLimitChunks= getInt("entropy.limits.pearl-range-limit-chunks", 10,
+                 "How far are pearls allowed to travel.");
+         setComment("entropy.limits", "Enforces different cannoning and non cannoning related parameters");
++
++        playerIgnoreTntDamage= getBoolean("entropy.factions.player-ignore-explosion-damage", true,
++                "Players will not take damage from explosions caused by tnt.");
++        setComment("entropy.factions", "Patches and options not related to cannoning but specifically designed for factions servers.");
+     }
+ 
+     public static boolean disableChatMessageVerification;
