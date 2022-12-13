@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 13 Dec 2022 19:02:11 +0100
+Subject: [PATCH] remove blockstates from api
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
+index 8381030f26cccf0eb2cb9f73f96ff58b7cd6e2ac..52cc542cebf77fcae2f1a6ae3470207effcb8256 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
++++ b/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
+@@ -1,6 +1,7 @@
+ package xyz.fragmentmc.entropy.event;
+ 
+-import org.bukkit.block.BlockState;
++import org.bukkit.Location;
++import org.bukkit.Material;
+ import org.bukkit.event.Event;
+ import org.bukkit.event.HandlerList;
+ import org.jetbrains.annotations.NotNull;
+@@ -8,11 +9,13 @@ import org.jetbrains.annotations.NotNull;
+ public class AssignDurabilityEvent extends Event {
+     private static final HandlerList handlers = new HandlerList();
+     private int durability;
+-    private final BlockState block;
++    private final Material material;
++    private final Location location;
+ 
+-    public AssignDurabilityEvent(int durability, @NotNull BlockState block) {
++    public AssignDurabilityEvent(int durability, @NotNull Material material, @NotNull Location location) {
+         this.durability = durability;
+-        this.block = block;
++        this.material = material;
++        this.location = location;
+     }
+ 
+     public void setDurability(int durability) {
+@@ -23,8 +26,12 @@ public class AssignDurabilityEvent extends Event {
+         return durability;
+     }
+ 
+-    public BlockState getBlock() {
+-        return block;
++    public Material getMaterial() {
++        return material;
++    }
++
++    public Location getLocation() {
++        return location;
+     }
+ 
+     public static @NotNull HandlerList getHandlerList() {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
+index 8d9a6c08e20dd612b82ed0c39dfa21a4de3f118b..7589a9e9cf3349ab3e165b8a57a2297806352769 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
++++ b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
+@@ -1,20 +1,12 @@
+ package xyz.fragmentmc.entropy.event;
+ 
+ import org.bukkit.Location;
+-import org.bukkit.block.BlockState;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+ import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class ExplodeLavaEvent extends EntropyExplosionEvent {
+-    private final BlockState block;
+-
+-    public ExplodeLavaEvent(boolean value, Entity source, @NotNull Location location, BlockState block) {
++    public ExplodeLavaEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+-        this.block = block;
+-    }
+-
+-    public BlockState getBlock() {
+-        return this.block;
+     }
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
+index 1b5aadec1629f6f8f90c545c2394e5032599059c..1f1cbb5ed0590f5947e80ae9b6458672638baa21 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
++++ b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
+@@ -1,20 +1,12 @@
+ package xyz.fragmentmc.entropy.event;
+ 
+ import org.bukkit.Location;
+-import org.bukkit.block.BlockState;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+ import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class ExplodeWaterloggedEvent extends EntropyExplosionEvent {
+-    private final BlockState block;
+-
+-    public ExplodeWaterloggedEvent(boolean value, Entity source, @NotNull Location location, @NotNull BlockState block) {
++    public ExplodeWaterloggedEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+-        this.block = block;
+-    }
+-
+-    public BlockState getBlock() {
+-        return this.block;
+     }
+ }
