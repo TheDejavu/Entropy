@@ -1,0 +1,370 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Tue, 13 Dec 2022 18:19:42 +0100
+Subject: [PATCH] add api
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..b83fa52f4d1269b240d5e86a0875045968de070e
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java
+@@ -0,0 +1,12 @@
++package xyz.fragmentmc.entropy.entity;
++
++import org.bukkit.entity.FallingBlock;
++
++public interface EntropyFallingBlock extends FallingBlock {
++    /**
++     * Retrieve the number of falling blocks
++     *
++     * @return the number of falling blocks
++     */
++    public int getCount();
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..207f715afc3e225721f59bd75178fe2e87e45098
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
+@@ -0,0 +1,15 @@
++package xyz.fragmentmc.entropy.entity;
++
++import org.bukkit.entity.TNTPrimed;
++
++/**
++ * Represents a Primed Tnt in the Entropy Jar
++ */
++public interface EntropyTntPrimed extends TNTPrimed {
++    /**
++     * Retrieve the number of merged tnt
++     *
++     * @return the number of merged tnt
++     */
++    public int getCount();
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8381030f26cccf0eb2cb9f73f96ff58b7cd6e2ac
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
+@@ -0,0 +1,38 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.block.BlockState;
++import org.bukkit.event.Event;
++import org.bukkit.event.HandlerList;
++import org.jetbrains.annotations.NotNull;
++
++public class AssignDurabilityEvent extends Event {
++    private static final HandlerList handlers = new HandlerList();
++    private int durability;
++    private final BlockState block;
++
++    public AssignDurabilityEvent(int durability, @NotNull BlockState block) {
++        this.durability = durability;
++        this.block = block;
++    }
++
++    public void setDurability(int durability) {
++        this.durability = durability;
++    }
++
++    public int getDurability() {
++        return durability;
++    }
++
++    public BlockState getBlock() {
++        return block;
++    }
++
++    public static @NotNull HandlerList getHandlerList() {
++        return handlers;
++    }
++
++    @Override
++    public @NotNull HandlerList getHandlers() {
++        return handlers;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3ad15e1d544bef6f8c7c6db166f5d2fcd8632478
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java
+@@ -0,0 +1,12 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++
++public class CombinedExplosionEvent extends EntropyExplosionEvent {
++    public CombinedExplosionEvent(boolean value, Entity source, @NotNull Location location) {
++        super(value, source, location);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2619b08389ec20370216e62039c9b19a316eff05
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java
+@@ -0,0 +1,12 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++
++public class DetermineFallingBlockExposureEvent extends EntropyExplosionEvent {
++    public DetermineFallingBlockExposureEvent(boolean value, Entity source, @NotNull Location location) {
++        super(value, source, location);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e6f71bad422529a572ed2bc55a889893f26363f
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java
+@@ -0,0 +1,24 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class EntityMergeEvent extends EntropyBooleanEvent {
++    private final Entity mergeIntoEntity;
++    private final Entity mergeDeleteEntity;
++
++    public EntityMergeEvent(@NotNull Entity mergeIntoEntity, @NotNull Entity mergeDeleteEntity) {
++        super(false);
++        this.mergeIntoEntity = mergeIntoEntity;
++        this.mergeDeleteEntity = mergeDeleteEntity;
++    }
++
++    public Entity getMergeIntoEntity() {
++        return mergeIntoEntity;
++    }
++
++    public Entity getMergeDeleteEntity() {
++        return mergeDeleteEntity;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8d9a6c08e20dd612b82ed0c39dfa21a4de3f118b
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
+@@ -0,0 +1,20 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.block.BlockState;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++
++public class ExplodeLavaEvent extends EntropyExplosionEvent {
++    private final BlockState block;
++
++    public ExplodeLavaEvent(boolean value, Entity source, @NotNull Location location, BlockState block) {
++        super(value, source, location);
++        this.block = block;
++    }
++
++    public BlockState getBlock() {
++        return this.block;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b5aadec1629f6f8f90c545c2394e5032599059c
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
+@@ -0,0 +1,20 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.block.BlockState;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++
++public class ExplodeWaterloggedEvent extends EntropyExplosionEvent {
++    private final BlockState block;
++
++    public ExplodeWaterloggedEvent(boolean value, Entity source, @NotNull Location location, @NotNull BlockState block) {
++        super(value, source, location);
++        this.block = block;
++    }
++
++    public BlockState getBlock() {
++        return this.block;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..138a8ee50a5eea423ded3825c437d443ec48b123
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java
+@@ -0,0 +1,29 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.entity.EnderPearl;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
++import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class RangeLimitEvent extends EntropyBooleanEvent {
++    private final Entity entity;
++
++    public RangeLimitEvent(@NotNull Entity entity) {
++        super(false);
++        this.entity = entity;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public boolean isPearl() {
++        return entity instanceof EnderPearl;
++    }
++
++    public boolean isCannon() {
++        return entity instanceof EntropyTntPrimed || entity instanceof EntropyFallingBlock;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f1c504345acd7b2016912a8a9e0f751035d5893e
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java
+@@ -0,0 +1,11 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
++import xyz.fragmentmc.entropy.event.base.EntropyTntEvent;
++
++public class TntFlowEvent extends EntropyTntEvent {
++    public TntFlowEvent(boolean value, @NotNull EntropyTntPrimed tnt) {
++        super(value, tnt);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a164e6b871cfcf541ab556ad3d5fdd085f024cd1
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java
+@@ -0,0 +1,11 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
++import xyz.fragmentmc.entropy.event.base.EntropyTntEvent;
++
++public class TntSpreadEvent extends EntropyTntEvent {
++    public TntSpreadEvent(boolean value, @NotNull EntropyTntPrimed tnt) {
++        super(value, tnt);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..08a3e09a1fe183beea78b0dcd4d76991f71dcdb1
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java
+@@ -0,0 +1,35 @@
++package xyz.fragmentmc.entropy.event.base;
++
++import org.bukkit.event.Cancellable;
++import org.bukkit.event.Event;
++import org.bukkit.event.HandlerList;
++import org.jetbrains.annotations.NotNull;
++
++public abstract class EntropyBooleanEvent extends Event implements Cancellable {
++    private static final HandlerList handlers = new HandlerList();
++    private boolean cancelled;
++
++    public EntropyBooleanEvent(boolean value) {
++        super();
++        this.cancelled = value;
++    }
++
++    @Override
++    public @NotNull HandlerList getHandlers() {
++        return handlers;
++    }
++
++    @Override
++    public boolean isCancelled() {
++        return cancelled;
++    }
++
++    @Override
++    public void setCancelled(boolean cancel) {
++        this.cancelled = cancel;
++    }
++
++    public static HandlerList getHandlerList() {
++        return handlers;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec65686d92855581ae3d55e3f54259baa57e33b3
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java
+@@ -0,0 +1,24 @@
++package xyz.fragmentmc.entropy.event.base;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import org.jetbrains.annotations.NotNull;
++
++public abstract class EntropyExplosionEvent extends EntropyBooleanEvent {
++    private final Entity source;
++    private final Location location;
++
++    public EntropyExplosionEvent(boolean value, Entity source, @NotNull Location location) {
++        super(value);
++        this.source = source;
++        this.location = location;
++    }
++
++    public Entity getSource() {
++        return this.source;
++    }
++
++    public Location getLocation() {
++        return this.location;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1478f573b3982b589c921faa2daddc6b7481ead7
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java
+@@ -0,0 +1,17 @@
++package xyz.fragmentmc.entropy.event.base;
++
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
++
++public abstract class EntropyTntEvent extends EntropyBooleanEvent {
++    private final EntropyTntPrimed tnt;
++
++    public EntropyTntEvent(boolean value, @NotNull EntropyTntPrimed tnt) {
++        super(value);
++        this.tnt = tnt;
++    }
++
++    public EntropyTntPrimed getTntEntity() {
++        return this.tnt;
++    }
++}
