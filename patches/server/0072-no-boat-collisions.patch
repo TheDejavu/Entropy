@@ -5,7 +5,7 @@ Subject: [PATCH] no boat collisions
 
 
 diff --git a/src/main/java/io/papermc/paper/util/CollisionUtil.java b/src/main/java/io/papermc/paper/util/CollisionUtil.java
-index de780f8b49cb087e65114dbcb6cc73a49cef087a..6fb35acdecbe1462d50af4076acc73e5dd115217 100644
+index de780f8b49cb087e65114dbcb6cc73a49cef087a..83685125788fa100df133576cc29d1d946ec306e 100644
 --- a/src/main/java/io/papermc/paper/util/CollisionUtil.java
 +++ b/src/main/java/io/papermc/paper/util/CollisionUtil.java
 @@ -6,6 +6,7 @@ import net.minecraft.server.MinecraftServer;
@@ -29,7 +29,7 @@ index de780f8b49cb087e65114dbcb6cc73a49cef087a..6fb35acdecbe1462d50af4076acc73e5
              for (int i = 0, len = entities.size(); i < len; ++i) {
                  final Entity otherEntity = entities.get(i);
 -
-+                if (EntropyConfig.noBoatCollisions && otherEntity instanceof Boat) continue;
++                if (EntropyConfig.noBoatCollisions && (entity instanceof PrimedTnt || entity instanceof FallingBlockEntity) && otherEntity instanceof Boat) continue;
                  if ((entity == null && otherEntity.canBeCollidedWith()) || (entity != null && entity.canCollideWith(otherEntity))) {
                      if (checkOnly) {
                          return true;
