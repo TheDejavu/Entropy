@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <dusek.s03@htlwienwest.at>
+Date: Sat, 14 Jan 2023 23:52:14 +0100
+Subject: [PATCH] cache explosion block state
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index f3922bfa2929b3f644843e1a20229fe6428c656d..0d9bde78e2faa60e41ef9e6e71bb891ce1ad42dd 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -687,6 +687,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+             }
+             // Entropy end
+ 
++            boolean[] lastTnt = new boolean[1]; // Entropy - cache explosion block density
+             org.spigotmc.ActivationRange.activateEntities(this); // Spigot
+             timings.entityTick.startTiming(); // Spigot
+             this.entityTickList.forEach((entity) -> {
+@@ -713,6 +714,14 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                         // Pufferfish start - copied from this.guardEntityTick
+                         try {
+                             this.tickNonPassenger(entity); // Pufferfish - changed
++                            // Entropy start - cache explosion block density
++                            if(entity instanceof PrimedTnt) {
++                                lastTnt[0] = true;
++                            } else if (lastTnt[0]) {
++                                this.blockStateCache.invalidate();
++                                lastTnt[0] = false;
++                            }
++                            // Entropy end
+                             MinecraftServer.getServer().executeMidTickTasks(); // Tuinity - execute chunk tasks mid tick
+                         } catch (Throwable throwable) {
+                             if (throwable instanceof ThreadDeath) throw throwable; // Paper
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 876de6a8683d2c7b23d1385002be03151d7ae17a..5da0710f1a29d2b720f24bbfed2c04913c000f72 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -192,7 +192,7 @@ public class Explosion {
+         // Entropy start - explosion submerged check
+         boolean doBlockBreakCheck = true;
+         if(EntropyConfig.explosionWaterCheck && this.source != null) {
+-            BlockState blockState = this.level.getBlockState(this.source.blockPosition);
++            BlockState blockState = this.level.blockStateCache.getCached(level, this.source.blockPosition());
+             doBlockBreakCheck=!(EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location)).isCancelled() ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
+         }
+         int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15; // Entropy - reduce rays
+@@ -231,7 +231,7 @@ public class Explosion {
+ 
+                         for (float f1 = 0.3F; f > 0.0F; f -= 0.22500001F) {
+                             BlockPos blockposition = new BlockPos(d4, d5, d6);
+-                            BlockState iblockdata = this.level.getBlockState(blockposition);
++                            BlockState iblockdata = this.level.blockStateCache.getCached(level, blockposition);
+                             if (!iblockdata.isDestroyable()) continue; // Paper
+                             FluidState fluid = iblockdata.getFluidState(); // Paper
+ 
+@@ -468,7 +468,7 @@ public class Explosion {
+ 
+             while (objectlistiterator.hasNext()) {
+                 BlockPos blockposition = (BlockPos) objectlistiterator.next();
+-                BlockState iblockdata = this.level.getBlockState(blockposition);
++                BlockState iblockdata = this.level.blockStateCache.getCached(level, blockposition); // Entropy - cache explosion block density
+                 Block block = iblockdata.getBlock();
+ 
+                 if (!iblockdata.isAir() && iblockdata.isDestroyable()) { // Paper
+@@ -495,6 +495,7 @@ public class Explosion {
+                     }
+ 
+                     this.level.setBlock(blockposition, Blocks.AIR.defaultBlockState(), 3);
++                    this.level.blockStateCache.clearValue(blockposition); // Entropy - cache explosion block density
+                     block.wasExploded(this.level, blockposition, this);
+                     this.level.getProfiler().pop();
+                 }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 3a360782628b795819daa27f0fdcc20f311c2975..d470a66aaf8d8f5c9f8c856cec22e986add3602b 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -72,6 +72,7 @@ import org.bukkit.craftbukkit.block.data.CraftBlockData;
+ import org.bukkit.craftbukkit.util.CraftSpawnCategory;
+ import org.bukkit.entity.SpawnCategory;
+ import org.bukkit.event.block.BlockPhysicsEvent;
++import xyz.fragmentmc.entropy.BlockStateCache;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+ import xyz.fragmentmc.entropy.UnbreakableDurability;
+ 
+@@ -163,6 +164,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     public java.util.ArrayDeque<net.minecraft.world.level.block.RedstoneTorchBlock.Toggle> redstoneUpdateInfos; // Paper - Move from Map in BlockRedstoneTorch to here
+ 
+     public UnbreakableDurability unbreakableDurability; // Entropy - unbreakable breaker
++    public BlockStateCache blockStateCache; // Entropy - cache explosion block state
+ 
+     // Paper start - fix and optimise world upgrading
+     // copied from below
+@@ -266,6 +268,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+     protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) { // Paper - Async-Anti-Xray - Pass executor
+         this.unbreakableDurability = new UnbreakableDurability();
++        this.blockStateCache = new BlockStateCache(); // Entropy - cache explosion block state
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper
+         this.generator = gen;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/BlockStateCache.java b/src/main/java/xyz/fragmentmc/entropy/BlockStateCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..42a323e7b506a405103ab3f7d99f38ef8a8393a9
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/BlockStateCache.java
+@@ -0,0 +1,49 @@
++package xyz.fragmentmc.entropy;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
++
++public class BlockStateCache {
++    private long tick;
++    private boolean hasReset;
++    private final Long2ObjectOpenHashMap<BlockState> states;
++
++    public BlockStateCache() {
++        this.tick = 0;
++        hasReset = false;
++        this.states = new Long2ObjectOpenHashMap<>();
++    }
++
++    public BlockState getCached(Level level, BlockPos blockPos) {
++        if (tick == level.getGameTime()) {
++            BlockState state = states.get(blockPos.asLong());
++            if(state != null) {
++                return state;
++            }
++        }
++        else if(!hasReset) {
++            hasReset = true;
++            tick = level.getGameTime();
++            states.clear();
++        } else {
++            hasReset = false;
++        }
++        BlockState state = defaultGet(level, blockPos);
++        states.put(blockPos.asLong(), state);
++        return state;
++    }
++
++    public void invalidate() {
++        states.clear();
++    }
++
++    public void clearValue(BlockPos blockPos) {
++        states.remove(blockPos.asLong());
++    }
++
++    private BlockState defaultGet(Level level, BlockPos blockPos) {
++        return level.getBlockState(blockPos);
++    }
++}
