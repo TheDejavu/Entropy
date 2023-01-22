@@ -129,7 +129,7 @@ index 297b7496cd229d80f0b9941b897d5de695d13348..7db402e6493f589b22a0926dcf5b8d39
                  this.moveTo(this.xOld, this.position().y, this.zOld);
              }
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
-index a30c15dd0fcc5c190888de0395ee75ba8e484cd3..5006315564a07607aaaa27a00cf2a6516983bd6e 100644
+index a30c15dd0fcc5c190888de0395ee75ba8e484cd3..0614b19e5e716d8127db28e5015aeedbf72114fb 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -40,10 +40,18 @@ import net.minecraft.world.phys.AABB;
@@ -172,7 +172,7 @@ index a30c15dd0fcc5c190888de0395ee75ba8e484cd3..5006315564a07607aaaa27a00cf2a651
          if(EntropyConfig.explosionWaterCheck && this.source != null) {
              BlockState blockState = this.level.getBlockState(this.source.blockPosition);
 -            doBlockBreakCheck=!(EntropyConfig.explodeLava ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
-+            doBlockBreakCheck=!(EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location, null)).isCancelled() ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
++            doBlockBreakCheck=!((!EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location)).isCancelled()) ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
          }
          int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15; // Entropy - reduce rays
          if(doBlockBreakCheck) // Entropy end

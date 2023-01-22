@@ -5,7 +5,7 @@ Subject: [PATCH] non-watered combined explosions
 
 
 diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
-index 90fd80f6f69fc9dee51b0d5eb432021bb16e3349..de8b2a9d829e6ec32dac2778b248a339ad05b939 100644
+index 90fd80f6f69fc9dee51b0d5eb432021bb16e3349..46eca8d0669bc7e127e9e62a899ed8ec35b4f29d 100644
 --- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
 +++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
 @@ -32,6 +32,8 @@ public class PrimedTnt extends Entity {
@@ -17,7 +17,7 @@ index 90fd80f6f69fc9dee51b0d5eb432021bb16e3349..de8b2a9d829e6ec32dac2778b248a339
  
      public PrimedTnt(EntityType<? extends PrimedTnt> type, Level world) {
          super(type, world);
-@@ -73,22 +74,28 @@ public class PrimedTnt extends Entity {
+@@ -73,22 +75,28 @@ public class PrimedTnt extends Entity {
      @Override
      public void tick() {
          // Entropy start - merge cannoning entities
@@ -60,7 +60,7 @@ index 90fd80f6f69fc9dee51b0d5eb432021bb16e3349..de8b2a9d829e6ec32dac2778b248a339
          // Entropy end
          if (level.spigotConfig.maxTntTicksPerTick > 0 && ++level.spigotConfig.currentPrimedTnt > level.spigotConfig.maxTntTicksPerTick) { return; } // Spigot
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
-index 440e8f96a48734799c08059afc8b49b69f608b83..876de6a8683d2c7b23d1385002be03151d7ae17a 100644
+index 02a92e2ec8aa55cb3b1e06bf8492df41acfb263e..63460e89713eeb74a948ae55067e7a755984b7de 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -270,7 +270,7 @@ public class Explosion {

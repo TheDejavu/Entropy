@@ -32,7 +32,7 @@ index f3922bfa2929b3f644843e1a20229fe6428c656d..0d9bde78e2faa60e41ef9e6e71bb891c
                          } catch (Throwable throwable) {
                              if (throwable instanceof ThreadDeath) throw throwable; // Paper
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
-index 876de6a8683d2c7b23d1385002be03151d7ae17a..5da0710f1a29d2b720f24bbfed2c04913c000f72 100644
+index 63460e89713eeb74a948ae55067e7a755984b7de..3e8a1718dbe3b036d66fb59c86b127c263ad00d4 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -192,7 +192,7 @@ public class Explosion {
@@ -41,7 +41,7 @@ index 876de6a8683d2c7b23d1385002be03151d7ae17a..5da0710f1a29d2b720f24bbfed2c0491
          if(EntropyConfig.explosionWaterCheck && this.source != null) {
 -            BlockState blockState = this.level.getBlockState(this.source.blockPosition);
 +            BlockState blockState = this.level.blockStateCache.getCached(level, this.source.blockPosition());
-             doBlockBreakCheck=!(EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location)).isCancelled() ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
+             doBlockBreakCheck=!((!EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location)).isCancelled()) ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
          }
          int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15; // Entropy - reduce rays
 @@ -231,7 +231,7 @@ public class Explosion {

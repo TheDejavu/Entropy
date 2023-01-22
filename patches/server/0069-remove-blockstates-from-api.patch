@@ -5,7 +5,7 @@ Subject: [PATCH] remove blockstates from api
 
 
 diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
-index 5006315564a07607aaaa27a00cf2a6516983bd6e..26d89a96fdeb20192116709813f967c71bee4692 100644
+index 0614b19e5e716d8127db28e5015aeedbf72114fb..6e4057ca0b35817f5398de9c12c2bcb20bf461e5 100644
 --- a/src/main/java/net/minecraft/world/level/Explosion.java
 +++ b/src/main/java/net/minecraft/world/level/Explosion.java
 @@ -40,8 +40,6 @@ import net.minecraft.world.phys.AABB;
@@ -17,15 +17,6 @@ index 5006315564a07607aaaa27a00cf2a6516983bd6e..26d89a96fdeb20192116709813f967c7
  import org.bukkit.craftbukkit.entity.CraftEntity;
  import org.bukkit.craftbukkit.event.CraftEventFactory;
  import org.bukkit.event.block.BlockExplodeEvent;
-@@ -195,7 +193,7 @@ public class Explosion {
-         boolean doBlockBreakCheck = true;
-         if(EntropyConfig.explosionWaterCheck && this.source != null) {
-             BlockState blockState = this.level.getBlockState(this.source.blockPosition);
--            doBlockBreakCheck=!(EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location, null)).isCancelled() ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
-+            doBlockBreakCheck=!(EventUtil.sendCancellable(level, new ExplodeLavaEvent(EntropyConfig.explodeLava, craftSource, location)).isCancelled() ? blockState.getMaterial().equals(Material.WATER) : blockState.getMaterial().isLiquid());
-         }
-         int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15; // Entropy - reduce rays
-         if(doBlockBreakCheck) // Entropy end
 @@ -255,11 +253,10 @@ public class Explosion {
                              // Entropy end
  
