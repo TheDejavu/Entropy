@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Thu, 25 May 2023 21:42:41 +0200
+Subject: [PATCH] copy entity origin on unmerge
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index bbca3a09bdc56f7c9f525e2921ac1a1aa900d19d..6aff2fadc47e6706e041a6f5d4108ffe0bc08d51 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -100,6 +100,7 @@ import org.bukkit.event.vehicle.VehicleBlockCollisionEvent;
+ import org.bukkit.event.vehicle.VehicleEnterEvent;
+ import org.bukkit.event.vehicle.VehicleExitEvent;
+ import org.bukkit.plugin.PluginManager;
++import org.bukkit.util.Vector;
+ import org.slf4j.Logger;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+@@ -369,6 +370,17 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+     public UUID getOriginWorld() {
+         return this.originWorld;
+     }
++
++    //Entropy start - paper tnt origin
++    public void setOriginVector(Vector v) {
++        this.origin = v.clone();
++    }
++
++    public void setOriginWorld(UUID u) {
++        this.originWorld = u;
++    }
++    //Entropy end
++
+     // Paper end
+     // Pufferfish start
+     public boolean activatedPriorityReset = false; // DAB
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index 30e133602164fd11fb498b40121b8b006aed5a6d..140eb7538cf2e252a406dc268463f23499f1a38f 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -464,6 +464,10 @@ public class FallingBlockEntity extends Entity {
+         neo.setDeltaMovement(this.getDeltaMovement());
+         neo.setBoundingBox(this.getBoundingBox());
+         neo.time = this.time;
++        if(this.getOriginVector() != null && this.getOriginWorld() != null) {
++            neo.setOriginWorld(this.getOriginWorld());
++            neo.setOriginVector(this.getOriginVector());
++        }
+         return neo;
+     }
+     // Entropy end
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 46eca8d0669bc7e127e9e62a899ed8ec35b4f29d..7d52827c18700b63a42e6f875b94694659787ef9 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -10,6 +10,7 @@ import net.minecraft.network.syncher.SynchedEntityData;
+ import net.minecraft.world.entity.*;
+ import net.minecraft.world.level.Explosion;
+ import net.minecraft.world.level.Level;
++import org.bukkit.Location;
+ import org.bukkit.event.entity.ExplosionPrimeEvent;
+ import org.bukkit.util.Vector;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+@@ -251,6 +252,10 @@ public class PrimedTnt extends Entity {
+         neo.setFuse(this.getFuse());
+         neo.setDeltaMovement(this.getDeltaMovement());
+         neo.setBoundingBox(this.getBoundingBox());
++        if(this.getOriginVector() != null && this.getOriginWorld() != null) {
++            neo.setOriginWorld(this.getOriginWorld());
++            neo.setOriginVector(this.getOriginVector());
++        }
+         return neo;
+     }
+     //Entropy end
