@@ -5,7 +5,7 @@ Subject: [PATCH] Ignore lookups if closed
 
 
 diff --git a/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java b/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
-index 12bd25cfcefbb66f0d686ba9e344b7a71b30f4dc..24ab015fbab6ce789999872791f7ffe4cc64d6d6 100644
+index 136631a7c8fd71b324450926c5bcf3021bf894fe..7572a0bf6614b02be3cbccc7b86e52ee1b8df621 100644
 --- a/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
 +++ b/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
 @@ -48,6 +48,8 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
