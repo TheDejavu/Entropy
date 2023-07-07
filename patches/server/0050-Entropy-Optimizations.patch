@@ -358,7 +358,7 @@ index 44a848829f20ec5ba0d8711add740f2a80773df4..97b7a80b036b3f404a4db47bef02aae4
 +        boolean doBlockBreakCheck = true;
 +        if(EntropyConfig.skipSubmerged && this.source != null) {
 +            BlockState bs = this.level.blockStateCache.getCached(level, this.source.blockPosition());
-+            doBlockBreakCheck = !((!EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeLava, craftSource, location)).isCancelled()) ? bs.is(Blocks.WATER) : bs.getFluidState().isEmpty());
++            doBlockBreakCheck = !((!EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeLava, craftSource, location)).isCancelled()) ? bs.is(Blocks.WATER) : !bs.getFluidState().isEmpty());
 +        }
 +
 +        int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15;
