@@ -1,0 +1,331 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 04:03:55 +0200
+Subject: [PATCH] Entropy Unbreakable Breaker
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ce5af495bc351f1c4795eadf122be7af1ec6791c..4f6c227f82e626965e7822445cc60653b1db6948 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -1841,6 +1841,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+     @Override
+     public void sendBlockUpdated(BlockPos pos, BlockState oldState, BlockState newState, int flags) {
++        if(!oldState.is(newState.getBlock())) this.unbreakableDurability.tryCleanup(pos); // Entropy
+         if (this.isUpdatingNavigations) {
+             String s = "recursive call to sendBlockUpdated";
+ 
+diff --git a/src/main/java/net/minecraft/world/item/ItemStack.java b/src/main/java/net/minecraft/world/item/ItemStack.java
+index ae9b821d71d2868ba4eb3c73558fdcd6caf264e3..52cf64c6c038e3da62e71ba885dcc31f113ab149 100644
+--- a/src/main/java/net/minecraft/world/item/ItemStack.java
++++ b/src/main/java/net/minecraft/world/item/ItemStack.java
+@@ -352,6 +352,8 @@ public final class ItemStack {
+             int oldCount = this.getCount();
+             ServerLevel world = (ServerLevel) context.getLevel();
+ 
++            world.unbreakableDurability.tryCheckDurability(this, blockposition, entityhuman, world); // Entropy
++
+             if (!(this.getItem() instanceof BucketItem/* || this.getItem() instanceof SolidBucketItem*/)) { // if not bucket // Paper - capture block states for snow buckets
+                 world.captureBlockStates = true;
+                 // special case bonemeal
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 97b7a80b036b3f404a4db47bef02aae41838f974..15d97d02277801970af56f3c4f148d2a6cd50f61 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -28,6 +28,7 @@ import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+ import net.minecraft.world.entity.item.FallingBlockEntity;
+ import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.entity.monster.Creeper;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.entity.projectile.Projectile;
+ import net.minecraft.world.item.ItemStack;
+@@ -45,6 +46,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.entity.CraftEntity;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityExplodeEvent;
+@@ -175,6 +177,7 @@ public class Explosion {
+         // CraftBukkit end
+         this.level.gameEvent(this.source, GameEvent.EXPLODE, new Vec3(this.x, this.y, this.z));
+         ObjectOpenHashSet<BlockPos> blockDamageSet = new ObjectOpenHashSet<>();
++        ObjectOpenHashSet<BlockPos> unbreakableBlocks = new ObjectOpenHashSet<>();
+         boolean flag = true;
+ 
+         int i;
+@@ -243,17 +246,22 @@ public class Explosion {
+                                 cachedOriginResistance = optional;
+                                 originCached = true;
+                             }
+-                            // Entropy end
+ 
+-                            // Entropy start
+                             if (!iblockdata.getFluidState().isEmpty() && (iblockdata.getBlock() instanceof SimpleWaterloggedBlock) && !EventUtil.sendCancellable(level, new ExplodeWaterloggedEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
+                                 blockDamageSet.add(blockposition);
+                             }
+                             if (iblockdata.is(Blocks.LAVA) && !EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
+                                 blockDamageSet.add(blockposition);
+                             }
+-                            // Entropy end
+ 
++                            if (EntropyConfig.unbreakableBreaker &&
++                                    !iblockdata.isAir() &&
++                                    (this.source instanceof PrimedTnt || (EntropyConfig.unbreakableCreeper && this.source instanceof Creeper)) &&
++                                    !unbreakableBlocks.contains(blockposition) &&
++                                    level.unbreakableDurability.isBreakable(blockposition, iblockdata, level)
++                            ) {
++                                unbreakableBlocks.add(blockposition);
++                            } else // Entropy end
+                             if (f > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, blockposition, iblockdata, f) && !iblockdata.isAir()) { // Entropy
+                                 blockDamageSet.add(blockposition);
+                                 // Paper start - prevent headless pistons from forming
+@@ -277,7 +285,12 @@ public class Explosion {
+         }
+         // Entropy start
+         else if (this.source instanceof PrimedTnt t) t.blockDamageSkipped = true;
+-        if(this.source instanceof PrimedTnt t && (blockDamageSet.size() > 0 /*||unbreakables.size() > 0*/)) t.destroyedBlock = true;
++        if(this.source instanceof PrimedTnt t && (blockDamageSet.size() > 0 || unbreakableBlocks.size() > 0)) t.destroyedBlock = true;
++
++        for(BlockPos b : unbreakableBlocks) {
++            if(level.unbreakableDurability.reduceDurability(b)) this.toBlow.add(b);
++        }
++        // Entropy end
+ 
+         this.toBlow.addAll(blockDamageSet);
+         float f2 = this.radius * 2.0F;
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index fe44e0ca65513c7bb1acce7e09364373e8cc8e12..80e881d30a1accdf2e806c4abd0d5960e8626038 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -105,10 +105,12 @@ import org.bukkit.event.world.GenericGameEvent;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+ import xyz.fragmentmc.entropy.explosion.BlockStateCache;
+ import xyz.fragmentmc.entropy.explosion.BlockStateHandler;
++import xyz.fragmentmc.entropy.explosion.UnbreakableDurability;
+ // CraftBukkit end
+ 
+ public abstract class Level implements LevelAccessor, AutoCloseable {
+     public BlockStateHandler blockStateCache; // Entropy
++    public UnbreakableDurability unbreakableDurability; // Entropy
+ 
+     public static final Codec<ResourceKey<Level>> RESOURCE_KEY_CODEC = ResourceKey.codec(Registries.DIMENSION);
+     public static final ResourceKey<Level> OVERWORLD = ResourceKey.create(Registries.DIMENSION, new ResourceLocation("overworld"));
+@@ -290,6 +292,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+ 
+     protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) { // Paper - Async-Anti-Xray - Pass executor
+         blockStateCache = EntropyConfig.cacheBlockStates ? new BlockStateCache() : new BlockStateHandler(); // Entropy
++        unbreakableDurability = new UnbreakableDurability(); // Entropy
+ 
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper
+diff --git a/src/main/java/net/minecraft/world/level/block/Block.java b/src/main/java/net/minecraft/world/level/block/Block.java
+index 9522e646529f3d849471931b4b3c0d133e7fcfc5..b6a2e6bb30789bc506901671a2b7bc29c9193f48 100644
+--- a/src/main/java/net/minecraft/world/level/block/Block.java
++++ b/src/main/java/net/minecraft/world/level/block/Block.java
+@@ -308,6 +308,7 @@ public class Block extends BlockBehaviour implements ItemLike {
+             state.spawnAfterBreak((ServerLevel) world, pos, ItemStack.EMPTY, true);
+         }
+ 
++        world.unbreakableDurability.tryCleanup(pos); // Entropy
+     }
+ 
+     public static void dropResources(BlockState state, LevelAccessor world, BlockPos pos, @Nullable BlockEntity blockEntity) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 38bd570c08ca587deac405d7692aa2282231ddaf..22380132dd3ce1e6955b49b931b30fbbccc964f4 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -1,19 +1,23 @@
+ package xyz.fragmentmc.entropy;
+ 
+-import gg.pufferfish.pufferfish.PufferfishConfig;
++import it.unimi.dsi.fastutil.ints.Int2IntMap;
+ import net.minecraft.server.MinecraftServer;
+-import org.bukkit.configuration.ConfigurationSection;
+-import org.bukkit.configuration.MemoryConfiguration;
++import org.simpleyaml.configuration.ConfigurationSection;
++import org.simpleyaml.configuration.MemoryConfiguration;
+ import org.jetbrains.annotations.Nullable;
+ import org.simpleyaml.configuration.comments.CommentType;
+ import org.simpleyaml.configuration.file.YamlFile;
+ import org.simpleyaml.exceptions.InvalidConfigurationException;
++import xyz.fragmentmc.entropy.explosion.UnbreakableDurability;
+ 
+ import java.io.File;
+ import java.io.IOException;
+ import java.lang.reflect.Method;
+ import java.lang.reflect.Modifier;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
++import java.util.Set;
+ 
+ public class EntropyConfig {
+     private static final YamlFile config = new YamlFile();
+@@ -129,6 +133,21 @@ public class EntropyConfig {
+         return config.getStringList(key);
+     }
+ 
++    private static Map<String, Integer> getStringIntMap(String key, Map<String, Integer> defaultValue, String... comment) {
++        return getStringIntMap(key, null, defaultValue, comment);
++    }
++
++    private static Map<String, Integer> getStringIntMap(String key, @Nullable String oldKey, Map<String, Integer> defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        Map<String, Integer> map = new HashMap<>();
++        ConfigurationSection c = config.getConfigurationSection(key);
++        if(c != null) {
++            Set<String> s = c.getKeys(false);
++            for(String k : s) map.put(k, c.getInt(k));
++        }
++        return map;
++    }
++
+     // Config
+ 
+     public static boolean disableChatMessageVerification;
+@@ -173,7 +192,7 @@ public class EntropyConfig {
+     public static boolean reduceRays;
+     public static int rayProjectionSize;
+     public static boolean cacheBlockStates;
+-    public static void optimizations() {
++    private static void optimizations() {
+         skipRayOrigin = getBoolean("entropy.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
+         mergeEntities = getBoolean("entropy.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
+         skipSubmerged = getBoolean("entropy.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
+@@ -184,5 +203,20 @@ public class EntropyConfig {
+         reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
+         rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
+         cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++
++        setComment("entropy.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
++    }
++
++    public static boolean unbreakableBreaker;
++    public static boolean unbreakableCreeper;
++    public static String durabilityCheckItem;
++    public static String durabilityCheckMessage;
++    public static Int2IntMap unbreakableMap;
++    private static void unbreakableBreaker() {
++        unbreakableBreaker = getBoolean("entropy.unbreakable-breaker.enabled", true, "Assigns unbreakable blocks like obsidian a durability so they can be broken by TNT.");
++        unbreakableCreeper = getBoolean("entropy.unbreakable-breaker.allow-creepers", false, "Should unbreakable blocks be able to be broken by creepers.");
++        durabilityCheckItem = getString("entropy.unbreakable-breaker.durability-check-item", "potato", "Item used to check an unbreakable blocks durability.");
++        durabilityCheckMessage = getString("entropy.unbreakable-breaker.durability-check-message", "&a[+] &7This block has %dura%/%max% durability.", "Message that shows when checking the durability of an unbreakable block.");
++        unbreakableMap = UnbreakableDurability.initMap(getStringIntMap("entropy.unbreakable-breaker.blocks", UnbreakableDurability.getDefaults(), "block: durability"));
+     }
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/UnbreakableDurability.java b/src/main/java/xyz/fragmentmc/entropy/explosion/UnbreakableDurability.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..576a32efcbe2159778ca07d5898dbf009e5ee43d
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/UnbreakableDurability.java
+@@ -0,0 +1,106 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.ints.Int2IntMap;
++import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
++import it.unimi.dsi.fastutil.longs.Long2IntMap;
++import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.core.Registry;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.ResourceKey;
++import net.minecraft.world.entity.player.Player;
++import net.minecraft.world.item.ItemStack;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.BlockState;
++import org.bukkit.Location;
++import org.bukkit.Material;
++import org.bukkit.craftbukkit.block.CraftBlockStates;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.AssignDurabilityEvent;
++
++import java.util.HashMap;
++import java.util.Map;
++
++public class UnbreakableDurability {
++    public static Map<String, Integer> getDefaults() {
++        HashMap<String, Integer> unbreakableDefaults = new HashMap<>();
++        unbreakableDefaults.put("obsidian", 5);
++        unbreakableDefaults.put("crying_obsidian", 5);
++        unbreakableDefaults.put("ancient_debris", 5);
++        unbreakableDefaults.put("anvil", 5);
++        unbreakableDefaults.put("chipped_anvil", 5);
++        unbreakableDefaults.put("damaged_anvil", 5);
++        unbreakableDefaults.put("netherite_block", 5);
++        unbreakableDefaults.put("respawn_anchor", 5);
++        unbreakableDefaults.put("enchanting_table", 5);
++        unbreakableDefaults.put("reinforced_deepslate", 5);
++        unbreakableDefaults.put("ender_chest", 5);
++        return unbreakableDefaults;
++    }
++
++    public void tryCheckDurability(ItemStack item, BlockPos b, Player player, Level l) {
++        BlockState bs = l.blockStateCache.getCached(l, b);
++        if((item.getBukkitStack().getType().name().equalsIgnoreCase(EntropyConfig.durabilityCheckItem)) && (this.isBreakable(b, l.blockStateCache.getCached(l, b), l))) {
++            player.getBukkitEntity().sendMessage(this.displayMessage(b, bs.getBlock(), bs, l));
++        }
++    }
++
++    private final Long2IntMap unbreakableDurability = new Long2IntOpenHashMap();
++
++    public boolean isBreakable(BlockPos b, BlockState bs, Level level) {
++        if(bs.isAir()) return false;
++        if(!bs.getFluidState().isEmpty()) return false;
++        if(!unbreakableDurability.containsKey(b.asLong())) {
++            int durability = EntropyConfig.unbreakableMap.get(BuiltInRegistries.BLOCK.getKey(bs.getBlock()).getPath().hashCode());
++            if (durability == 0) return false;
++            AssignDurabilityEvent event = new AssignDurabilityEvent(durability, bs.getBukkitMaterial(), new Location(level.getWorld(), b.getX(), b.getY(), b.getZ()));
++            level.getCraftServer().getPluginManager().callEvent(event);
++            unbreakableDurability.put(b.asLong(), event.getDurability());
++        }
++        return true;
++    }
++
++    public boolean reduceDurability(BlockPos b) {
++        long key = b.asLong();
++        int durability = unbreakableDurability.get(key) - 1;
++        if(durability < 1) {
++            unbreakableDurability.remove(key);
++            return true;
++        }
++        unbreakableDurability.put(key, durability);
++        return false;
++    }
++
++    public void tryCleanup(BlockPos b) {
++        unbreakableDurability.remove(b.asLong());
++    }
++
++    public String displayMessage(BlockPos b, Block m, BlockState bs, Level l) {
++        int dura = 1;
++        int max = 1;
++        if (unbreakableDurability.containsKey(b.asLong())) {
++            dura = getDurability(b);
++            max = getMaxDurability(m, b, bs, l);
++        }
++        return EntropyConfig.durabilityCheckMessage.replaceAll("&", "§").replaceAll("%dura%", ""+dura).replaceAll("%max%", ""+max);
++    }
++
++    public int getDurability(BlockPos b) {
++        return unbreakableDurability.get(b.asLong());
++    }
++
++    public int getMaxDurability(Block b, BlockPos bp, BlockState bs, Level l) {
++        int durability = EntropyConfig.unbreakableMap.get(BuiltInRegistries.BLOCK.getKey(b).getPath().hashCode());
++        AssignDurabilityEvent event = new AssignDurabilityEvent(durability, bs.getBukkitMaterial(), new Location(l.getWorld(), bp.getX(), bp.getY(), bp.getZ()));
++        l.getCraftServer().getPluginManager().callEvent(event);
++        return event.getDurability();
++    }
++
++    public static Int2IntMap initMap(Map<String, Integer> config) {
++        Int2IntMap map = new Int2IntOpenHashMap();
++        config.forEach((key, value) -> map.put(key.hashCode(), (int)value));
++        return map;
++    }
++}

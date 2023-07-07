@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 00:05:08 +0200
+Subject: [PATCH] Entropy Cannoning Patches and API
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4b1f9181b4331e43eed4e9bed1b328e2d5e7bd3
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class BubbleColumnEvent extends EntropyBooleanEvent {
++    private final Entity entity;
++    private final Location location;
++    public BubbleColumnEvent(boolean value, Entity entity, Location location) {
++        super(value);
++        this.entity = entity;
++        this.location = location;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public Location getLocation() {
++        return location;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..6c44641da693028960036c51ba975a13ce878134
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java
+@@ -0,0 +1,11 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
++import xyz.fragmentmc.entropy.event.base.EntropyFallingBlockEvent;
++
++public class ConcreteHardenEvent extends EntropyFallingBlockEvent {
++    public ConcreteHardenEvent(boolean value, @NotNull EntropyFallingBlock fallingBlock) {
++        super(value, fallingBlock);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..570e757e28d5cdc6d922e7bdd638e57c97903662
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class HoneyBlockEvent extends EntropyBooleanEvent {
++    private final Entity entity;
++    private final Location location;
++    public HoneyBlockEvent(boolean value, Entity entity, Location location) {
++        super(value);
++        this.entity = entity;
++        this.location = location;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public Location getLocation() {
++        return location;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dfff2f8a8ebb32f7889a21b3638216b8e3cde09
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class NonFullBlockCollideEvent extends EntropyBooleanEvent {
++    private final Entity entity;
++    private final Location location;
++    public NonFullBlockCollideEvent(boolean value, Entity entity, Location location) {
++        super(value);
++        this.entity = entity;
++        this.location = location;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public Location getLocation() {
++        return location;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..517a0f82b32e44de603cea57df061f8e5e4a442b
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java
+@@ -0,0 +1,17 @@
++package xyz.fragmentmc.entropy.event.base;
++
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
++
++public abstract class EntropyFallingBlockEvent extends EntropyBooleanEvent {
++    private final EntropyFallingBlock fallingBlock;
++
++    public EntropyFallingBlockEvent(boolean value, @NotNull EntropyFallingBlock fallingBlock) {
++        super(value);
++        this.fallingBlock = fallingBlock;
++    }
++
++    public EntropyFallingBlock getFallingBlockEntity() {
++        return this.fallingBlock;
++    }
++}
+\ No newline at end of file

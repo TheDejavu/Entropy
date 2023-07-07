@@ -1,0 +1,780 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 02:21:00 +0200
+Subject: [PATCH] Entropy Optimizations
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index eac31c3fcc9161711328588ac852fcae1116d8ef..ce5af495bc351f1c4795eadf122be7af1ec6791c 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -100,6 +100,8 @@ import net.minecraft.world.entity.animal.WaterAnimal;
+ import net.minecraft.world.entity.animal.horse.SkeletonHorse;
+ import net.minecraft.world.entity.boss.EnderDragonPart;
+ import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
++import net.minecraft.world.entity.item.FallingBlockEntity;
++import net.minecraft.world.entity.item.PrimedTnt;
+ import net.minecraft.world.entity.npc.Npc;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.entity.raid.Raid;
+@@ -177,6 +179,10 @@ import org.bukkit.event.world.GenericGameEvent;
+ import org.bukkit.event.world.TimeSkipEvent;
+ // CraftBukkit end
+ import it.unimi.dsi.fastutil.ints.IntArrayList; // Paper
++import oshi.jna.platform.mac.SystemB;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.EntityMergeEvent;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ 
+ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+@@ -847,6 +853,25 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                 gameprofilerfiller.pop();
+             }
+ 
++            // Entropy start
++            if(EntropyConfig.mergeEntities) {
++                final Entity[] prev = {null};
++                entityTickList.forEach(entity -> {
++                    if(entity instanceof PrimedTnt t && prev[0] instanceof PrimedTnt t2 && t.equalsMerge(t2) && !EventUtil.sendCancellable(this, new EntityMergeEvent(entity.getBukkitEntity(), prev[0].getBukkitEntity())).isCancelled()) {
++                        t.count += t2.count;
++                        prev[0].discard();
++                    }
++                    else if (entity instanceof FallingBlockEntity t && prev[0] instanceof FallingBlockEntity t2 && t.equalsMerge(t2) && !EventUtil.sendCancellable(this, new EntityMergeEvent(entity.getBukkitEntity(), prev[0].getBukkitEntity())).isCancelled()) {
++                        t.count += t2.count;
++                        prev[0].discard();
++                    }
++                    prev[0] = entity;
++                });
++            }
++
++            boolean[] lastTnt = new boolean[1];
++            // Entropy end
++
+             org.spigotmc.ActivationRange.activateEntities(this); // Spigot
+             timings.entityTick.startTiming(); // Spigot
+             this.entityTickList.forEach((entity) -> {
+@@ -873,6 +898,14 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                         // Pufferfish start - copied from this.guardEntityTick
+                         try {
+                             this.tickNonPassenger(entity); // Pufferfish - changed
++                            // Entropy start
++                            if(entity instanceof PrimedTnt) {
++                                lastTnt[0] = true;
++                            } else if (lastTnt[0]) {
++                                blockStateCache.invalidate();
++                                lastTnt[0] = false;
++                            }
++                            // Entropy end
+                             MinecraftServer.getServer().executeMidTickTasks(); // Tuinity - execute chunk tasks mid tick
+                         } catch (Throwable throwable) {
+                             if (throwable instanceof ThreadDeath) throw throwable; // Paper
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 8be5427c910f3f9d2033b513ddf8eb8a1b4b7ad4..1bc4f11f8bda1658bdcfa1e80f390cdfbe2921a7 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -127,6 +127,7 @@ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import net.minecraft.world.scores.PlayerTeam;
+ import net.minecraft.world.scores.Team;
++import org.bukkit.util.Vector;
+ import org.slf4j.Logger;
+ import org.bukkit.Bukkit;
+ import org.bukkit.Location;
+@@ -164,6 +165,16 @@ import xyz.fragmentmc.entropy.util.EventUtil;
+ 
+ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+ 
++    // Entropy start
++    public void setOriginVector(Vector v) {
++        this.origin = v.clone();
++    }
++
++    public void setOriginWorld(UUID u) {
++        this.originWorld = u;
++    }
++    // Entropy end
++
+     // CraftBukkit start
+     private static final int CURRENT_LEVEL = 2;
+     public boolean preserveMotion = true; // Paper - keep initial motion on first setPositionRotation
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index a14bfbb2efa9d3a6e20cda7882583581b42abe60..5d85b201b6601ae4a65a51e76ea37d6b8a03cddb 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -59,6 +59,7 @@ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class FallingBlockEntity extends Entity {
++    public int count = 1; // Entropy
+ 
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private BlockState blockState;
+@@ -137,6 +138,7 @@ public class FallingBlockEntity extends Entity {
+ 
+     @Override
+     public void tick() {
++        FallingBlockEntity copy = this.clone(); // Entropy
+         // Paper start - fix sand duping
+         if (this.isRemoved()) {
+             return;
+@@ -259,6 +261,15 @@ public class FallingBlockEntity extends Entity {
+                             this.discard();
+                             this.callOnBrokenAfterFall(block, blockposition);
+                         }
++
++                        // Entropy start
++                        if (this.count > 1) {
++                            for (int i = 0; i < this.count-1; i++) {
++                                copy.clone().tick();
++                            }
++                        }
++                        copy.discard();
++                        // Entropy end
+                     }
+                 }
+             }
+@@ -429,4 +440,30 @@ public class FallingBlockEntity extends Entity {
+         this.setPos(d0, d1, d2);
+         this.setStartPos(this.blockPosition());
+     }
++
++    // Entropy start
++    public boolean equalsMerge(FallingBlockEntity t) {
++        return (this.getY() == t.getY() &&
++                this.getX() == t.getX() &&
++                this.getZ() == t.getZ() &&
++                this.getDeltaMovement().x == t.getDeltaMovement().x &&
++                this.getDeltaMovement().y == t.getDeltaMovement().y &&
++                this.getDeltaMovement().z == t.getDeltaMovement().z &&
++                this.getBoundingBox().equals(t.getBoundingBox()) && this.blockState.equals(t.blockState)
++        );
++    }
++
++    @Override
++    public FallingBlockEntity clone() {
++        FallingBlockEntity neo = new FallingBlockEntity(this.level, this.getX(), this.getY(), this.getZ(), this.blockState);
++        neo.setDeltaMovement(this.getDeltaMovement());
++        neo.setBoundingBox(this.getBoundingBox());
++        neo.time = this.time;
++        if(this.getOriginVector() != null && this.getOriginWorld() != null) {
++            neo.setOriginWorld(this.getOriginWorld());
++            neo.setOriginVector(this.getOriginVector());
++        }
++        return neo;
++    }
++    // Entropy end
+ }
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 5b8488c86b48871f96de97a49c65adee7e520716..c81e1d2c5e52ff148c9714b75652daebd9e89ca8 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -25,6 +25,12 @@ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class PrimedTnt extends Entity implements TraceableEntity {
++    // Entropy start
++    public int count = 1;
++    public boolean canCombine = false;
++    public boolean blockDamageSkipped;
++    public boolean destroyedBlock;
++    // Entropy end
+ 
+     private static final EntityDataAccessor<Integer> DATA_FUSE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.INT);
+     private static final int DEFAULT_FUSE_TIME = 80;
+@@ -71,6 +77,26 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+ 
+     @Override
+     public void tick() {
++        // Entropy start
++        if (this.getFuse() - 1 <= 0 && this.count > 1) {
++            int tc = this.count;
++            for (int x = 0; x < tc - 1; x++) {
++                PrimedTnt merged = this.clone();
++                merged.tick();
++                this.count--;
++                if (EntropyConfig.combinedExplosions && ((
++                        EntropyConfig.staticRayStrength &&
++                        !merged.destroyedBlock) || merged.blockDamageSkipped) &&
++                        (this.distanceTo(merged) == 0 || this.distanceTo(merged) > 8))
++                {
++                    this.canCombine = true;
++                    break;
++                }
++
++            }
++        }
++        // Entropy end
++
+         if (this.level().spigotConfig.maxTntTicksPerTick > 0 && ++this.level().spigotConfig.currentPrimedTnt > this.level().spigotConfig.maxTntTicksPerTick) { return; } // Spigot
+         if (!this.isNoGravity()) {
+             this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.04D, 0.0D));
+@@ -183,4 +209,31 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         return !EventUtil.sendCancellable(level, new TntFlowEvent(EntropyConfig.disableTNTFlow, new CraftEntropyTntPrimed(level.getCraftServer(), this))).isCancelled() && super.isPushedByFluid(); // Entropy
+     }
+     // Paper end
++
++    // Entropy start
++    public boolean equalsMerge(PrimedTnt t) {
++        return (this.getFuse() == t.getFuse() &&
++                this.getY() == t.getY() &&
++                this.getX() == t.getX() &&
++                this.getZ() == t.getZ() &&
++                this.getDeltaMovement().x == t.getDeltaMovement().x &&
++                this.getDeltaMovement().y == t.getDeltaMovement().y &&
++                this.getDeltaMovement().z == t.getDeltaMovement().z &&
++                this.getBoundingBox().equals(t.getBoundingBox())
++        );
++    }
++
++    @Override
++    public PrimedTnt clone() {
++        PrimedTnt neo = new PrimedTnt(this.level, this.getX(), this.getY(), this.getZ(), this.owner);
++        neo.setDeltaMovement(this.getDeltaMovement());
++        neo.setBoundingBox(this.getBoundingBox());
++        neo.setFuse(this.getFuse());
++        if(this.getOriginVector() != null && this.getOriginWorld() != null) {
++            neo.setOriginWorld(this.getOriginWorld());
++            neo.setOriginVector(this.getOriginVector());
++        }
++        return neo;
++    }
++    // Entropy end
+ }
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 44a848829f20ec5ba0d8711add740f2a80773df4..97b7a80b036b3f404a4db47bef02aae41838f974 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -10,6 +10,8 @@ import java.util.Map;
+ import java.util.Optional;
+ import java.util.Set;
+ import javax.annotation.Nullable;
++
++import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import net.minecraft.Util;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.particles.ParticleTypes;
+@@ -49,14 +51,19 @@ import org.bukkit.event.entity.EntityExplodeEvent;
+ import org.bukkit.Location;
+ import org.bukkit.event.block.BlockExplodeEvent;
+ import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.CombinedExplosionEvent;
+ import xyz.fragmentmc.entropy.event.DetermineFallingBlockExposureEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeLavaEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeWaterloggedEvent;
++import xyz.fragmentmc.entropy.explosion.BlockDensity;
++import xyz.fragmentmc.entropy.explosion.CachedEntityExplosionDamageCalculator;
++import xyz.fragmentmc.entropy.explosion.DensityCache;
+ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class Explosion {
+ 
++    private final DensityCache densityCache = new DensityCache(); // Entropy
+     private static final ExplosionDamageCalculator EXPLOSION_DAMAGE_CALCULATOR = new ExplosionDamageCalculator();
+     private static final int MAX_DROPS_PER_COMBINED_STACK = 16;
+     private final boolean fire;
+@@ -105,10 +112,10 @@ public class Explosion {
+     }
+ 
+     private ExplosionDamageCalculator makeDamageCalculator(@Nullable Entity entity) {
+-        return (ExplosionDamageCalculator) (entity == null ? Explosion.EXPLOSION_DAMAGE_CALCULATOR : new EntityBasedExplosionDamageCalculator(entity));
++        return (ExplosionDamageCalculator) (entity == null ? Explosion.EXPLOSION_DAMAGE_CALCULATOR : EntropyConfig.cacheExplosionDamage ? new CachedEntityExplosionDamageCalculator(entity) : new EntityBasedExplosionDamageCalculator(entity)); // Entropy
+     }
+ 
+-    public static float getSeenPercent(Vec3 source, Entity entity) {
++    public float getSeenPercent(Vec3 source, Entity entity) { // Entropy
+         AABB axisalignedbb = entity.getBoundingBox();
+         double d0 = 1.0D / ((axisalignedbb.maxX - axisalignedbb.minX) * 2.0D + 1.0D);
+         double d1 = 1.0D / ((axisalignedbb.maxY - axisalignedbb.minY) * 2.0D + 1.0D);
+@@ -119,6 +126,10 @@ public class Explosion {
+         if (d0 >= 0.0D && d1 >= 0.0D && d2 >= 0.0D) {
+             int i = 0;
+             int j = 0;
++            // Entropy start
++            final long key = entity.blockPosition.asLong();
++            final BlockDensity blockDensity = densityCache.getDensity(key);
++            // Entropy end
+ 
+             for (double d5 = 0.0D; d5 <= 1.0D; d5 += d0) {
+                 for (double d6 = 0.0D; d6 <= 1.0D; d6 += d1) {
+@@ -128,16 +139,21 @@ public class Explosion {
+                         double d10 = Mth.lerp(d7, axisalignedbb.minZ, axisalignedbb.maxZ);
+                         Vec3 vec3d1 = new Vec3(d8 + d3, d9, d10 + d4);
+ 
+-                        if (entity.level().clip(new ClipContext(vec3d1, source, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)).getType() == HitResult.Type.MISS) {
++                        // Entropy start
++                        if(EntropyConfig.cacheBlockDensity && blockDensity != null && blockDensity.aabb.contains(vec3d1)) {
++                            i += blockDensity.density;
++                        }
++                        else if (entity.level().clip(new ClipContext(vec3d1, source, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, entity)).getType() == HitResult.Type.MISS) {
+                             ++i;
+                         }
++                        // Entropy end
+ 
+                         ++j;
+                     }
+                 }
+             }
+ 
+-            return (float) i / (float) j;
++            return densityCache.checkDensity(i, j, blockDensity, axisalignedbb, key); // Entropy
+         } else {
+             return 0.0F;
+         }
+@@ -147,6 +163,10 @@ public class Explosion {
+         // Entropy start
+         Location location = new Location(level.getWorld(), x, y, z);
+         CraftEntity craftSource = this.source == null ? null : this.source.getBukkitEntity();
++        int merged = 1;
++        if(this.source instanceof PrimedTnt t && t.canCombine && !EventUtil.sendCancellable(level, new CombinedExplosionEvent(false, craftSource, location)).isCancelled()) {
++            merged = t.count;
++        }
+         // Entropy end
+         // CraftBukkit start
+         if (this.radius < 0.1F) {
+@@ -154,32 +174,57 @@ public class Explosion {
+         }
+         // CraftBukkit end
+         this.level.gameEvent(this.source, GameEvent.EXPLODE, new Vec3(this.x, this.y, this.z));
+-        Set<BlockPos> set = Sets.newHashSet();
++        ObjectOpenHashSet<BlockPos> blockDamageSet = new ObjectOpenHashSet<>();
+         boolean flag = true;
+ 
+         int i;
+         int j;
+ 
+-        for (int k = 0; k < 16; ++k) {
+-            for (i = 0; i < 16; ++i) {
+-                for (j = 0; j < 16; ++j) {
+-                    if (k == 0 || k == 15 || i == 0 || i == 15 || j == 0 || j == 15) {
+-                        double d0 = (double) ((float) k / 15.0F * 2.0F - 1.0F);
+-                        double d1 = (double) ((float) i / 15.0F * 2.0F - 1.0F);
+-                        double d2 = (double) ((float) j / 15.0F * 2.0F - 1.0F);
++        // Entropy start
++        boolean originCached = false;
++        Optional<Float> cachedOriginResistance = Optional.empty();
++
++        boolean doBlockBreakCheck = true;
++        if(EntropyConfig.skipSubmerged && this.source != null) {
++            BlockState bs = this.level.blockStateCache.getCached(level, this.source.blockPosition());
++            doBlockBreakCheck = !((!EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeLava, craftSource, location)).isCancelled()) ? bs.is(Blocks.WATER) : !bs.getFluidState().isEmpty());
++        }
++
++        int projectionSize = EntropyConfig.reduceRays ? EntropyConfig.rayProjectionSize : 15;
++
++        if(doBlockBreakCheck)
++        for (int k = 0; k < projectionSize+1; ++k) {
++            for (i = 0; i < projectionSize+1; ++i) {
++                for (j = 0; j < projectionSize+1; ++j) {
++                    if (k == 0 || k == projectionSize || i == 0 || i == projectionSize || j == 0 || j == projectionSize) {
++                        double d0 = (double) ((float) k / projectionSize * 2.0F - 1.0F);
++                        double d1 = (double) ((float) i / projectionSize * 2.0F - 1.0F);
++                        double d2 = (double) ((float) j / projectionSize * 2.0F - 1.0F);
++                        // Entropy end
+                         double d3 = Math.sqrt(d0 * d0 + d1 * d1 + d2 * d2);
+ 
+                         d0 /= d3;
+                         d1 /= d3;
+                         d2 /= d3;
+-                        float f = this.radius * (0.7F + this.level.random.nextFloat() * 0.6F);
++                        float f = this.radius * (EntropyConfig.staticRayStrength ? 1.3f : 0.7F + this.level.random.nextFloat() * 0.6F); // Entropy
+                         double d4 = this.x;
+                         double d5 = this.y;
+                         double d6 = this.z;
+ 
++                        // Entropy start
++                        if(originCached && EntropyConfig.skipRayOrigin) {
++                            if(cachedOriginResistance.isPresent()) f-= (cachedOriginResistance.get()+0.3f)*0.3f;
++
++                            d4 += d0 * 0.30000001192092896D;
++                            d5 += d1 * 0.30000001192092896D;
++                            d6 += d2 * 0.30000001192092896D;
++                            f -= 0.22500001F;
++                        }
++                        // Entropy end
++
+                         for (float f1 = 0.3F; f > 0.0F; f -= 0.22500001F) {
+                             BlockPos blockposition = BlockPos.containing(d4, d5, d6);
+-                            BlockState iblockdata = this.level.getBlockState(blockposition);
++                            BlockState iblockdata = this.level.blockStateCache.getCached(level, blockposition); // Entropy
+                             if (!iblockdata.isDestroyable()) continue; // Paper
+                             FluidState fluid = iblockdata.getFluidState(); // Paper
+ 
+@@ -193,23 +238,30 @@ public class Explosion {
+                                 f -= ((Float) optional.get() + 0.3F) * 0.3F;
+                             }
+ 
++                            // Entropy start
++                            if (!originCached) {
++                                cachedOriginResistance = optional;
++                                originCached = true;
++                            }
++                            // Entropy end
++
+                             // Entropy start
+                             if (!iblockdata.getFluidState().isEmpty() && (iblockdata.getBlock() instanceof SimpleWaterloggedBlock) && !EventUtil.sendCancellable(level, new ExplodeWaterloggedEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
+-                                set.add(blockposition);
++                                blockDamageSet.add(blockposition);
+                             }
+                             if (iblockdata.is(Blocks.LAVA) && !EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
+-                                set.add(blockposition);
++                                blockDamageSet.add(blockposition);
+                             }
+                             // Entropy end
+ 
+-                            if (f > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, blockposition, iblockdata, f)) {
+-                                set.add(blockposition);
++                            if (f > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, blockposition, iblockdata, f) && !iblockdata.isAir()) { // Entropy
++                                blockDamageSet.add(blockposition);
+                                 // Paper start - prevent headless pistons from forming
+                                 if (!io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.allowHeadlessPistons && iblockdata.getBlock() == Blocks.MOVING_PISTON) {
+                                     BlockEntity extension = this.level.getBlockEntity(blockposition);
+                                     if (extension instanceof net.minecraft.world.level.block.piston.PistonMovingBlockEntity blockEntity && blockEntity.isSourcePiston()) {
+                                        net.minecraft.core.Direction direction = iblockdata.getValue(net.minecraft.world.level.block.piston.PistonHeadBlock.FACING);
+-                                       set.add(blockposition.relative(direction.getOpposite()));
++                                       blockDamageSet.add(blockposition.relative(direction.getOpposite()));
+                                     }
+                                 }
+                                 // Paper end
+@@ -223,8 +275,11 @@ public class Explosion {
+                 }
+             }
+         }
++        // Entropy start
++        else if (this.source instanceof PrimedTnt t) t.blockDamageSkipped = true;
++        if(this.source instanceof PrimedTnt t && (blockDamageSet.size() > 0 /*||unbreakables.size() > 0*/)) t.destroyedBlock = true;
+ 
+-        this.toBlow.addAll(set);
++        this.toBlow.addAll(blockDamageSet);
+         float f2 = this.radius * 2.0F;
+ 
+         i = Mth.floor(this.x - (double) f2 - 1.0D);
+@@ -275,7 +330,7 @@ public class Explosion {
+                                 // Calculate damage separately for each EntityComplexPart
+                                 double d7part;
+                                 if (list.contains(entityComplexPart) && (d7part = Math.sqrt(entityComplexPart.distanceToSqr(vec3d)) / f2) <= 1.0D) {
+-                                    double d13part = (1.0D - d7part) * Explosion.getSeenPercent(vec3d, entityComplexPart);
++                                    double d13part = (1.0D - d7part) * this.getSeenPercent(vec3d, entityComplexPart); // Entropy
+                                     entityComplexPart.hurt(this.getDamageSource(), (float) ((int) ((d13part * d13part + d13part) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                                 }
+                             }
+@@ -298,10 +353,16 @@ public class Explosion {
+                             d14 = d13;
+                         }
+ 
+-                        d8 *= d14;
+-                        d9 *= d14;
+-                        d10 *= d14;
+-                        Vec3 vec3d1 = new Vec3(d8, d9, d10);
++                        // Entropy start
++                        double x = 0; double y = 0; double z = 0;
++                        for (int k = 0; k < merged; k++) {
++                            x += d8 * d14;
++                            y += d9 * d14;
++                            z += d10 * d14;
++                        }
++                        // Entropy end
++
++                        Vec3 vec3d1 = new Vec3(x, y, z);
+ 
+                         entity.setDeltaMovement(entity.getDeltaMovement().add(vec3d1));
+                         if (entity instanceof Player) {
+@@ -387,7 +448,7 @@ public class Explosion {
+ 
+             while (objectlistiterator.hasNext()) {
+                 BlockPos blockposition = (BlockPos) objectlistiterator.next();
+-                BlockState iblockdata = this.level.getBlockState(blockposition);
++                BlockState iblockdata = this.level.blockStateCache.getCached(level, blockposition); // Entropy
+                 Block block = iblockdata.getBlock();
+                 // CraftBukkit start - TNTPrimeEvent
+                 if (block instanceof net.minecraft.world.level.block.TntBlock) {
+@@ -424,6 +485,7 @@ public class Explosion {
+                     }
+ 
+                     this.level.setBlock(blockposition, Blocks.AIR.defaultBlockState(), 3);
++                    this.level.blockStateCache.clearValue(blockposition); // Entropy
+                     block.wasExploded(this.level, blockposition, this);
+                     this.level.getProfiler().pop();
+                 }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 30d8ec75203adc677e5fb91d9538baf52a0684ad..fe44e0ca65513c7bb1acce7e09364373e8cc8e12 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -102,9 +102,13 @@ import org.bukkit.craftbukkit.util.CraftNamespacedKey;
+ import org.bukkit.entity.SpawnCategory;
+ import org.bukkit.event.block.BlockPhysicsEvent;
+ import org.bukkit.event.world.GenericGameEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.explosion.BlockStateCache;
++import xyz.fragmentmc.entropy.explosion.BlockStateHandler;
+ // CraftBukkit end
+ 
+ public abstract class Level implements LevelAccessor, AutoCloseable {
++    public BlockStateHandler blockStateCache; // Entropy
+ 
+     public static final Codec<ResourceKey<Level>> RESOURCE_KEY_CODEC = ResourceKey.codec(Registries.DIMENSION);
+     public static final ResourceKey<Level> OVERWORLD = ResourceKey.create(Registries.DIMENSION, new ResourceLocation("overworld"));
+@@ -285,6 +289,8 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     // Pufferfish end
+ 
+     protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) { // Paper - Async-Anti-Xray - Pass executor
++        blockStateCache = EntropyConfig.cacheBlockStates ? new BlockStateCache() : new BlockStateHandler(); // Entropy
++
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper
+         this.generator = gen;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index f7eca267faa3bc88020bfd890064953c911994b9..38bd570c08ca587deac405d7692aa2282231ddaf 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -162,4 +162,27 @@ public class EntropyConfig {
+ 
+         setComment("Changes to game mechanics related to cannoning.");
+     }
++
++    public static boolean skipRayOrigin;
++    public static boolean mergeEntities;
++    public static boolean skipSubmerged;
++    public static boolean cacheExplosionDamage;
++    public static boolean combinedExplosions;
++    public static boolean staticRayStrength;
++    public static boolean cacheBlockDensity;
++    public static boolean reduceRays;
++    public static int rayProjectionSize;
++    public static boolean cacheBlockStates;
++    public static void optimizations() {
++        skipRayOrigin = getBoolean("entropy.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
++        mergeEntities = getBoolean("entropy.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
++        skipSubmerged = getBoolean("entropy.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
++        cacheExplosionDamage = getBoolean("entropy.optimizations.cache-explosion-damage", true, "Cache explosion damage values.");
++        combinedExplosions = getBoolean("entropy.optimizations.combined-explosions", true, "Do one powerful explosion instead of unmerging TNT, when possible.");
++        staticRayStrength = getBoolean("entropy.optimizations.static-ray-strength", true, "* Remove the random component in explosion damage.");
++        cacheBlockDensity = getBoolean("entropy.optimizations.cache-block-density", true, "Cache block density for explosions.");
++        reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
++        rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
++        cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++    }
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java
+index bbd10324cca4dedad4a8b561a26058ef6b551047..0968a3cba33aa615665b1e2e77d2e1c3daeadc31 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java
+@@ -9,7 +9,7 @@ public class CraftEntropyFallingBlock extends CraftFallingBlock implements Entro
+ 
+     public CraftEntropyFallingBlock(CraftServer server, FallingBlockEntity entity) {
+         super(server, entity);
+-        this.count = 1; // Implement Merging Here
++        this.count = entity.count; // Implement Merging Here
+     }
+ 
+     public void setCount(int count) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java
+index 9df0f44331f86d94262110a4b341fbffcbd37f75..e4448d1a2d2526fec7c7174b9fccfb1554dbca62 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java
+@@ -9,7 +9,7 @@ public class CraftEntropyTntPrimed extends CraftTNTPrimed implements EntropyTntP
+ 
+     public CraftEntropyTntPrimed(CraftServer server, PrimedTnt entity) {
+         super(server, entity);
+-        this.count = 1; // Implement Merging here
++        this.count = entity.count; // Implement Merging here
+     }
+ 
+     public void setCount(int count) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ca78dbcf3b9e2450dcfbaf15e5f5cfbf261203b
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import net.minecraft.world.phys.AABB;
++
++public class BlockDensity {
++    public AABB aabb;
++    public float density;
++
++    public BlockDensity(AABB aabb, float density) {
++        this.aabb = aabb;
++        this.density = density;
++    }
++
++    public boolean intersectsWith(AABB aabb2) {
++        return (aabb.minX <= aabb2.minX && aabb.maxX >= aabb2.minX || aabb.minX <= aabb2.maxX && aabb.maxX >= aabb2.maxX)
++                && (aabb.minY <= aabb2.minY && aabb.maxY >= aabb2.minY || aabb.minY <= aabb2.maxY && aabb.maxY >= aabb2.maxY)
++                && (aabb.minZ <= aabb2.minZ && aabb.maxZ >= aabb2.minZ || aabb.minZ <= aabb2.maxZ && aabb.maxZ >= aabb2.maxZ);
++    }
++
++    public void minmaxWith(AABB aabb2) {
++        aabb = aabb.minmax(aabb2);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..311a9166e7ae1eb3b12f1878b75fb92fbb48b0a3
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java
+@@ -0,0 +1,47 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
++
++public class BlockStateCache extends BlockStateHandler
++{
++    private long tick;
++    private boolean hasReset;
++    private final Long2ObjectOpenHashMap<BlockState> states;
++
++    public BlockStateCache() {
++        this.tick = 0;
++        hasReset = false;
++        this.states = new Long2ObjectOpenHashMap<>();
++    }
++
++    @Override
++    public BlockState getCached(Level level, BlockPos blockPos) {
++        if (tick == level.getGameTime()) {
++            BlockState state = states.get(blockPos.asLong());
++            if (state != null) return state;
++        }
++        else if (hasReset) {
++            hasReset = false;
++        } else {
++            hasReset = true;
++            tick = level.getGameTime();
++            states.clear();
++        }
++        BlockState state = defaultGet(level, blockPos);
++        states.put(blockPos.asLong(), state);
++        return state;
++    }
++
++    @Override
++    public void invalidate() {
++        states.clear();
++    }
++
++    @Override
++    public void clearValue(BlockPos blockPos) {
++        states.remove(blockPos.asLong());
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cab96c0852ca75bef6507a81fecc9d545ed5af0
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
++
++public class BlockStateHandler {
++    public BlockState getCached(Level level, BlockPos blockPos) {
++        return defaultGet(level, blockPos);
++    }
++
++    public void invalidate() {
++
++    }
++
++    public void clearValue(BlockPos blockPos) {
++
++    }
++
++    protected BlockState defaultGet(Level level, BlockPos blockPos) {
++        return level.getBlockState(blockPos);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java b/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..70f94b5959aee135b0e744640df38b178886d7f6
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java
+@@ -0,0 +1,46 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
++import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.level.BlockGetter;
++import net.minecraft.world.level.Explosion;
++import net.minecraft.world.level.ExplosionDamageCalculator;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
++
++import java.util.Optional;
++
++public class CachedEntityExplosionDamageCalculator extends ExplosionDamageCalculator {
++    private final Entity source;
++    private final boolean isTnt;
++    private static final Int2ObjectMap<Optional<Float>> cache = new Int2ObjectOpenHashMap<>();
++
++    public CachedEntityExplosionDamageCalculator(Entity entity) {
++        this.source = entity;
++        this.isTnt = entity instanceof PrimedTnt;
++    }
++
++    @Override
++    public Optional<Float> getBlockExplosionResistance(Explosion explosion, BlockGetter world, BlockPos pos, BlockState blockState, FluidState fluidState) {
++        if(isTnt) {
++            if(blockState.isAir() && fluidState.isEmpty()) return Optional.empty();
++            final int key = blockState.getBlock().hashCode() ^ blockState.getFluidState().hashCode();
++            Optional<Float> resistance = cache.get(key);
++            if(resistance == null) {
++                resistance = super.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState);
++                cache.put(key, resistance);
++            }
++            return resistance;
++        }
++        return super.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState).map((max) -> this.source.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState, max));
++    }
++
++    @Override
++    public boolean shouldBlockExplode(Explosion explosion, BlockGetter world, BlockPos pos, BlockState state, float power) {
++        if(isTnt) return true;
++        return this.source.shouldBlockExplode(explosion, world, pos, state, power);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java b/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3f39011eb0344fb4d5f11605661dd03ed0f60ac
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java
+@@ -0,0 +1,27 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.world.phys.AABB;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
++public class DensityCache {
++    public final Long2ObjectMap<BlockDensity> cache = new Long2ObjectOpenHashMap<>();
++
++    public BlockDensity getDensity(long key) {
++        return cache.get(key);
++    }
++
++    public float checkDensity(float i, float j, BlockDensity densityData, AABB aabb, long key) {
++        final float density = i/j;
++        if(EntropyConfig.cacheBlockDensity) {
++            if(densityData != null && density == densityData.density && densityData.intersectsWith(aabb)) {
++                densityData.minmaxWith(aabb);
++            }
++            else if (density == 0.0f || density == 1.0f) {
++                cache.put(key, new BlockDensity(aabb, density));
++            }
++        }
++        return density;
++    }
++}

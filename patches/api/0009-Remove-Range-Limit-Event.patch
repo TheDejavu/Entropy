@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 07:47:45 +0200
+Subject: [PATCH] Remove Range Limit Event
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java
+deleted file mode 100644
+index 138a8ee50a5eea423ded3825c437d443ec48b123..0000000000000000000000000000000000000000
+--- a/src/main/java/xyz/fragmentmc/entropy/event/RangeLimitEvent.java
++++ /dev/null
+@@ -1,29 +0,0 @@
+-package xyz.fragmentmc.entropy.event;
+-
+-import org.bukkit.entity.EnderPearl;
+-import org.bukkit.entity.Entity;
+-import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
+-import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
+-
+-public class RangeLimitEvent extends EntropyBooleanEvent {
+-    private final Entity entity;
+-
+-    public RangeLimitEvent(@NotNull Entity entity) {
+-        super(false);
+-        this.entity = entity;
+-    }
+-
+-    public Entity getEntity() {
+-        return entity;
+-    }
+-
+-    public boolean isPearl() {
+-        return entity instanceof EnderPearl;
+-    }
+-
+-    public boolean isCannon() {
+-        return entity instanceof EntropyTntPrimed || entity instanceof EntropyFallingBlock;
+-    }
+-}
