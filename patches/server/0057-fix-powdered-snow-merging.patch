@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 11 Aug 2023 16:53:48 +0200
+Subject: [PATCH] fix powdered snow merging
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index bad76f81feb5c4f8ce7cbe87403f228d493edc7f..2843837c419176bf00f0fd2ccb23e5f14e60ff85 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -232,7 +232,8 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+                 this.getDeltaMovement().x == t.getDeltaMovement().x &&
+                 this.getDeltaMovement().y == t.getDeltaMovement().y &&
+                 this.getDeltaMovement().z == t.getDeltaMovement().z &&
+-                this.getBoundingBox().equals(t.getBoundingBox())
++                this.getBoundingBox().equals(t.getBoundingBox()) &&
++                (this.fallDistance > 2.5f || this.fallDistance == 0 || this.fallDistance == t.fallDistance)
+         );
+     }
+ 
