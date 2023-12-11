@@ -1,0 +1,421 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 00:05:08 +0200
+Subject: [PATCH] Entropy Cannoning Patches and API
+
+
+diff --git a/src/main/java/io/papermc/paper/util/CollisionUtil.java b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+index a87f6380b2c387fb0cdd40d5087b5c93492e3c88..a6209a8ba675782c6fc2c3929c0237671078dcf1 100644
+--- a/src/main/java/io/papermc/paper/util/CollisionUtil.java
++++ b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+@@ -7,6 +7,9 @@ import net.minecraft.server.level.ServerLevel;
+ import net.minecraft.server.level.WorldGenRegion;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.item.FallingBlockEntity;
++import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.entity.vehicle.Boat;
+ import net.minecraft.world.item.Item;
+ import net.minecraft.world.level.CollisionGetter;
+ import net.minecraft.world.level.EntityGetter;
+@@ -25,6 +28,8 @@ import net.minecraft.world.phys.shapes.CollisionContext;
+ import net.minecraft.world.phys.shapes.EntityCollisionContext;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
+ import java.util.List;
+ import java.util.function.BiPredicate;
+ import java.util.function.Predicate;
+@@ -830,6 +835,7 @@ public final class CollisionUtil {
+             for (int i = 0, len = entities.size(); i < len; ++i) {
+                 final Entity otherEntity = entities.get(i);
+ 
++                if (EntropyConfig.disableBoatCollisions && (entity instanceof PrimedTnt || entities instanceof FallingBlockEntity) && otherEntity instanceof Boat) continue; // Entropy
+                 if ((entity == null && otherEntity.canBeCollidedWith()) || (entity != null && entity.canCollideWith(otherEntity))) {
+                     if (checkOnly) {
+                         return true;
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 17304bc67114d86406bac79636110c9ed26d4e4c..ef498a15065049606078f4960d21296993bc9c5e 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -77,7 +77,9 @@ import net.minecraft.world.InteractionResult;
+ import net.minecraft.world.Nameable;
+ import net.minecraft.world.damagesource.DamageSource;
+ import net.minecraft.world.damagesource.DamageSources;
++import net.minecraft.world.entity.item.FallingBlockEntity;
+ import net.minecraft.world.entity.item.ItemEntity;
++import net.minecraft.world.entity.item.PrimedTnt;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.entity.vehicle.Boat;
+ import net.minecraft.world.item.Item;
+@@ -153,6 +155,11 @@ import org.bukkit.event.entity.EntityPortalEvent;
+ import org.bukkit.event.entity.EntityPoseChangeEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.plugin.PluginManager;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.BubbleColumnEvent;
++import xyz.fragmentmc.entropy.event.NonFullBlockCollideEvent;
++import xyz.fragmentmc.entropy.util.CannonUtil;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+@@ -1152,7 +1159,25 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+                     }
+                 }
+ 
++
+                 this.setPos(this.getX() + vec3d1.x, this.getY() + vec3d1.y, this.getZ() + vec3d1.z);
++                // Entropy start
++                if((this instanceof PrimedTnt || this instanceof FallingBlockEntity) && EventUtil.sendCancellable(level, new NonFullBlockCollideEvent(EntropyConfig.disableNonFullBlockHitbox, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled() && !CannonUtil.isInCannon(this)) {
++                    if(movement.x > vec3d1.x) {
++                        this.setPos(Math.floor(this.getX()-0.5) + 0.4900000095367d, this.getY(), this.getZ());
++                    }
++                    else if (movement.x < vec3d1.x) {
++                        this.setPos(Math.ceil(this.getX()-0.5) + 0.4900000095367d, this.getY(), this.getZ());
++                    }
++                    if (movement.z > vec3d1.z) {
++                        this.setPos(this.getX(), this.getY(), Math.floor(this.getZ()-0.5) + 0.4900000095367d);
++                    }
++                    else if (movement.z < vec3d1.z) {
++                        this.setPos(this.getX(), this.getY(), Math.ceil(this.getZ()-0.5) + 0.4900000095367d);
++                    }
++                }
++
++                // Entropy end
+             }
+ 
+             this.level().getProfiler().pop();
+@@ -3371,6 +3396,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+     }
+ 
+     public void onAboveBubbleCol(boolean drag) {
++        if((this instanceof FallingBlockEntity || this instanceof PrimedTnt) && EventUtil.sendCancellable(level, new BubbleColumnEvent(EntropyConfig.disableBubbleColumns, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled()) return; // Entropy
+         Vec3 vec3d = this.getDeltaMovement();
+         double d0;
+ 
+@@ -3384,6 +3410,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+     }
+ 
+     public void onInsideBubbleColumn(boolean drag) {
++        if((this instanceof FallingBlockEntity || this instanceof PrimedTnt) && EventUtil.sendCancellable(level, new BubbleColumnEvent(EntropyConfig.disableBubbleColumns, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled()) return; // Entropy
+         Vec3 vec3d = this.getDeltaMovement();
+         double d0;
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index 18eaccb39a4c81338a8cbebe3de03934913ac2a4..a14bfbb2efa9d3a6e20cda7882583581b42abe60 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -51,6 +51,11 @@ import org.slf4j.Logger;
+ 
+ // CraftBukkit start;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.entity.CraftEntropyFallingBlock;
++import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
++import xyz.fragmentmc.entropy.event.ConcreteHardenEvent;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class FallingBlockEntity extends Entity {
+@@ -167,7 +172,7 @@ public class FallingBlockEntity extends Entity {
+             // Paper end
+             if (!this.level().isClientSide) {
+                 BlockPos blockposition = this.blockPosition();
+-                boolean flag = this.blockState.getBlock() instanceof ConcretePowderBlock;
++                boolean flag = this.blockState.getBlock() instanceof ConcretePowderBlock && !EventUtil.sendCancellable(level, new ConcreteHardenEvent(EntropyConfig.disableConcreteHarden, new CraftEntropyFallingBlock(level.getCraftServer(), this))).isCancelled(); // Entropy
+                 boolean flag1 = flag && this.level().getFluidState(blockposition).is(FluidTags.WATER);
+                 double d0 = this.getDeltaMovement().lengthSqr();
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 4ce3e69970dd9eb251d0538a2d233ca30e9e5e47..5b8488c86b48871f96de97a49c65adee7e520716 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -17,6 +17,11 @@ import net.minecraft.world.level.Level;
+ // CraftBukkit start;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.ExplosionPrimeEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.entity.CraftEntropyTntPrimed;
++import xyz.fragmentmc.entropy.event.TntFlowEvent;
++import xyz.fragmentmc.entropy.event.TntSpreadEvent;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -36,9 +41,12 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+     public PrimedTnt(Level world, double x, double y, double z, @Nullable LivingEntity igniter) {
+         this(EntityType.TNT, world);
+         this.setPos(x, y, z);
+-        double d3 = this.random.nextDouble() * 6.2831854820251465D; // Paper - don't use world random in entity constructor
++        // Entropy Start
++        if(!EventUtil.sendCancellable(level, new TntSpreadEvent(EntropyConfig.disableTNTSpread, new CraftEntropyTntPrimed(level.getCraftServer(), this))).isCancelled()) {
++            double d3 = this.random.nextDouble() * 6.2831854820251465D; // Paper - don't use world random in entity constructor
+ 
+-        this.setDeltaMovement(-Math.sin(d3) * 0.02D, 0.20000000298023224D, -Math.cos(d3) * 0.02D);
++            this.setDeltaMovement(-Math.sin(d3) * 0.02D, 0.20000000298023224D, -Math.cos(d3) * 0.02D);
++        }
+         this.setFuse(80);
+         this.xo = x;
+         this.yo = y;
+@@ -99,7 +107,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         }
+ 
+         // Paper start - Optional prevent TNT from moving in water
+-        if (!this.isRemoved() && this.wasTouchingWater && this.level().paperConfig().fixes.preventTntFromMovingInWater) {
++        if (!this.isRemoved() && this.wasTouchingWater && EventUtil.sendCancellable(level, new TntFlowEvent(EntropyConfig.disableTNTFlow, new CraftEntropyTntPrimed(level.getCraftServer(), this))).isCancelled()) { // Entropy
+             /*
+              * Author: Jedediah Smith <jedediah@silencegreys.com>
+              */
+@@ -172,7 +180,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+     // Paper start - Optional prevent TNT from moving in water
+     @Override
+     public boolean isPushedByFluid() {
+-        return !level().paperConfig().fixes.preventTntFromMovingInWater && super.isPushedByFluid();
++        return !EventUtil.sendCancellable(level, new TntFlowEvent(EntropyConfig.disableTNTFlow, new CraftEntropyTntPrimed(level.getCraftServer(), this))).isCancelled() && super.isPushedByFluid(); // Entropy
+     }
+     // Paper end
+ }
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 8f97c9df726ac20cfce7bdddd5dd4f8c5aa76c35..44a848829f20ec5ba0d8711add740f2a80773df4 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -23,6 +23,7 @@ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.boss.EnderDragonPart;
+ import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
++import net.minecraft.world.entity.item.FallingBlockEntity;
+ import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.world.entity.item.PrimedTnt;
+ import net.minecraft.world.entity.player.Player;
+@@ -32,6 +33,7 @@ import net.minecraft.world.item.enchantment.ProtectionEnchantment;
+ import net.minecraft.world.level.block.BaseFireBlock;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.SimpleWaterloggedBlock;
+ import net.minecraft.world.level.block.entity.BlockEntity;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.gameevent.GameEvent;
+@@ -41,10 +43,16 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.bukkit.craftbukkit.entity.CraftEntity;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityExplodeEvent;
+ import org.bukkit.Location;
+ import org.bukkit.event.block.BlockExplodeEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.DetermineFallingBlockExposureEvent;
++import xyz.fragmentmc.entropy.event.ExplodeLavaEvent;
++import xyz.fragmentmc.entropy.event.ExplodeWaterloggedEvent;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class Explosion {
+@@ -136,6 +144,10 @@ public class Explosion {
+     }
+ 
+     public void explode() {
++        // Entropy start
++        Location location = new Location(level.getWorld(), x, y, z);
++        CraftEntity craftSource = this.source == null ? null : this.source.getBukkitEntity();
++        // Entropy end
+         // CraftBukkit start
+         if (this.radius < 0.1F) {
+             return;
+@@ -181,6 +193,15 @@ public class Explosion {
+                                 f -= ((Float) optional.get() + 0.3F) * 0.3F;
+                             }
+ 
++                            // Entropy start
++                            if (!iblockdata.getFluidState().isEmpty() && (iblockdata.getBlock() instanceof SimpleWaterloggedBlock) && !EventUtil.sendCancellable(level, new ExplodeWaterloggedEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
++                                set.add(blockposition);
++                            }
++                            if (iblockdata.is(Blocks.LAVA) && !EventUtil.sendCancellable(level, new ExplodeLavaEvent(!EntropyConfig.explodeWaterloggedBlocks, craftSource, location)).isCancelled()) {
++                                set.add(blockposition);
++                            }
++                            // Entropy end
++
+                             if (f > 0.0F && this.damageCalculator.shouldBlockExplode(this, this.level, blockposition, iblockdata, f)) {
+                                 set.add(blockposition);
+                                 // Paper start - prevent headless pistons from forming
+@@ -223,7 +244,7 @@ public class Explosion {
+ 
+                 if (d7 <= 1.0D) {
+                     double d8 = entity.getX() - this.x;
+-                    double d9 = (entity instanceof PrimedTnt ? entity.getY() : entity.getEyeY()) - this.y;
++                    double d9 = (entity instanceof PrimedTnt || (entity instanceof FallingBlockEntity && !EventUtil.sendCancellable(level, new DetermineFallingBlockExposureEvent(!EntropyConfig.fallingBlockParity, craftSource, location)).isCancelled()) ? entity.getY() : entity.getEyeY()) - this.y; // Entropy
+                     double d10 = entity.getZ() - this.z;
+                     double d11 = Math.sqrt(d8 * d8 + d9 * d9 + d10 * d10);
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/HoneyBlock.java b/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
+index 745f33ce496a7ce8c788f24c093b37933a74148a..4b457b5d1694e94cab10975f15c8a0e459a31efc 100644
+--- a/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
+@@ -8,6 +8,7 @@ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.entity.item.FallingBlockEntity;
+ import net.minecraft.world.entity.item.PrimedTnt;
+ import net.minecraft.world.entity.vehicle.AbstractMinecart;
+ import net.minecraft.world.entity.vehicle.Boat;
+@@ -18,6 +19,11 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import net.minecraft.world.phys.shapes.VoxelShape;
++import org.bukkit.Location;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.BubbleColumnEvent;
++import xyz.fragmentmc.entropy.event.HoneyBlockEvent;
++import xyz.fragmentmc.entropy.util.EventUtil;
+ 
+ public class HoneyBlock extends HalfTransparentBlock {
+     private static final double SLIDE_STARTS_WHEN_VERTICAL_SPEED_IS_AT_LEAST = 0.13D;
+@@ -65,6 +71,8 @@ public class HoneyBlock extends HalfTransparentBlock {
+     }
+ 
+     private boolean isSlidingDown(BlockPos pos, Entity entity) {
++        if((entity instanceof FallingBlockEntity || entity instanceof PrimedTnt) && EventUtil.sendCancellable(entity.level, new HoneyBlockEvent(EntropyConfig.disableHoneySlow, entity.getBukkitEntity(), new Location(entity.level.getWorld(), entity.getX(), entity.getY(), entity.getZ()))).isCancelled()) return false; // Entropy
++
+         if (entity.onGround()) {
+             return false;
+         } else if (entity.getY() > (double)pos.getY() + 0.9375D - 1.0E-7D) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 1c2141120ab71fcadf7155e6be97e5c333596700..f7eca267faa3bc88020bfd890064953c911994b9 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -136,4 +136,30 @@ public class EntropyConfig {
+         disableChatMessageVerification = getBoolean("entropy.disable-chat-message-verification", true, "Disable chat message verification, removing features such as chat reporting.",
+                 "This setting also gets rid of any warnings that chat messages can not be verified.");
+     }
++
++    public static boolean disableTNTFlow;
++    public static boolean disableTNTSpread;
++    public static boolean fallingBlockParity;
++    public static boolean explodeWaterloggedBlocks;
++    public static boolean explodeLava;
++    public static boolean disableBoatCollisions;
++    public static boolean disableConcreteHarden;
++    public static boolean disableBubbleColumns;
++    public static boolean disableHoneySlow;
++    public static boolean disableNonFullBlockHitbox;
++    private static void patches() {
++        disableTNTFlow = getBoolean("entropy.patches.disable-tnt-flow", true, "Disable TNT getting pushed by flowing water.");
++        disableTNTSpread = getBoolean("entropy.patches.disable-tnt-spread", true, "Disable the random velocity TNT gets when it is spawned.");
++        fallingBlockParity = getBoolean("entropy.patches.falling-block-parity", false, "Change FallingBlocks to be affected by explosions the same way that TNT does.");
++        explodeWaterloggedBlocks = getBoolean("entropy.patches.explode-waterlogged-blocks", true, "Allow explosions to break waterlogged blocks, to prevent unraidable base defenses.");
++        explodeLava = getBoolean("entropy.patches.explode-lava", false, "Allow explosions to break lava. Enable this for non regen servers. If you enable this option, also consider disabling concrete.");
++        disableBoatCollisions = getBoolean("entropy.patches.disable-boat-collisions", false, "Stop TNT and FallingBlocks from colliding with boats.");
++        disableConcreteHarden = getBoolean("entropy.patches.disable-concrete-harden", false, "Stop concrete powder from hardening in water. It will still harden if placed next to water.");
++        disableBubbleColumns = getBoolean("entropy.patches.disable-bubble-columns", false, "TNT and FallingBlocks will not be affected by bubble columns.");
++        disableHoneySlow = getBoolean("entropy.patches.disable-honey-slow", false, "TNT and FallingBlocks will not be slowed by hones blocks.");
++        disableNonFullBlockHitbox = getBoolean("entropy.patches.disable-non-full-block-hitbox", false, "TNT and FallingBlocks outside of a cannon will collide with every block as if it was a full block on the x and z axis.");
++
++
++        setComment("Changes to game mechanics related to cannoning.");
++    }
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbd10324cca4dedad4a8b561a26058ef6b551047
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyFallingBlock.java
+@@ -0,0 +1,22 @@
++package xyz.fragmentmc.entropy.entity;
++
++import net.minecraft.world.entity.item.FallingBlockEntity;
++import org.bukkit.craftbukkit.CraftServer;
++import org.bukkit.craftbukkit.entity.CraftFallingBlock;
++
++public class CraftEntropyFallingBlock extends CraftFallingBlock implements EntropyFallingBlock {
++    private int count;
++
++    public CraftEntropyFallingBlock(CraftServer server, FallingBlockEntity entity) {
++        super(server, entity);
++        this.count = 1; // Implement Merging Here
++    }
++
++    public void setCount(int count) {
++        this.count = count;
++    }
++
++    public int getCount() {
++        return count;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..9df0f44331f86d94262110a4b341fbffcbd37f75
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/CraftEntropyTntPrimed.java
+@@ -0,0 +1,22 @@
++package xyz.fragmentmc.entropy.entity;
++
++import net.minecraft.world.entity.item.PrimedTnt;
++import org.bukkit.craftbukkit.CraftServer;
++import org.bukkit.craftbukkit.entity.CraftTNTPrimed;
++
++public class CraftEntropyTntPrimed extends CraftTNTPrimed implements EntropyTntPrimed {
++    private int count;
++
++    public CraftEntropyTntPrimed(CraftServer server, PrimedTnt entity) {
++        super(server, entity);
++        this.count = 1; // Implement Merging here
++    }
++
++    public void setCount(int count) {
++        this.count = count;
++    }
++
++    public int getCount() {
++        return count;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4dc0b9af886bc16183f03d184450040b4d02dfc
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+@@ -0,0 +1,21 @@
++package xyz.fragmentmc.entropy.util;
++
++import net.minecraft.world.entity.Entity;
++import org.bukkit.World;
++import org.bukkit.util.Vector;
++
++import java.util.UUID;
++
++public class CannonUtil {
++    public static boolean isInCannon(Entity entity) {
++        Vector originVector = entity.getOriginVector();
++        UUID originWorld = entity.getOriginWorld();
++
++
++        if(originVector == null ||originWorld != entity.level.getWorld().getUID()) return true;
++
++        double x = originVector.getX() - entity.getX();
++        double z = originVector.getZ() - entity.getZ();
++        return x * x + z * z < 64 * 64;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/util/EventUtil.java b/src/main/java/xyz/fragmentmc/entropy/util/EventUtil.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..026e012149255b3e41963687364c3241a05d3e86
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/util/EventUtil.java
+@@ -0,0 +1,12 @@
++package xyz.fragmentmc.entropy.util;
++
++import net.minecraft.world.level.Level;
++import org.bukkit.event.Cancellable;
++import org.bukkit.event.Event;
++
++public class EventUtil {
++    public static Cancellable sendCancellable(Level level, Event event) {
++        level.getCraftServer().getPluginManager().callEvent(event);
++        return (Cancellable) event;
++    }
++}

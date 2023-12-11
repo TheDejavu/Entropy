@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 04:41:36 +0200
+Subject: [PATCH] Entropy Factions Features
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index d265a32bd273beed0e65e224e1c5f9c0bca7b3fb..bff6b91425002a67eacba741b7b5e7a4eee4ea19 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -35,13 +35,7 @@ import net.minecraft.nbt.IntTag;
+ import net.minecraft.nbt.ListTag;
+ import net.minecraft.nbt.NbtOps;
+ import net.minecraft.nbt.Tag;
+-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+-import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+-import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+-import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
++import net.minecraft.network.protocol.game.*;
+ import net.minecraft.network.syncher.EntityDataAccessor;
+ import net.minecraft.network.syncher.EntityDataSerializers;
+ import net.minecraft.network.syncher.SynchedEntityData;
+@@ -140,6 +134,7 @@ import org.bukkit.event.entity.EntityRegainHealthEvent;
+ import org.bukkit.event.entity.EntityResurrectEvent;
+ import org.bukkit.event.entity.EntityTeleportEvent;
+ import org.bukkit.event.player.PlayerItemConsumeEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ 
+@@ -1742,8 +1737,14 @@ public abstract class LivingEntity extends Entity implements Attackable {
+ 
+             // Paper start
+             if (this.dead) { // Paper
+-                this.level().broadcastEntityEvent(this, (byte) 3);
+-            this.setPose(Pose.DYING);
++                // Entropy start
++                if(EntropyConfig.disableDeathAnimation && this.level instanceof ServerLevel server) {
++                    server.getChunkSource().broadcastAndSend(this, new ClientboundRemoveEntitiesPacket(this.getId()));
++                } else {
++                    this.level().broadcastEntityEvent(this, (byte) 3);
++                }
++                this.setPose(Pose.DYING);
++                // Entropy end
+             }
+             // Paper end
+         }
+@@ -1911,7 +1912,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         return SoundEvents.GENERIC_DEATH;
+     }
+ 
+-    private SoundEvent getFallDamageSound(int distance) {
++    protected SoundEvent getFallDamageSound(int distance) { // Entropy
+         return distance > 4 ? this.getFallSounds().big() : this.getFallSounds().small();
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+index f383928fc5b331ddf128bdcb6a23010d8fe088d3..2a76665a7a081f342ffb3a8c909557e52fc62687 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
++++ b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+@@ -49,9 +49,27 @@ import net.minecraft.world.level.NaturalSpawner;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.phys.Vec3;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public class IronGolem extends AbstractGolem implements NeutralMob {
+ 
++    // Entropy start
++    @Override
++    public boolean causeFallDamage(float fallDistance, float damageMultiplier, DamageSource damageSource) {
++        if(EntropyConfig.golemFallDamage) {
++            int i = this.calculateFallDamage(fallDistance, damageMultiplier);
++
++            if (i > 0) {
++                if (!this.hurt(damageSource, (float) i)) return true;
++                this.playSound(this.getFallDamageSound(i), 1.0f, 1.0f);
++                this.playBlockFallSound();
++                return true;
++            }
++        }
++        return false;
++    }
++    // Entropy end
++
+     protected static final EntityDataAccessor<Byte> DATA_FLAGS_ID = SynchedEntityData.defineId(IronGolem.class, EntityDataSerializers.BYTE);
+     private static final int IRON_INGOT_HEAL_AMOUNT = 25;
+     private int attackAnimationTick;
+diff --git a/src/main/java/net/minecraft/world/level/BaseSpawner.java b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+index 633500aefd515df5dadda3802b94079f75a03fa0..0156edb4758b10535bf037ca02f1356224023c23 100644
+--- a/src/main/java/net/minecraft/world/level/BaseSpawner.java
++++ b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+@@ -25,6 +25,7 @@ import net.minecraft.world.entity.SpawnPlacements;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.phys.AABB;
+ import org.slf4j.Logger;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public abstract class BaseSpawner {
+ 
+@@ -201,6 +202,11 @@ public abstract class BaseSpawner {
+                             return;
+                         }
+ 
++                        // Entropy start
++                        entity.setDeltaMovement(0, EntropyConfig.spawnerEntityUpwardsVelocity, 0);
++                        if(EntropyConfig.spawnerOverrideEntityHealth && entity instanceof Mob mob) mob.setHealth(EntropyConfig.spawnerEntityHealth);
++                        // Entropy end
++
+                         world.levelEvent(2004, pos, 0);
+                         world.gameEvent(entity, GameEvent.ENTITY_PLACE, blockposition1);
+                         if (entity instanceof Mob) {
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 0a807fe4543da3f8f6b481c0a9a9ce1f0bf4366a..2a782624c1a5a433f5bac410df5e4502f6fce66d 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -334,7 +334,7 @@ public class Explosion {
+                                     entityComplexPart.hurt(this.getDamageSource(), (float) ((int) ((d13part * d13part + d13part) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                                 }
+                             }
+-                        } else {
++                        } else if(!(EntropyConfig.playerIgnoreTNTDamage && this.source instanceof PrimedTnt)) {
+                             entity.hurt(this.getDamageSource(), (float) ((int) ((d13 * d13 + d13) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                         }
+ 
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 808e54155282631c1c300247afb7e65384d954a8..d10b9feb71b92d434a560704efc7526bdf9cc99b 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -198,4 +198,23 @@ public class EntropyConfig {
+ 
+         setComment("entropy.limits", "Enforces different cannoning and non cannoning related parameters.");
+     }
++
++    public static boolean playerIgnoreTNTDamage;
++    public static double spawnerEntityUpwardsVelocity;
++    public static boolean spawnerOverrideEntityHealth;
++    public static float spawnerEntityHealth;
++    public static boolean golemFallDamage;
++    public static boolean disableDeathAnimation;
++    private static void factions() {
++        playerIgnoreTNTDamage = getBoolean("entropy.factions.player-ignore-explosion-damage", true,
++                "Players will not take damage from explosions caused by tnt.");
++        spawnerEntityUpwardsVelocity = getDouble("entropy.factions.spawner.entity-upwards-velocity", 0, "Initial Y velocity for entities spawned from spawners.");
++        spawnerOverrideEntityHealth = getBoolean("entropy.factions.spawner.entity-override-health", false, "Entities from spawners will spawn with a specific health.");
++        spawnerEntityHealth = (float) getDouble("entropy.factions.spawner.entity-health", 1, "Health for entities spawned from spawners.");
++        golemFallDamage = getBoolean("entropy.factions.golem-fall-damage", false, "Enable fall damage for Iron Golems.");
++        disableDeathAnimation = getBoolean("entropy.factions.disable-death-animation", false, "Disable the mob death animation.");
++
++        setComment("entropy.factions", "Patches and options not related to cannoning but specifically designed for factions servers.",
++                "NOTE: Plugins related to spawners or mob stacking are likely to break some of this.");
++    }
+ }
