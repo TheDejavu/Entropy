@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 11 Dec 2023 15:59:57 +0100
+Subject: [PATCH] is in cannon api
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java b/src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3662b50404589daa7a0ce21a640490d21371a0b9
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.event;
++
++import org.bukkit.Location;
++import org.bukkit.entity.Entity;
++import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++
++public class IsInCannonEvent extends EntropyBooleanEvent {
++    private final Entity entity;
++    private final Location location;
++    public IsInCannonEvent(boolean value, Entity entity, Location location) {
++        super(value);
++        this.entity = entity;
++        this.location = location;
++    }
++
++    public Entity getEntity() {
++        return entity;
++    }
++
++    public Location getLocation() {
++        return location;
++    }
++}

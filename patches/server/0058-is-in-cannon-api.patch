@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 11 Dec 2023 15:59:57 +0100
+Subject: [PATCH] is in cannon api
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+index 6e7e6ae13b976d95da5faad732931b8df2b2e716..d760f89251a9e01ea8cc38f064f696279d9d94de 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
++++ b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+@@ -7,6 +7,7 @@ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.phys.AABB;
+ import org.bukkit.util.Vector;
++import xyz.fragmentmc.entropy.event.IsInCannonEvent;
+ 
+ import java.util.UUID;
+ 
+@@ -19,7 +20,10 @@ public class CannonUtil {
+ 
+         double x = originVector.getX() - entity.getX();
+         double z = originVector.getZ() - entity.getZ();
+-        return x * x + z * z < 48 * 48;
++        boolean isInCannon = x * x + z * z < 48 * 48;
++        org.bukkit.entity.Entity bukkitEntity = entity.getBukkitEntity();
++        IsInCannonEvent event = new IsInCannonEvent(isInCannon, bukkitEntity, bukkitEntity.getLocation());
++        return event.callEvent();
+     }
+     public static void checkNonFullCollision(BlockPos relevant, Entity entity, Level level) {
+         if (CollisionUtil.voxelShapeIntersect(entity.getBoundingBox(), new AABB(relevant))) {
