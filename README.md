@@ -28,6 +28,9 @@
 - Reduce Rays
 - Cache Block States
 
+### Packet Limiter
+- TNT Flow
+
 ### Chunks
 - TNT Chunkloading
 - Falling Block Chunkloading
