@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 11 Dec 2023 15:36:55 +0100
+Subject: [PATCH] new non full block patch
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 720dd37fb63f946e8c416c09687926f5484f63d1..2b38bd00b7c046600ef6fa3f346814bf5fcedb49 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1170,24 +1170,24 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource {
+                     }
+                 }
+ 
+-
+                 this.setPos(this.getX() + vec3d1.x, this.getY() + vec3d1.y, this.getZ() + vec3d1.z);
++
+                 // Entropy start
+                 if((this instanceof PrimedTnt || this instanceof FallingBlockEntity) && EventUtil.sendCancellable(level, new NonFullBlockCollideEvent(EntropyConfig.disableNonFullBlockHitbox, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled() && !CannonUtil.isInCannon(this)) {
++                    BlockPos inside = new BlockPos((int) this.getX(), (int) this.getY(), (int) this.getZ());;
+                     if(movement.x > vec3d1.x) {
+-                        this.setPos(Math.floor(this.getX()-0.5) + 0.4900000095367d, this.getY(), this.getZ());
++                        CannonUtil.checkNonFullCollision(inside.east(), this, this.level);
+                     }
+                     else if (movement.x < vec3d1.x) {
+-                        this.setPos(Math.ceil(this.getX()-0.5) + 0.4900000095367d, this.getY(), this.getZ());
++                        CannonUtil.checkNonFullCollision(inside.west(), this, this.level);
+                     }
+                     if (movement.z > vec3d1.z) {
+-                        this.setPos(this.getX(), this.getY(), Math.floor(this.getZ()-0.5) + 0.4900000095367d);
++                        CannonUtil.checkNonFullCollision(inside.south(), this, this.level);
+                     }
+                     else if (movement.z < vec3d1.z) {
+-                        this.setPos(this.getX(), this.getY(), Math.ceil(this.getZ()-0.5) + 0.4900000095367d);
++                        CannonUtil.checkNonFullCollision(inside.north(), this, this.level);
+                     }
+                 }
+-
+                 // Entropy end
+             }
+ 
+diff --git a/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+index c4dc0b9af886bc16183f03d184450040b4d02dfc..6e7e6ae13b976d95da5faad732931b8df2b2e716 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
++++ b/src/main/java/xyz/fragmentmc/entropy/util/CannonUtil.java
+@@ -1,7 +1,11 @@
+ package xyz.fragmentmc.entropy.util;
+ 
++import io.papermc.paper.util.CollisionUtil;
++import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.Entity;
+-import org.bukkit.World;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.phys.AABB;
+ import org.bukkit.util.Vector;
+ 
+ import java.util.UUID;
+@@ -11,11 +15,15 @@ public class CannonUtil {
+         Vector originVector = entity.getOriginVector();
+         UUID originWorld = entity.getOriginWorld();
+ 
+-
+         if(originVector == null ||originWorld != entity.level.getWorld().getUID()) return true;
+ 
+         double x = originVector.getX() - entity.getX();
+         double z = originVector.getZ() - entity.getZ();
+-        return x * x + z * z < 64 * 64;
++        return x * x + z * z < 48 * 48;
++    }
++    public static void checkNonFullCollision(BlockPos relevant, Entity entity, Level level) {
++        if (CollisionUtil.voxelShapeIntersect(entity.getBoundingBox(), new AABB(relevant))) {
++            level.setBlockAndUpdate(relevant, Blocks.COBBLESTONE.defaultBlockState());
++        }
+     }
+ }
