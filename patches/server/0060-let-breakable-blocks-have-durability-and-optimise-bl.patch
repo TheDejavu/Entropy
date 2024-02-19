@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 19 Feb 2024 17:38:12 +0100
+Subject: [PATCH] let breakable blocks have durability and optimise block
+ lookups
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 5fa0cb1bf63bc2e9cc1dd04b45494ba3bdef7ff8..ea88b96c4d5164e9128d89a798fb8b1129fd1aba 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -46,6 +46,7 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.entity.CraftEntity;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityExplodeEvent;
+@@ -254,10 +255,12 @@ public class Explosion {
+                                 blockDamageSet.add(blockposition);
+                             }
+ 
+-                            if (EntropyConfig.unbreakableBreaker &&
++                            if (unbreakableBlocks.contains(blockposition) || blockDamageSet.contains(blockposition)) {
++                                // pass
++                            }
++                            else if (EntropyConfig.unbreakableBreaker &&
+                                     !iblockdata.isAir() &&
+                                     (this.source instanceof PrimedTnt || (EntropyConfig.unbreakableCreeper && this.source instanceof Creeper)) &&
+-                                    !unbreakableBlocks.contains(blockposition) &&
+                                     level.unbreakableDurability.isBreakable(blockposition, iblockdata, level)
+                                             ) {
+                                 unbreakableBlocks.add(blockposition);
