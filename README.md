@@ -48,14 +48,25 @@
 - Explosion Proof Items
 
 ### Factions
-- Player Ignore Explosion Damage
 - Spawner Upwards Velocity
 - Spawner Override Health
 - Golem Fall Damage
-- Disable Death Animation
+- Disable Mob Death Animation
 
-### MISC
+### Security
+- IP Hashing (Hide Player IPs)
 - Disable Chat Message Verification
+
+### Player
+- Player Ignore Explosion Damage
+- Modify Knockback
+- FPS Menu (No Flashing, Hide TNT, etc.)
+
+## Permissions
+| Command  | Node                    |
+|----------|-------------------------|
+| /entropy | entropy.command.entropy |
+| /fps     | entropy.command.fps     |
 
 ## Building
 
