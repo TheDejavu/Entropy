@@ -1,0 +1,178 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Tue, 30 Jul 2024 11:22:57 +0200
+Subject: [PATCH] cache moving block shapes
+
+
+diff --git a/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java b/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
+index 1ef87580574919796dbba707f44a413ee5c5781b..eaa77809a93c4a39d77196ae6a314cdfeb6bb4fa 100644
+--- a/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
+@@ -27,6 +27,7 @@ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
++import xyz.fragmentmc.entropy.shapes.MovingBlockHelper;
+ 
+ public class PistonMovingBlockEntity extends BlockEntity {
+     private static final int TICKS_TO_EXTEND = 2;
+@@ -355,10 +356,19 @@ public class PistonMovingBlockEntity extends BlockEntity {
+             }
+ 
+             float f = this.getExtendedProgress(this.progress);
+-            double d = (double)((float)this.direction.getStepX() * f);
+-            double e = (double)((float)this.direction.getStepY() * f);
+-            double g = (double)((float)this.direction.getStepZ() * f);
+-            return Shapes.or(voxelShape, blockState.getCollisionShape(world, pos).move(d, e, g));
++            if (this.extending || !this.isSourcePiston || !(this.getCollisionRelatedBlockState().getBlock() instanceof PistonBaseBlock)) {
++                VoxelShape blockShape = blockState.getCollisionShape(world, pos);
++                VoxelShape offsetAndSimplified = MovingBlockHelper.getOffsetAndSimplified(blockShape, Math.abs(f), f < 0f ? this.direction.getOpposite() : this.direction);
++                return offsetAndSimplified;
++            }
++            else {
++                int index = MovingBlockHelper.getIndexForMergedShape(f, this.direction);
++                return MovingBlockHelper.PISTON_BASE_WITH_MOVING_HEAD_SHAPES[index];
++            }
++            // double d = (double)((float)this.direction.getStepX() * f);
++            // double e = (double)((float)this.direction.getStepY() * f);
++            // double g = (double)((float)this.direction.getStepZ() * f);
++            // return Shapes.or(voxelShape, blockState.getCollisionShape(world, pos).move(d, e, g));
+         }
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+index 2182afd1b95acf14c55bddfeec17dae0a63e1f00..ede8b2f61bcc2983526c8ff4fce4691504fcc9a1 100644
+--- a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
++++ b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+@@ -14,12 +14,51 @@ import net.minecraft.util.Mth;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.Vec3;
++import xyz.fragmentmc.entropy.shapes.OffsetVoxelShapeCache;
+ 
+-public abstract class VoxelShape {
++public abstract class VoxelShape implements OffsetVoxelShapeCache { // Entropy - cache moving block shapes
+     public final DiscreteVoxelShape shape; // Paper - public
+     @Nullable
+     private VoxelShape[] faces;
+ 
++    // Entropy start - cache moving block shapes
++    // https://github.com/CaffeineMC/lithium-fabric/blob/develop/src/main/java/me/jellysquid/mods/lithium/mixin/block/moving_block_shapes/VoxelShapeMixin.java#L10
++    private volatile VoxelShape[] offsetAndSimplified;
++    public void setShape(float offset, Direction direction, VoxelShape offsetShape) {
++        if (offsetShape == null) {
++            throw new IllegalArgumentException("offsetShape must not be null!");
++        }
++        int index = getIndexForOffsetSimplifiedShapes(offset, direction);
++        VoxelShape[] offsetAndSimplifiedShapes = this.offsetAndSimplified;
++        if (offsetAndSimplifiedShapes == null) {
++            offsetAndSimplifiedShapes = new VoxelShape[1 + 2 * 6];
++        } else {
++            offsetAndSimplifiedShapes = offsetAndSimplifiedShapes.clone();
++        }
++        offsetAndSimplifiedShapes[index] = offsetShape;
++        this.offsetAndSimplified = offsetAndSimplifiedShapes;
++    }
++
++    public VoxelShape getOffsetSimplifiedShape(float offset, Direction direction) {
++        VoxelShape[] offsetAndSimplified = this.offsetAndSimplified;
++        if (offsetAndSimplified == null) {
++            return null;
++        }
++        int index = getIndexForOffsetSimplifiedShapes(offset, direction);
++        return offsetAndSimplified[index];
++    }
++
++    private static int getIndexForOffsetSimplifiedShapes(float offset, Direction direction) {
++        if (offset != 0f && offset != 0.5f && offset != 1f) {
++            throw new IllegalArgumentException("offset must be one of {0f, 0.5f, 1f}");
++        }
++        if (offset == 0f) {
++            return 0;
++        }
++        return (int) (2 * offset) + 2 * direction.get3DDataValue();
++    }
++    // Entropy end
++
+     // Paper start
+     public boolean intersects(AABB shape) {
+         return Shapes.joinIsNotEmpty(this, new io.papermc.paper.voxel.AABBVoxelShape(shape), BooleanOp.AND);
+diff --git a/src/main/java/xyz/fragmentmc/entropy/shapes/MovingBlockHelper.java b/src/main/java/xyz/fragmentmc/entropy/shapes/MovingBlockHelper.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e74dab70d1ba078fd956c33849d3b3fd178424f8
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/shapes/MovingBlockHelper.java
+@@ -0,0 +1,58 @@
++package xyz.fragmentmc.entropy.shapes;
++
++import net.minecraft.core.Direction;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.piston.PistonBaseBlock;
++import net.minecraft.world.level.block.piston.PistonHeadBlock;
++import net.minecraft.world.phys.shapes.Shapes;
++import net.minecraft.world.phys.shapes.VoxelShape;
++
++public class MovingBlockHelper {
++    public static final VoxelShape[] PISTON_BASE_WITH_MOVING_HEAD_SHAPES = MovingBlockHelper.precomputePistonBaseWithMovingHeadShapes();
++
++    // https://github.com/CaffeineMC/lithium-fabric/blob/1.20.1/src/main/java/me/jellysquid/mods/lithium/mixin/block/moving_block_shapes/PistonBlockEntityMixin.java
++    public static VoxelShape getOffsetAndSimplified(VoxelShape blockShape, float offset, Direction direction) {
++        VoxelShape offsetSimplifiedShape = ((OffsetVoxelShapeCache) blockShape).getOffsetSimplifiedShape(offset, direction);
++        if (offsetSimplifiedShape == null) {
++            //create the offset shape and store it for later use
++            offsetSimplifiedShape = blockShape.move(direction.getStepX() * offset, direction.getStepY() * offset, direction.getStepZ() * offset).optimize();
++            ((OffsetVoxelShapeCache) blockShape).setShape(offset, direction, offsetSimplifiedShape);
++        }
++        return offsetSimplifiedShape;
++    }
++
++    public static VoxelShape[] precomputePistonBaseWithMovingHeadShapes() {
++        float[] offsets = {0f, 0.5f, 1f};
++        Direction[] directions = Direction.values();
++
++        VoxelShape[] mergedShapes = new VoxelShape[offsets.length * directions.length];
++
++        for (Direction facing : directions) {
++            VoxelShape baseShape = Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.EXTENDED, true)
++                    .setValue(PistonBaseBlock.FACING, facing).getCollisionShape(null, null);
++            for (float offset : offsets) {
++                boolean isShort = offset < 0.25f;
++
++                VoxelShape headShape = (Blocks.PISTON_HEAD.defaultBlockState().setValue(PistonHeadBlock.FACING, facing))
++                        .setValue(PistonHeadBlock.SHORT, isShort).getCollisionShape(null, null);
++
++                VoxelShape offsetHead = headShape.move(
++                        facing.getStepX() * offset,
++                        facing.getStepX() * offset,
++                        facing.getStepZ() * offset
++                );
++                mergedShapes[getIndexForMergedShape(offset, facing)] = Shapes.or(baseShape, offsetHead);
++            }
++
++        }
++
++        return mergedShapes;
++    }
++
++    public static int getIndexForMergedShape(float offset, Direction direction) {
++        if (offset != 0f && offset != 0.5f && offset != 1f) {
++            return -1;
++        }
++        return (int) (2 * offset) + (3 * direction.get3DDataValue());
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/shapes/OffsetVoxelShapeCache.java b/src/main/java/xyz/fragmentmc/entropy/shapes/OffsetVoxelShapeCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c09a8df1ba3c222332145caa47bd9b47a2e3359
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/shapes/OffsetVoxelShapeCache.java
+@@ -0,0 +1,9 @@
++package xyz.fragmentmc.entropy.shapes;
++
++import net.minecraft.core.Direction;
++import net.minecraft.world.phys.shapes.VoxelShape;
++
++public interface OffsetVoxelShapeCache {
++    VoxelShape getOffsetSimplifiedShape(float offset, Direction direction);
++    void setShape(float offset, Direction direction, VoxelShape offsetShape);
++}

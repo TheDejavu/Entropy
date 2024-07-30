@@ -27,6 +27,7 @@
 - Cache Block Density
 - Reduce Rays
 - Cache Block States
+- Cache Moving Block Shapes
 
 ### Packet Limiter
 - TNT Flow
@@ -48,6 +49,7 @@
 - Ender Pearl Range Limit
 
 ### Unbreakable Breaker
+- Highly Optimised
 - Configurable Durability
 - Configurable Check Item and Message
 
@@ -67,7 +69,13 @@
 ### Player
 - Player Ignore Explosion Damage
 - Modify Knockback
-- FPS Menu (No Flashing, Hide TNT, etc.)
+
+### FPS Menu
+- Configurable
+- Hide Entities
+- Hide Explosions
+- No Flashing
+- Hide Piston Movements
 
 ## Permissions
 | Command  | Node                    |
