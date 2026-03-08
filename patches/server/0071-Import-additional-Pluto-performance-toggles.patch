@@ -1,0 +1,331 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 16:07:52 +0200
+Subject: [PATCH] Import additional Pluto performance toggles
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 0dd30ff72dda56ef9cf5317a351f1303b6c64f9c..9bca1d78a2ce786f5c66d4cc634d0469b9dd20cf 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -237,6 +237,27 @@ public class EntropyConfig {
+     public static boolean disableTargetSelector;
+     public static boolean disableGoalSelector;
+     public static boolean disableFlapEvents;
++    public static boolean useStaticGrowthSpeedStems;
++    public static float staticGrowthSpeedStems;
++    public static boolean useStaticGrowthSpeedCrops;
++    public static float staticGrowthSpeedCrops;
++    public static boolean useStaticGrowthSpeedPitchers;
++    public static float staticGrowthSpeedPitchers;
++    public static boolean alwaysMoistFarmland;
++    public static boolean alwaysMoistSugarCane;
++    public static boolean cactusCheckSurvivalBeforeGrowth;
++    public static boolean lessRandomDispensing;
++    public static boolean disableDropperInventoryMoveEvent;
++    public static boolean disableAllayGameEventListening;
++    public static boolean disableAllayDuplication;
++    public static boolean removeExcessMinecarts;
++    public static boolean removeExcessBoats;
++    public static int excessMinecartsLimit;
++    public static int excessBoatsLimit;
++    public static boolean disableTntChainReaction;
++    public static boolean disableShulkersDroppingContentsWhenDestroyed;
++    public static boolean disableShulkerSplitting;
++    public static boolean disableShulkerTeleporting;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -255,6 +276,27 @@ public class EntropyConfig {
+         disableTargetSelector = getBoolean("starforge.performance.disable-target-selector", false, "Disable mob target selector ticking.");
+         disableGoalSelector = getBoolean("starforge.performance.disable-goal-selector", false, "Disable mob goal selector ticking.");
+         disableFlapEvents = getBoolean("starforge.performance.disable-flap-game-event", false, "Disable the movement game event emitted by flapping entities.");
++        useStaticGrowthSpeedStems = getBoolean("starforge.performance.static-growth.stems.enabled", false, "Use a fixed growth speed for melon and pumpkin stems.");
++        staticGrowthSpeedStems = (float) getDouble("starforge.performance.static-growth.stems.speed", 1.0D, "Fixed growth speed for melon and pumpkin stems.");
++        useStaticGrowthSpeedCrops = getBoolean("starforge.performance.static-growth.crops.enabled", false, "Use a fixed growth speed for crops.");
++        staticGrowthSpeedCrops = (float) getDouble("starforge.performance.static-growth.crops.speed", 1.0D, "Fixed growth speed for crops.");
++        useStaticGrowthSpeedPitchers = getBoolean("starforge.performance.static-growth.pitcher-crop.enabled", false, "Use a fixed growth speed for pitcher crops.");
++        staticGrowthSpeedPitchers = (float) getDouble("starforge.performance.static-growth.pitcher-crop.speed", 1.0D, "Fixed growth speed for pitcher crops.");
++        alwaysMoistFarmland = getBoolean("starforge.performance.always-moist.farmland", false, "Prevent farmland from drying out.");
++        alwaysMoistSugarCane = getBoolean("starforge.performance.always-moist.sugar-cane", false, "Allow sugar cane survival checks to skip nearby-water scans.");
++        cactusCheckSurvivalBeforeGrowth = getBoolean("starforge.performance.cactus.check-survival-before-growth", false, "Check whether a cactus can survive before attempting growth.");
++        lessRandomDispensing = getBoolean("starforge.performance.dispenser.less-random-dispensing", false, "Choose the first valid dispenser slot instead of a random valid slot.");
++        disableDropperInventoryMoveEvent = getBoolean("starforge.performance.dropper.disable-inventory-move-event", false, "Skip InventoryMoveItemEvent when droppers push into inventories.");
++        disableAllayGameEventListening = getBoolean("starforge.performance.allay.disable-game-event-listener", false, "Disable allay vibration listeners for better performance.");
++        disableAllayDuplication = getBoolean("starforge.performance.allay.disable-duplication", false, "Disable allay duplication.");
++        removeExcessMinecarts = getBoolean("starforge.performance.vehicle-cleanup.minecarts.enabled", false, "Remove excess minecarts during collision scans.");
++        removeExcessBoats = getBoolean("starforge.performance.vehicle-cleanup.boats.enabled", false, "Remove excess boats during collision scans.");
++        excessMinecartsLimit = Math.max(0, getInt("starforge.performance.vehicle-cleanup.minecarts.limit", 10, "Maximum minecarts to tolerate during a single collision scan before removal starts."));
++        excessBoatsLimit = Math.max(0, getInt("starforge.performance.vehicle-cleanup.boats.limit", 10, "Maximum boats to tolerate during a single collision scan before removal starts."));
++        disableTntChainReaction = getBoolean("starforge.performance.tnt.disable-chain-reaction", false, "Disable TNT priming from explosions.");
++        disableShulkersDroppingContentsWhenDestroyed = getBoolean("starforge.performance.shulker.disable-drop-contents-when-destroyed", false, "Prevent shulker boxes from dropping their contents when destroyed as items.");
++        disableShulkerSplitting = getBoolean("starforge.performance.shulker.disable-splitting", false, "Disable shulker splitting from shulker bullets.");
++        disableShulkerTeleporting = getBoolean("starforge.performance.shulker.disable-teleporting", false, "Disable random shulker teleports.");
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/world/entity/animal/allay/Allay.java b/src/main/java/net/minecraft/world/entity/animal/allay/Allay.java
+index d241ca4d0295f9fce39c11197bd435cfac7f6e54..e9a4dcccca45d384ff33e15c38ceacf09d835d00 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/allay/Allay.java
++++ b/src/main/java/net/minecraft/world/entity/animal/allay/Allay.java
+@@ -420,6 +420,7 @@ public class Allay extends PathfinderMob implements InventoryCarrier, VibrationS
+     @Override
+     public void updateDynamicGameEventListener(BiConsumer<DynamicGameEventListener<?>, ServerLevel> callback) {
+         Level world = this.level();
++        if (dev.orhidea.starforge.EntropyConfig.disableAllayGameEventListening) return;
+ 
+         if (world instanceof ServerLevel) {
+             ServerLevel worldserver = (ServerLevel) world;
+@@ -554,7 +555,7 @@ public class Allay extends PathfinderMob implements InventoryCarrier, VibrationS
+     }
+ 
+     public boolean canDuplicate() {
+-        return (Boolean) this.entityData.get(Allay.DATA_CAN_DUPLICATE);
++        return !dev.orhidea.starforge.EntropyConfig.disableAllayDuplication && (Boolean) this.entityData.get(Allay.DATA_CAN_DUPLICATE);
+     }
+ 
+     private void removeInteractionItem(Player player, ItemStack stack) {
+diff --git a/src/main/java/net/minecraft/world/entity/monster/Shulker.java b/src/main/java/net/minecraft/world/entity/monster/Shulker.java
+index f3c2a2ffb74daa89a516db4c188ce675c79932bf..96260001d6771bec21ed280b0788d51d8b7b3408 100644
+--- a/src/main/java/net/minecraft/world/entity/monster/Shulker.java
++++ b/src/main/java/net/minecraft/world/entity/monster/Shulker.java
+@@ -396,6 +396,7 @@ public class Shulker extends AbstractGolem implements VariantHolder<Optional<Dye
+     }
+ 
+     protected boolean teleportSomewhere() {
++        if (dev.orhidea.starforge.EntropyConfig.disableShulkerTeleporting) return false;
+         if (!this.isNoAi() && this.isAlive()) {
+             BlockPos blockposition = this.blockPosition();
+ 
+@@ -475,6 +476,7 @@ public class Shulker extends AbstractGolem implements VariantHolder<Optional<Dye
+         AABB axisalignedbb = this.getBoundingBox();
+ 
+         if (!this.isClosed() && this.teleportSomewhere()) {
++            if (dev.orhidea.starforge.EntropyConfig.disableShulkerSplitting) return;
+             int i = this.level().getEntities((EntityTypeTest) EntityType.SHULKER, axisalignedbb.inflate(8.0D), Entity::isAlive).size();
+             float f = (float) (i - 1) / 5.0F;
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
+index d514ec1e4cbdc579c3a61533998437903afdc8b6..be07747af05ed4f2b74d117ba573514344cff6c1 100644
+--- a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
++++ b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
+@@ -381,6 +381,7 @@ public abstract class AbstractMinecart extends VehicleEntity {
+                 this.level().getCraftServer().getPluginManager().callEvent(new org.bukkit.event.vehicle.VehicleMoveEvent(vehicle, from, to));
+             }
+             // CraftBukkit end
++            int minecartCount = 0;
+             if (this.getMinecartType() == AbstractMinecart.Type.RIDEABLE && this.getDeltaMovement().horizontalDistanceSqr() > 0.01D) {
+                 List<Entity> list = this.level().getEntities((Entity) this, this.getBoundingBox().inflate(0.20000000298023224D, 0.0D, 0.20000000298023224D), EntitySelector.pushableBy(this));
+ 
+@@ -389,6 +390,10 @@ public abstract class AbstractMinecart extends VehicleEntity {
+ 
+                     while (iterator.hasNext()) {
+                         Entity entity = (Entity) iterator.next();
++                        if (entity instanceof AbstractMinecart && dev.orhidea.starforge.EntropyConfig.removeExcessMinecarts && minecartCount++ >= dev.orhidea.starforge.EntropyConfig.excessMinecartsLimit) {
++                            entity.discard();
++                            continue;
++                        }
+ 
+                         if (!(entity instanceof Player) && !(entity instanceof IronGolem) && !(entity instanceof AbstractMinecart) && !this.isVehicle() && !entity.isPassenger()) {
+                             // CraftBukkit start
+@@ -420,6 +425,10 @@ public abstract class AbstractMinecart extends VehicleEntity {
+ 
+                 while (iterator1.hasNext()) {
+                     Entity entity1 = (Entity) iterator1.next();
++                    if (entity1 instanceof AbstractMinecart && dev.orhidea.starforge.EntropyConfig.removeExcessMinecarts && minecartCount++ >= dev.orhidea.starforge.EntropyConfig.excessMinecartsLimit) {
++                        entity1.discard();
++                        continue;
++                    }
+ 
+                     if (!this.hasPassenger(entity1) && entity1.isPushable() && entity1 instanceof AbstractMinecart) {
+                         // CraftBukkit start
+diff --git a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
+index db6aa75d642f4a7258f197933671907faf79c8f2..eff7e0965dc715cd84cf4556875656da987b72d2 100644
+--- a/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
++++ b/src/main/java/net/minecraft/world/entity/vehicle/Boat.java
+@@ -411,9 +411,14 @@ public class Boat extends VehicleEntity implements VariantHolder<Boat.Type> {
+         if (!list.isEmpty()) {
+             boolean flag = !this.level().isClientSide && !(this.getControllingPassenger() instanceof Player);
+             Iterator iterator = list.iterator();
++            int boatCount = 0;
+ 
+             while (iterator.hasNext()) {
+                 Entity entity = (Entity) iterator.next();
++                if (entity instanceof Boat && dev.orhidea.starforge.EntropyConfig.removeExcessBoats && boatCount++ >= dev.orhidea.starforge.EntropyConfig.excessBoatsLimit) {
++                    entity.discard();
++                    continue;
++                }
+ 
+                 if (!entity.hasPassenger((Entity) this)) {
+                     if (flag && this.getPassengers().size() < this.getMaxPassengers() && !entity.isPassenger() && this.hasEnoughSpaceFor(entity) && entity instanceof LivingEntity && !(entity instanceof WaterAnimal) && !(entity instanceof Player)) {
+diff --git a/src/main/java/net/minecraft/world/item/BlockItem.java b/src/main/java/net/minecraft/world/item/BlockItem.java
+index 8d2c0accadaf0c5d28e7db6e62a05f6c619cf02f..c471243173095012a4accaf996178ec841e3a2f2 100644
+--- a/src/main/java/net/minecraft/world/item/BlockItem.java
++++ b/src/main/java/net/minecraft/world/item/BlockItem.java
+@@ -287,7 +287,7 @@ public class BlockItem extends Item {
+ 
+     @Override
+     public void onDestroyed(ItemEntity entity) {
+-        if (this.block instanceof ShulkerBoxBlock) {
++        if (this.block instanceof ShulkerBoxBlock && !dev.orhidea.starforge.EntropyConfig.disableShulkersDroppingContentsWhenDestroyed) {
+             ItemStack itemstack = entity.getItem();
+             CompoundTag nbttagcompound = BlockItem.getBlockEntityData(itemstack);
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/CactusBlock.java b/src/main/java/net/minecraft/world/level/block/CactusBlock.java
+index ba4aaf850af36a84517c70581e141157c4f15b99..707c90ed0d1a78366d892ca7457a9ddf8c441398 100644
+--- a/src/main/java/net/minecraft/world/level/block/CactusBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/CactusBlock.java
+@@ -66,12 +66,24 @@ public class CactusBlock extends Block {
+ 
+                 int modifier = world.spigotConfig.cactusModifier; // Spigot - SPIGOT-7159: Better modifier resolution
+                 if (j >= 15 || (modifier != 100 && random.nextFloat() < (modifier / (100.0f * 16)))) { // Spigot - SPIGOT-7159: Better modifier resolution
++                    if (dev.orhidea.starforge.EntropyConfig.cactusCheckSurvivalBeforeGrowth && !canSurvive(world, blockposition1)) {
++                        world.levelEvent(2001, blockposition1, Block.getId(state));
++                        for (net.minecraft.world.item.ItemStack drop : Block.getDrops(state, world, pos, null)) {
++                            Block.popResource(world, blockposition1, drop);
++                        }
++                        world.setBlock(pos, state.setValue(CactusBlock.AGE, 0), 2 | 16);
++                        return;
++                    }
+                     CraftEventFactory.handleBlockGrowEvent(world, blockposition1, this.defaultBlockState()); // CraftBukkit
+                     BlockState iblockdata1 = (BlockState) state.setValue(CactusBlock.AGE, 0);
+ 
+                     world.setBlock(pos, iblockdata1, 4);
+                     world.neighborChanged(iblockdata1, blockposition1, this, pos, false);
+                 } else if (modifier == 100 || random.nextFloat() < (modifier / (100.0f * 16))) { // Spigot - SPIGOT-7159: Better modifier resolution
++                    if (dev.orhidea.starforge.EntropyConfig.cactusCheckSurvivalBeforeGrowth) {
++                        world.setBlock(pos, state.setValue(CactusBlock.AGE, j + 1), 2 | 16);
++                        return;
++                    }
+                     world.setBlock(pos, (BlockState) state.setValue(CactusBlock.AGE, j + 1), 4);
+                 }
+ 
+@@ -100,6 +112,10 @@ public class CactusBlock extends Block {
+ 
+     @Override
+     public boolean canSurvive(BlockState state, LevelReader world, BlockPos pos) {
++        return canSurvive(world, pos);
++    }
++
++    public final boolean canSurvive(LevelReader world, BlockPos pos) {
+         Iterator iterator = Direction.Plane.HORIZONTAL.iterator();
+ 
+         Direction enumdirection;
+diff --git a/src/main/java/net/minecraft/world/level/block/CropBlock.java b/src/main/java/net/minecraft/world/level/block/CropBlock.java
+index 5d3b2168044bfdad3d62aa35cde6b342dc5c87f7..c9d3790353c214907338cec2fd02b5c360b1065f 100644
+--- a/src/main/java/net/minecraft/world/level/block/CropBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/CropBlock.java
+@@ -81,7 +81,7 @@ public class CropBlock extends BushBlock implements BonemealableBlock {
+             int i = this.getAge(state);
+ 
+             if (i < this.getMaxAge()) {
+-                float f = CropBlock.getGrowthSpeed(this, world, pos);
++                float f = dev.orhidea.starforge.EntropyConfig.useStaticGrowthSpeedCrops ? dev.orhidea.starforge.EntropyConfig.staticGrowthSpeedCrops : CropBlock.getGrowthSpeed(this, world, pos);
+ 
+                 // Spigot start
+                 int modifier;
+diff --git a/src/main/java/net/minecraft/world/level/block/DropperBlock.java b/src/main/java/net/minecraft/world/level/block/DropperBlock.java
+index 9a8a0fb958e8ec782111507bae957f854b2aac72..d8acea86bc72f08a466ed74e5858593883e29855 100644
+--- a/src/main/java/net/minecraft/world/level/block/DropperBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/DropperBlock.java
+@@ -73,6 +73,17 @@ public class DropperBlock extends DispenserBlock {
+                         if (!org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockPreDispenseEvent(world, pos, itemstack, i)) return; // Paper - Add BlockPreDispenseEvent
+                         itemstack1 = DropperBlock.DISPENSE_BEHAVIOUR.dispense(sourceblock, itemstack);
+                     } else {
++                        if (dev.orhidea.starforge.EntropyConfig.disableDropperInventoryMoveEvent) {
++                            itemstack1 = HopperBlockEntity.addItem(tileentitydispenser, iinventory, itemstack.copy().split(1), enumdirection.getOpposite());
++                            if (itemstack1.isEmpty()) {
++                                itemstack1 = itemstack.copy();
++                                itemstack1.shrink(1);
++                            } else {
++                                itemstack1 = itemstack.copy();
++                            }
++                            tileentitydispenser.setItem(i, itemstack1);
++                            return;
++                        }
+                         // CraftBukkit start - Fire event when pushing items into other inventories
+                         CraftItemStack oitemstack = CraftItemStack.asCraftMirror(itemstack.copy().split(1));
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/FarmBlock.java b/src/main/java/net/minecraft/world/level/block/FarmBlock.java
+index 6e4c852c93f2418ea69e485ed3a10cbe3a6e3bd2..32aecc1ad14bbc1b3312c156b04d9cf3f139c833 100644
+--- a/src/main/java/net/minecraft/world/level/block/FarmBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/FarmBlock.java
+@@ -95,7 +95,7 @@ public class FarmBlock extends Block {
+         if (i > 0 && world.paperConfig().tickRates.wetFarmland != 1 && (world.paperConfig().tickRates.wetFarmland < 1 || (net.minecraft.server.MinecraftServer.currentTick + pos.hashCode()) % world.paperConfig().tickRates.wetFarmland != 0)) { return; } // Paper - Configurable random tick rates for blocks
+         if (i == 0 && world.paperConfig().tickRates.dryFarmland != 1 && (world.paperConfig().tickRates.dryFarmland < 1 || (net.minecraft.server.MinecraftServer.currentTick + pos.hashCode()) % world.paperConfig().tickRates.dryFarmland != 0)) { return; } // Paper - Configurable random tick rates for blocks
+ 
+-        if (!FarmBlock.isNearWater(world, pos) && !world.isRainingAt(pos.above())) {
++        if (!dev.orhidea.starforge.EntropyConfig.alwaysMoistFarmland && !FarmBlock.isNearWater(world, pos) && !world.isRainingAt(pos.above())) {
+             if (i > 0) {
+                 org.bukkit.craftbukkit.event.CraftEventFactory.handleMoistureChangeEvent(world, pos, (BlockState) state.setValue(FarmBlock.MOISTURE, i - 1), 2); // CraftBukkit
+             } else if (!FarmBlock.shouldMaintainFarmland(world, pos)) {
+diff --git a/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java b/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
+index f5bc2dda2dc1cffed847e41d869c300f5122ddf4..69dcb317fae5705e586d1234a1572892d45063c9 100644
+--- a/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
+@@ -122,7 +122,7 @@ public class PitcherCropBlock extends DoublePlantBlock implements BonemealableBl
+ 
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+-        float f = CropBlock.getGrowthSpeed(this, world, pos);
++        float f = dev.orhidea.starforge.EntropyConfig.useStaticGrowthSpeedPitchers ? dev.orhidea.starforge.EntropyConfig.staticGrowthSpeedPitchers : CropBlock.getGrowthSpeed(this, world, pos);
+         boolean bl = random.nextFloat() < (world.spigotConfig.pitcherPlantModifier / (100.0F * (Math.floor(25.0F / f) + 1))); // Paper - Fix Spigot growth modifiers
+         if (bl) {
+             this.grow(world, state, pos, 1);
+diff --git a/src/main/java/net/minecraft/world/level/block/StemBlock.java b/src/main/java/net/minecraft/world/level/block/StemBlock.java
+index 011b3723284266d3f2bd494cc1915a7dc82110a5..4206d2c2d713c3052cfbe4f632fcf84592f16214 100644
+--- a/src/main/java/net/minecraft/world/level/block/StemBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/StemBlock.java
+@@ -73,7 +73,7 @@ public class StemBlock extends BushBlock implements BonemealableBlock {
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+         if (dev.orhidea.starforge.EntropyConfig.stemIgnoreLightLevel || world.getRawBrightness(pos, 0) >= 9) {
+-            float f = CropBlock.getGrowthSpeed(this, world, pos);
++            float f = dev.orhidea.starforge.EntropyConfig.useStaticGrowthSpeedStems ? dev.orhidea.starforge.EntropyConfig.staticGrowthSpeedStems : CropBlock.getGrowthSpeed(this, world, pos);
+ 
+             if (random.nextFloat() < ((this == Blocks.PUMPKIN_STEM ? world.spigotConfig.pumpkinModifier : world.spigotConfig.melonModifier) / (100.0f * (Math.floor((25.0F / f) + 1))))) { // Spigot - SPIGOT-7159: Better modifier resolution
+                 int i = (Integer) state.getValue(StemBlock.AGE);
+diff --git a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
+index 04957d461d0e968d443737068aaeec1d0bce78b2..d13a9a9bf6392e593c4a1185e07c60e718f68228 100644
+--- a/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/SugarCaneBlock.java
+@@ -91,6 +91,7 @@ public class SugarCaneBlock extends Block {
+             return true;
+         } else {
+             if (iblockdata1.is(BlockTags.DIRT) || iblockdata1.is(BlockTags.SAND)) {
++                if (world instanceof ServerLevel && dev.orhidea.starforge.EntropyConfig.alwaysMoistSugarCane) return true;
+                 BlockPos blockposition1 = pos.below();
+                 Iterator iterator = Direction.Plane.HORIZONTAL.iterator();
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/TntBlock.java b/src/main/java/net/minecraft/world/level/block/TntBlock.java
+index 5fa5e8c838720eb1491aea73d462f4bc7d779956..27b830171a2f08fad891014bbe55fdb41e803a9c 100644
+--- a/src/main/java/net/minecraft/world/level/block/TntBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/TntBlock.java
+@@ -88,7 +88,7 @@ public class TntBlock extends Block {
+ 
+     @Override
+     public void wasExploded(Level world, BlockPos pos, Explosion explosion) {
+-        if (!world.isClientSide) {
++        if (!world.isClientSide && !dev.orhidea.starforge.EntropyConfig.disableTntChainReaction) {
+             // Paper start - TNTPrimeEvent
+             org.bukkit.block.Block tntBlock = org.bukkit.craftbukkit.block.CraftBlock.at(world, pos);
+             org.bukkit.entity.Entity source = explosion.source != null ? explosion.source.getBukkitEntity() : null;
+diff --git a/src/main/java/net/minecraft/world/level/block/entity/DispenserBlockEntity.java b/src/main/java/net/minecraft/world/level/block/entity/DispenserBlockEntity.java
+index 881379681c39230a00b3a1f11cd87498984396c7..7880674bcdf419344e53b387b372c2e6b4ed40b6 100644
+--- a/src/main/java/net/minecraft/world/level/block/entity/DispenserBlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/entity/DispenserBlockEntity.java
+@@ -69,6 +69,14 @@ public class DispenserBlockEntity extends RandomizableContainerBlockEntity {
+ 
+     public int getRandomSlot(RandomSource random) {
+         this.unpackLootTable((Player) null);
++        if (this.level != null && dev.orhidea.starforge.EntropyConfig.lessRandomDispensing) {
++            for (int slot = 0; slot < this.items.size(); ++slot) {
++                if (!this.items.get(slot).isEmpty()) {
++                    return slot;
++                }
++            }
++            return -1;
++        }
+         int i = -1;
+         int j = 1;
+ 
