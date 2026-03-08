@@ -1,0 +1,308 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:48:11 +0200
+Subject: [PATCH] Add network debug command
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java b/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba74ad9fb7455cc8d6fbe69a9657322d92f22457
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java
+@@ -0,0 +1,132 @@
++package dev.orhidea.starforge.command;
++
++import com.mojang.brigadier.CommandDispatcher;
++import com.mojang.brigadier.arguments.IntegerArgumentType;
++import net.minecraft.commands.CommandSourceStack;
++import net.minecraft.commands.Commands;
++import net.minecraft.network.Connection;
++import net.minecraft.network.PacketListener;
++import net.minecraft.network.chat.Component;
++import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.server.network.ServerCommonPacketListenerImpl;
++
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++
++public final class NetDebugCommand {
++    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
++        dispatcher.register(Commands.literal("netdebug")
++            .requires(listener -> listener.hasPermission(3, "starforge.command.netdebug"))
++            .executes(context -> execute(context.getSource(), 10))
++            .then(Commands.argument("limit", IntegerArgumentType.integer(1, 50))
++                .executes(context -> execute(context.getSource(), IntegerArgumentType.getInteger(context, "limit")))));
++    }
++
++    private static int execute(CommandSourceStack source, int limit) {
++        List<ConnectionSnapshot> snapshots = new ArrayList<>();
++        List<Connection> connections = source.getServer().getConnection().getConnections();
++
++        for (Connection connection : connections) {
++            ServerPlayer player = connection.getPlayer();
++            PacketListener packetListener = connection.getPacketListener();
++            if (player == null || !(packetListener instanceof ServerCommonPacketListenerImpl commonPacketListener)) {
++                continue;
++            }
++
++            snapshots.add(ConnectionSnapshot.from(player, connection, commonPacketListener));
++        }
++
++        snapshots.sort(Comparator
++            .comparingInt(ConnectionSnapshot::pendingActions).reversed()
++            .thenComparing(ConnectionSnapshot::keepAlivePending).reversed()
++            .thenComparingLong(ConnectionSnapshot::keepAliveAgeMillis).reversed()
++            .thenComparingInt(ConnectionSnapshot::avgSentPackets).reversed());
++
++        source.sendSuccess(() -> Component.literal(
++            "NetDebug: totalConnections=" + connections.size()
++                + " playerConnections=" + snapshots.size()
++                + " altKeepAlive=" + dev.orhidea.starforge.EntropyConfig.useAlternateKeepAlive
++        ), false);
++
++        if (snapshots.isEmpty()) {
++            source.sendSuccess(() -> Component.literal("No active player connections."), false);
++            return 0;
++        }
++
++        int shown = Math.min(limit, snapshots.size());
++        for (int index = 0; index < shown; ++index) {
++            ConnectionSnapshot snapshot = snapshots.get(index);
++            int rank = index + 1;
++            source.sendSuccess(() -> Component.literal(snapshot.format(rank)), false);
++        }
++
++        return shown;
++    }
++
++    private record ConnectionSnapshot(
++        String playerName,
++        int ping,
++        int pendingActions,
++        int maxPendingActions,
++        int avgSentPackets,
++        int avgReceivedPackets,
++        long queuedPackets,
++        long immediatePackets,
++        long flushCalls,
++        boolean keepAlivePending,
++        int pendingKeepAlives,
++        long keepAliveAgeMillis,
++        long keepAliveLimitMillis,
++        boolean writable,
++        long bytesBeforeUnwritable
++    ) {
++        private static ConnectionSnapshot from(ServerPlayer player, Connection connection, ServerCommonPacketListenerImpl commonPacketListener) {
++            return new ConnectionSnapshot(
++                player.getGameProfile().getName(),
++                commonPacketListener.latency(),
++                connection.getPendingActionCount(),
++                connection.getMaxPendingActionCount(),
++                Math.round(connection.getAverageSentPackets()),
++                Math.round(connection.getAverageReceivedPackets()),
++                connection.getQueuedPacketCount(),
++                connection.getImmediatePacketCount(),
++                connection.getFlushCallCount(),
++                commonPacketListener.isKeepAlivePendingForDebug(),
++                commonPacketListener.getPendingKeepAliveCountForDebug(),
++                commonPacketListener.getKeepAliveAgeMillisForDebug(),
++                commonPacketListener.getKeepAliveLimitMillisForDebug(),
++                connection.isChannelWritableForDebug(),
++                connection.getBytesBeforeUnwritableForDebug()
++            );
++        }
++
++        private String format(int rank) {
++            return "#" + rank
++                + " " + this.playerName
++                + " ping=" + this.ping + "ms"
++                + " queue=" + this.pendingActions + "/" + this.maxPendingActions
++                + " avgOut=" + this.avgSentPackets
++                + " avgIn=" + this.avgReceivedPackets
++                + " queuedTotal=" + this.queuedPackets
++                + " immediateTotal=" + this.immediatePackets
++                + " flushes=" + this.flushCalls
++                + " keepalive=" + (this.keepAlivePending ? ("pending " + this.keepAliveAgeMillis + "/" + this.keepAliveLimitMillis + "ms queued=" + this.pendingKeepAlives) : "clear")
++                + " writable=" + this.writable
++                + " beforeUnwritable=" + formatBytes(this.bytesBeforeUnwritable);
++        }
++
++        private static String formatBytes(long bytes) {
++            if (bytes < 0L) {
++                return "n/a";
++            }
++            if (bytes < 1024L) {
++                return bytes + "B";
++            }
++            if (bytes < 1024L * 1024L) {
++                return String.format(java.util.Locale.ROOT, "%.1fKiB", bytes / 1024.0D);
++            }
++            return String.format(java.util.Locale.ROOT, "%.1fMiB", bytes / (1024.0D * 1024.0D));
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index a6b02e2d21f1bae8c6414cc42fb276442d8e0db8..14f7d1c756a5c2be226bb128c1378c2c9a007a8a 100644
+--- a/src/main/java/net/minecraft/commands/Commands.java
++++ b/src/main/java/net/minecraft/commands/Commands.java
+@@ -253,6 +253,7 @@ public class Commands {
+             dev.orhidea.starforge.command.TPSBarCommand.register(this.dispatcher); // Starforge
+             dev.orhidea.starforge.command.RamBarCommand.register(this.dispatcher); // Starforge
+             dev.orhidea.starforge.command.RamCommand.register(this.dispatcher); // Starforge
++            dev.orhidea.starforge.command.NetDebugCommand.register(this.dispatcher); // Starforge
+         }
+ 
+         if (environment.includeIntegrated) {
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 66431aea8fe0a5e1b15f30afcad130e60e3d0ff1..4193d20d928ed43b0bb1574a3749aadff3bd480b 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -35,6 +35,7 @@ import java.util.HashSet;
+ import java.util.Objects;
+ import java.util.Queue;
+ import java.util.UUID;
++import java.util.concurrent.atomic.AtomicLong;
+ import java.util.concurrent.RejectedExecutionException;
+ import java.util.function.Consumer;
+ import java.util.function.Supplier;
+@@ -129,6 +130,10 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private boolean handlingFault;
+     @Nullable
+     private volatile Component delayedDisconnect;
++    private final AtomicLong queuedPacketCount = new AtomicLong();
++    private final AtomicLong immediatePacketCount = new AtomicLong();
++    private final AtomicLong flushCallCount = new AtomicLong();
++    private volatile int maxPendingActions;
+     @Nullable
+     BandwidthDebugMonitor bandwidthDebugMonitor;
+     public String hostname = ""; // CraftBukkit - add field
+@@ -529,6 +534,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             final boolean hasExtraPackets = extraPackets != null && !extraPackets.isEmpty();
+             if (!hasExtraPackets) {
+                 this.pendingActions.add(new PacketSendAction(packet, callbacks, flush));
++                this.queuedPacketCount.incrementAndGet();
+             } else {
+                 final java.util.List<PacketSendAction> actions = new java.util.ArrayList<>(1 + extraPackets.size());
+                 actions.add(new PacketSendAction(packet, null, false)); // Delay the future listener until the end of the extra packets
+@@ -540,7 +546,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                 }
+ 
+                 this.pendingActions.addAll(actions);
++                this.queuedPacketCount.addAndGet(actions.size());
+             }
++            this.trackPendingActions();
+ 
+             this.flushQueue();
+             // Paper end - Optimize network
+@@ -587,6 +595,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+     private void sendPacket(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
+         ++this.sentPackets;
++        this.immediatePacketCount.incrementAndGet();
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.doSendPacket(packet, callbacks, flush);
+         } else {
+@@ -606,6 +615,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+         try {
+         // Paper end - Optimize network
++        if (flush) {
++            this.flushCallCount.incrementAndGet();
++        }
+         ChannelFuture channelfuture = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet);
+ 
+         if (callbacks != null) {
+@@ -648,6 +660,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     private void flush() {
++        this.flushCallCount.incrementAndGet();
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.channel.flush();
+         } else {
+@@ -723,6 +736,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                 queued.accept(this);
+             }
+         }
++        this.trackPendingActions();
+         return true;
+     }
+     // Paper end - Optimize network
+@@ -1031,6 +1045,34 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return this.averageSentPackets;
+     }
+ 
++    public int getPendingActionCount() {
++        return this.pendingActions.size();
++    }
++
++    public int getMaxPendingActionCount() {
++        return this.maxPendingActions;
++    }
++
++    public long getQueuedPacketCount() {
++        return this.queuedPacketCount.get();
++    }
++
++    public long getImmediatePacketCount() {
++        return this.immediatePacketCount.get();
++    }
++
++    public long getFlushCallCount() {
++        return this.flushCallCount.get();
++    }
++
++    public boolean isChannelWritableForDebug() {
++        return this.channel != null && this.channel.isWritable();
++    }
++
++    public long getBytesBeforeUnwritableForDebug() {
++        return this.channel == null ? -1L : this.channel.bytesBeforeUnwritable();
++    }
++
+     public void setBandwidthLogger(SampleLogger log) {
+         this.bandwidthDebugMonitor = new BandwidthDebugMonitor(log);
+     }
+@@ -1047,6 +1089,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             }
+         }
+         this.pendingActions.clear();
++        this.trackPendingActions();
++    }
++
++    private void trackPendingActions() {
++        int pending = this.pendingActions.size();
++        if (pending > this.maxPendingActions) {
++            this.maxPendingActions = pending;
++        }
+     }
+ 
+     private static class InnerUtil { // Attempt to hide these methods from ProtocolLib, so it doesn't accidently pick them up.
+diff --git a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 430198f4323f4e6a860ffa8c10311a0c01916113..e8ed6f01c1f2aba2442f59cb478006fb7360ac8f 100644
+--- a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -386,6 +386,22 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         return this.latency;
+     }
+ 
++    public boolean isKeepAlivePendingForDebug() {
++        return this.keepAlivePending;
++    }
++
++    public int getPendingKeepAliveCountForDebug() {
++        return this.keepAlives.size();
++    }
++
++    public long getKeepAliveAgeMillisForDebug() {
++        return Util.getMillis() - this.keepAliveTime;
++    }
++
++    public long getKeepAliveLimitMillisForDebug() {
++        return KEEPALIVE_LIMIT;
++    }
++
+     protected CommonListenerCookie createCookie(ClientInformation syncedOptions) {
+         return new CommonListenerCookie(this.playerProfile(), this.latency, syncedOptions);
+     }
