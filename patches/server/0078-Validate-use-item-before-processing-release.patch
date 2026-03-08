@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 19:20:44 +0200
+Subject: [PATCH] Validate use item before processing release
+
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 727d592d81004bcb06886eaf47b7931fbc43da51..6f9abefe98879c3ca5980a1033eb2ef1f4a008fb 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -1839,7 +1839,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+ 
+                 return;
+             case RELEASE_USE_ITEM:
+-                this.player.releaseUsingItem();
++                if (this.player.getUseItem() == this.player.getItemInHand(this.player.getUsedItemHand())) this.player.releaseUsingItem();
+                 return;
+             case START_DESTROY_BLOCK:
+             case ABORT_DESTROY_BLOCK:
