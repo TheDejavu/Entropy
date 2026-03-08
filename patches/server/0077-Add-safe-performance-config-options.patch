@@ -1,0 +1,679 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 19:16:13 +0200
+Subject: [PATCH] Add safe performance config options
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index eb3aa6337ff3ffb33cc38091ef778c780ad0708e..445c977433983aefd74cf01c79cf87c3d8b6401e 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -272,6 +272,13 @@ public class EntropyConfig {
+     public static short spawnerMaxNearbyEntities;
+     public static short spawnerRequiredPlayerRange;
+     public static short spawnerSpawnRange;
++    public static boolean onlyTickItemsInHand;
++    public static boolean cacheChunkPackets;
++    public static boolean skipIdleEntitySchedulerTicks;
++    public static boolean rewriteFramedMapTracker;
++    public static boolean skipMapItemDataUpdatesWithoutCraftRenderer;
++    public static boolean dontSavePrimedTnt;
++    public static boolean dontSaveFallingBlocks;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -325,6 +332,13 @@ public class EntropyConfig {
+         spawnerMaxNearbyEntities = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.max-nearby-entities", 6, "Spawner max nearby entities."));
+         spawnerRequiredPlayerRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.required-player-range", 16, "Spawner required player range."));
+         spawnerSpawnRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.spawn-range", 4, "Spawner spawn range."));
++        onlyTickItemsInHand = getBoolean("starforge.performance.player.only-tick-items-in-hand", true, "Only tick complex item updates for the main hand and off hand.");
++        cacheChunkPackets = getBoolean("starforge.performance.chunk.cache-packets", false, "Reuse cached outbound chunk packets when anti-xray does not need per-player rewriting.");
++        skipIdleEntitySchedulerTicks = getBoolean("starforge.performance.scheduler.skip-idle-entity-scheduler-ticks", true, "Skip entity scheduler ticking for entities without queued scheduler tasks.");
++        rewriteFramedMapTracker = getBoolean("starforge.performance.maps.rewrite-framed-map-tracker", true, "Use a cheaper framed-map update path and share packets when possible.");
++        skipMapItemDataUpdatesWithoutCraftRenderer = getBoolean("starforge.performance.maps.skip-data-updates-without-craft-renderer", false, "Skip vanilla map data updates when a map no longer uses the CraftMapRenderer.");
++        dontSavePrimedTnt = getBoolean("starforge.performance.persistence.dont-save-primed-tnt", false, "Do not save primed TNT entities when chunks unload.");
++        dontSaveFallingBlocks = getBoolean("starforge.performance.persistence.dont-save-falling-blocks", false, "Do not save falling block entities when chunks unload.");
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/io/papermc/paper/threadedregions/EntityScheduler.java b/src/main/java/io/papermc/paper/threadedregions/EntityScheduler.java
+index 62484ebf4550b05182f693a3180bbac5d5fd906d..11870d500de685904c8c0667b4b416fc81f70e7f 100644
+--- a/src/main/java/io/papermc/paper/threadedregions/EntityScheduler.java
++++ b/src/main/java/io/papermc/paper/threadedregions/EntityScheduler.java
+@@ -2,6 +2,7 @@ package io.papermc.paper.threadedregions;
+ 
+ import ca.spottedleaf.concurrentutil.util.Validate;
+ import io.papermc.paper.util.TickThread;
++import net.minecraft.server.MinecraftServer;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import net.minecraft.world.entity.Entity;
+ import org.bukkit.craftbukkit.entity.CraftEntity;
+@@ -36,6 +37,7 @@ public final class EntityScheduler {
+      * The Entity. Note that it is the CraftEntity, since only that class properly tracks world transfers.
+      */
+     public final CraftEntity entity;
++    public final MinecraftServer server;
+ 
+     private static final record ScheduledTask(Consumer<? extends Entity> run, Consumer<? extends Entity> retired) {}
+ 
+@@ -46,7 +48,8 @@ public final class EntityScheduler {
+ 
+     private final ArrayDeque<ScheduledTask> currentlyExecuting = new ArrayDeque<>();
+ 
+-    public EntityScheduler(final CraftEntity entity) {
++    public EntityScheduler(final MinecraftServer server, final CraftEntity entity) {
++        this.server = Validate.notNull(server);
+         this.entity = Validate.notNull(entity);
+     }
+ 
+@@ -61,15 +64,15 @@ public final class EntityScheduler {
+      * @throws IllegalStateException If the scheduler is already retired.
+      */
+     public void retire() {
++        final Entity thisEntity = this.entity.getHandleRaw();
+         synchronized (this.stateLock) {
+             if (this.tickCount == RETIRED_TICK_COUNT) {
+                 throw new IllegalStateException("Already retired");
+             }
+             this.tickCount = RETIRED_TICK_COUNT;
++            this.server.entitiesWithScheduledTasks.remove(thisEntity);
+         }
+ 
+-        final Entity thisEntity = this.entity.getHandleRaw();
+-
+         // correctly handle and order retiring while running executeTick
+         for (int i = 0, len = this.currentlyExecuting.size(); i < len; ++i) {
+             final ScheduledTask task = this.currentlyExecuting.pollFirst();
+@@ -124,6 +127,7 @@ public final class EntityScheduler {
+             if (this.tickCount == RETIRED_TICK_COUNT) {
+                 return false;
+             }
++            this.server.entitiesWithScheduledTasks.add(this.entity.getHandleRaw());
+             this.oneTimeDelayed.computeIfAbsent(this.tickCount + Math.max(1L, delay), (final long keyInMap) -> {
+                 return new ArrayList<>();
+             }).add(task);
+@@ -143,6 +147,10 @@ public final class EntityScheduler {
+         TickThread.ensureTickThread(thisEntity, "May not tick entity scheduler asynchronously");
+         final List<ScheduledTask> toRun;
+         synchronized (this.stateLock) {
++            if (dev.orhidea.starforge.EntropyConfig.skipIdleEntitySchedulerTicks && this.currentlyExecuting.isEmpty() && this.oneTimeDelayed.isEmpty()) {
++                this.server.entitiesWithScheduledTasks.remove(thisEntity);
++                return;
++            }
+             if (this.tickCount == RETIRED_TICK_COUNT) {
+                 throw new IllegalStateException("Ticking retired scheduler");
+             }
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 631b26455323c598c6e9a2ebc8b67d3cc1c61dd7..df6f05f01981c153906cb550a313719f412a0d9c 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -306,6 +306,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     public final io.papermc.paper.configuration.PaperConfigurations paperConfigurations; // Paper - add paper configuration files
+     public static long currentTickLong = 0L; // Paper - track current tick as a long
+     public boolean isIteratingOverLevels = false; // Paper - Throw exception on world create while being ticked
++    public final Set<Entity> entitiesWithScheduledTasks = java.util.concurrent.ConcurrentHashMap.newKeySet();
+ 
+     public volatile Thread shutdownThread; // Paper
+     public volatile boolean abnormalExit = false; // Paper
+@@ -1643,8 +1644,8 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         this.server.getScheduler().mainThreadHeartbeat(this.tickCount); // CraftBukkit
+         // Paper start - Folia scheduler API
+         ((io.papermc.paper.threadedregions.scheduler.FoliaGlobalRegionScheduler) Bukkit.getGlobalRegionScheduler()).tick();
+-        getAllLevels().forEach(level -> {
+-            for (final Entity entity : level.getEntityLookup().getAllCopy()) { // Paper - rewrite chunk system
++        if (dev.orhidea.starforge.EntropyConfig.skipIdleEntitySchedulerTicks) {
++            for (final Entity entity : this.entitiesWithScheduledTasks) {
+                 if (entity.isRemoved()) {
+                     continue;
+                 }
+@@ -1653,7 +1654,19 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+                     bukkit.taskScheduler.executeTick();
+                 }
+             }
+-        });
++        } else {
++            getAllLevels().forEach(level -> {
++                for (final Entity entity : level.getEntityLookup().getAllCopy()) { // Paper - rewrite chunk system
++                    if (entity.isRemoved()) {
++                        continue;
++                    }
++                    final org.bukkit.craftbukkit.entity.CraftEntity bukkit = entity.getBukkitEntityRaw();
++                    if (bukkit != null) {
++                        bukkit.taskScheduler.executeTick();
++                    }
++                }
++            });
++        }
+         // Paper end - Folia scheduler API
+         io.papermc.paper.adventure.providers.ClickCallbackProviderImpl.CALLBACK_MANAGER.handleQueue(this.tickCount); // Paper
+         this.profiler.push("commandFunctions");
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index db55ad9aaabfa1ea998754f3ac352d1698936696..c518626f90278997f5b7410f27dd4077587aef4a 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -111,13 +111,37 @@ public class ServerEntity {
+ 
+         Entity entity = this.entity;
+ 
+-        if (!this.trackedPlayers.isEmpty() && entity instanceof ItemFrame) { // Paper - Perf: Only tick item frames if players can see it
+-            ItemFrame entityitemframe = (ItemFrame) entity;
++        if (!this.trackedPlayers.isEmpty() && entity instanceof ItemFrame entityitemframe) { // Paper - Perf: Only tick item frames if players can see it
+ 
+             if (true || this.tickCount % 10 == 0) { // CraftBukkit - Moved below, should always enter this block
+                 ItemStack itemstack = entityitemframe.getItem();
+ 
+-                if (this.level.paperConfig().maps.itemFrameCursorUpdateInterval > 0 && this.tickCount % this.level.paperConfig().maps.itemFrameCursorUpdateInterval == 0 && itemstack.getItem() instanceof MapItem) { // CraftBukkit - Moved this.tickCounter % 10 logic here so item frames do not enter the other blocks // Paper - Make item frame map cursor update interval configurable
++                if (dev.orhidea.starforge.EntropyConfig.rewriteFramedMapTracker && entityitemframe.cachedMapId != null && this.level.paperConfig().maps.itemFrameCursorUpdateInterval > 0 && this.tickCount % this.level.paperConfig().maps.itemFrameCursorUpdateInterval == 0) {
++                    Integer integer = entityitemframe.cachedMapId; // Paper - Perf: Cache map ids on item frames
++                    MapItemSavedData worldmap = MapItem.getSavedData(integer, this.level);
++
++                    if (worldmap != null) {
++                        if (!worldmap.hasContextualRenderer) {
++                            final Packet<?> updatePacket = worldmap.framedUpdatePacket(integer, worldmap.hasPluginRenderer ? com.google.common.collect.Iterables.getFirst(this.trackedPlayers, null).getPlayer() : null);
++                            if (updatePacket != null) {
++                                for (ServerPlayerConnection connection : this.trackedPlayers) {
++                                    connection.send(updatePacket);
++                                }
++                            }
++                        } else {
++                            Iterator<ServerPlayerConnection> iterator = this.trackedPlayers.iterator(); // CraftBukkit
++
++                            while (iterator.hasNext()) {
++                                ServerPlayer entityplayer = iterator.next().getPlayer(); // CraftBukkit
++                                Packet<?> packet = worldmap.framedUpdatePacket(integer, entityplayer);
++
++                                if (packet != null) {
++                                    entityplayer.connection.send(packet);
++                                }
++                            }
++                        }
++                    }
++                } else if (this.level.paperConfig().maps.itemFrameCursorUpdateInterval > 0 && this.tickCount % this.level.paperConfig().maps.itemFrameCursorUpdateInterval == 0 && itemstack.getItem() instanceof MapItem) { // CraftBukkit - Moved this.tickCounter % 10 logic here so item frames do not enter the other blocks // Paper - Make item frame map cursor update interval configurable
+                     Integer integer = entityitemframe.cachedMapId; // Paper - Perf: Cache map ids on item frames
+                     MapItemSavedData worldmap = MapItem.getSavedData(integer, this.level);
+ 
+@@ -304,6 +328,16 @@ public class ServerEntity {
+ 
+         this.yHeadRotp = Mth.floor(this.entity.getYHeadRot() * 256.0F / 360.0F);
+         sender.accept(packet);
++        if (dev.orhidea.starforge.EntropyConfig.rewriteFramedMapTracker && this.entity instanceof ItemFrame frame && frame.cachedMapId != null) {
++            MapItemSavedData mapData = MapItem.getSavedData(frame.cachedMapId, this.level);
++            if (mapData != null) {
++                mapData.addFrameDecoration(frame);
++                final Packet<?> mapPacket = mapData.fullUpdatePacket(frame.cachedMapId, mapData.hasPluginRenderer ? player : null);
++                if (mapPacket != null) {
++                    sender.accept((Packet<ClientGamePacketListener>) mapPacket);
++                }
++            }
++        }
+         if (this.trackedDataValues != null) {
+             sender.accept(new ClientboundSetEntityDataPacket(this.entity.getId(), this.trackedDataValues));
+         }
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index c74e1e4c3f4a705a515ed80c7abbab4bd5af325e..d31a65c6067a89fe3ebe59b4565c52e54530c601 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -100,6 +100,7 @@ import net.minecraft.world.effect.MobEffectInstance;
+ import net.minecraft.world.effect.MobEffects;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntitySelector;
++import net.minecraft.world.entity.EquipmentSlot;
+ import net.minecraft.world.entity.HumanoidArm;
+ import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.Mob;
+@@ -777,15 +778,12 @@ public class ServerPlayer extends Player {
+                 super.tick();
+             }
+ 
+-            for (int i = 0; i < this.getInventory().getContainerSize(); ++i) {
+-                ItemStack itemstack = this.getInventory().getItem(i);
+-
+-                if (itemstack.getItem().isComplex()) {
+-                    Packet<?> packet = ((ComplexItem) itemstack.getItem()).getUpdatePacket(itemstack, this.level(), this);
+-
+-                    if (packet != null) {
+-                        this.connection.send(packet);
+-                    }
++            if (dev.orhidea.starforge.EntropyConfig.onlyTickItemsInHand) {
++                this.tickComplexItem(this.getItemBySlot(EquipmentSlot.MAINHAND));
++                this.tickComplexItem(this.getItemBySlot(EquipmentSlot.OFFHAND));
++            } else {
++                for (int i = 0; i < this.getInventory().getContainerSize(); ++i) {
++                    this.tickComplexItem(this.getInventory().getItem(i));
+                 }
+             }
+ 
+@@ -896,6 +894,17 @@ public class ServerPlayer extends Player {
+ 
+     }
+ 
++    private void tickComplexItem(ItemStack itemStack) {
++        if (!itemStack.getItem().isComplex()) {
++            return;
++        }
++
++        Packet<?> packet = ((ComplexItem) itemStack.getItem()).getUpdatePacket(itemStack, this.level(), this);
++        if (packet != null) {
++            this.connection.send(packet);
++        }
++    }
++
+     private void updateScoreForCriteria(ObjectiveCriteria criterion, int score) {
+         // CraftBukkit - Use our scores instead
+         this.level().getCraftServer().getScoreboardManager().forAllObjectives(criterion, this, (scoreaccess) -> {
+diff --git a/src/main/java/net/minecraft/server/network/PlayerChunkSender.java b/src/main/java/net/minecraft/server/network/PlayerChunkSender.java
+index 8a360bf585041af8cd74dbb38d3c888c998289c5..79540730a81f22c4635995ceca9829f3f42f277c 100644
+--- a/src/main/java/net/minecraft/server/network/PlayerChunkSender.java
++++ b/src/main/java/net/minecraft/server/network/PlayerChunkSender.java
+@@ -2,6 +2,7 @@ package net.minecraft.server.network;
+ 
+ import com.google.common.collect.Comparators;
+ import com.mojang.logging.LogUtils;
++import dev.orhidea.starforge.EntropyConfig;
+ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import java.util.Comparator;
+@@ -89,7 +90,18 @@ public class PlayerChunkSender {
+         handler.player.serverLevel().chunkSource.chunkMap.getVisibleChunkIfPresent(chunk.getPos().toLong()).addPlayer(handler.player);
+         // Paper start - Anti-Xray
+         final boolean shouldModify = world.chunkPacketBlockController.shouldModify(handler.player, chunk);
+-        handler.send(new ClientboundLevelChunkWithLightPacket(chunk, world.getLightEngine(), null, null, shouldModify));
++        ClientboundLevelChunkWithLightPacket packet;
++        long now = System.currentTimeMillis();
++        if (EntropyConfig.cacheChunkPackets && !shouldModify && chunk.chunkPacket != null && now - chunk.lastUpdatedPacketTime < 5000L) {
++            packet = chunk.chunkPacket;
++        } else {
++            packet = new ClientboundLevelChunkWithLightPacket(chunk, world.getLightEngine(), null, null, shouldModify);
++            if (EntropyConfig.cacheChunkPackets && !shouldModify) {
++                chunk.chunkPacket = packet;
++                chunk.lastUpdatedPacketTime = now;
++            }
++        }
++        handler.send(packet);
+         // Paper end - Anti-Xray
+         // Paper start - PlayerChunkLoadEvent
+         if (io.papermc.paper.event.packet.PlayerChunkLoadEvent.getHandlerList().getRegisteredListeners().length > 0) {
+diff --git a/src/main/java/net/minecraft/world/entity/decoration/ItemFrame.java b/src/main/java/net/minecraft/world/entity/decoration/ItemFrame.java
+index c34701f95580e4cf45fe086115563127432a28c5..393bbf3468102cc7d4e8dbf5746ce83e2b100274 100644
+--- a/src/main/java/net/minecraft/world/entity/decoration/ItemFrame.java
++++ b/src/main/java/net/minecraft/world/entity/decoration/ItemFrame.java
+@@ -482,6 +482,16 @@ public class ItemFrame extends HangingEntity {
+                         return InteractionResult.FAIL;
+                     }
+                     this.setItem(ItemStack.fromBukkitCopy(event.getItemStack()));
++                    if (dev.orhidea.starforge.EntropyConfig.rewriteFramedMapTracker) {
++                        final ItemStack item = this.getItem();
++                        if (item.is(Items.FILLED_MAP)) {
++                            final MapItemSavedData data = MapItem.getSavedData(item, this.level());
++                            if (data != null) {
++                                data.addFrameDecoration(this);
++                                data.markAllDirty();
++                            }
++                        }
++                    }
+                     // Paper end - Add PlayerItemFrameChangeEvent
+                     this.gameEvent(GameEvent.BLOCK_CHANGE, player);
+                     if (!player.getAbilities().instabuild) {
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index dd711983b678e67bdd6976eb09607fe2123bba70..8bdbb6ff662ac5a8a74156375e8080c9ab4cf384 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -415,6 +415,11 @@ public class FallingBlockEntity extends Entity {
+         this.setPos(d0, d1, d2);
+         this.setStartPos(this.blockPosition());
+     }
++
++    @Override
++    public boolean shouldBeSaved() {
++        return !dev.orhidea.starforge.EntropyConfig.dontSaveFallingBlocks && super.shouldBeSaved();
++    }
+ }
+ 
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 6f0dc96b8c9f11a12b2f6af267b3cc2711bbc672..ef231cfee2ee6936c2627d628bb49a05b0cf5ff6 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -249,6 +249,11 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         }
+         return neo;
+     }
++
++    @Override
++    public boolean shouldBeSaved() {
++        return !EntropyConfig.dontSavePrimedTnt && super.shouldBeSaved();
++    }
+     // Entropy end
+ }
+ 
+diff --git a/src/main/java/net/minecraft/world/item/MapItem.java b/src/main/java/net/minecraft/world/item/MapItem.java
+index d8dd99ec8bf7444c5a3c426db3a9c13e334dc0ff..353fce3b2139f6beb925c2b975b7dc553f3a1230 100644
+--- a/src/main/java/net/minecraft/world/item/MapItem.java
++++ b/src/main/java/net/minecraft/world/item/MapItem.java
+@@ -324,7 +324,7 @@ public class MapItem extends ComplexItem {
+                     worldmap.tickCarriedBy(entityhuman, stack);
+                 }
+ 
+-                if (!worldmap.locked && (selected || entity instanceof Player && ((Player) entity).getOffhandItem() == stack)) {
++                if (!worldmap.locked && (!dev.orhidea.starforge.EntropyConfig.skipMapItemDataUpdatesWithoutCraftRenderer || worldmap.mapView.getRenderers().stream().anyMatch(mapRenderer -> mapRenderer.getClass() == org.bukkit.craftbukkit.map.CraftMapRenderer.class)) && (selected || entity instanceof Player && ((Player) entity).getOffhandItem() == stack)) {
+                     this.update(world, entity, worldmap);
+                 }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java b/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
+index f7e5e016a7028a9196e689e950805b0d5b31fe38..679e05a483cd2e818b71a322de72d26a4b1880d7 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
++++ b/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
+@@ -28,6 +28,7 @@ import net.minecraft.core.QuartPos;
+ import net.minecraft.core.Registry;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.nbt.CompoundTag;
++import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.level.BlockGetter;
+@@ -221,6 +222,10 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+         return Collections.unmodifiableSet(this.heightmaps.entrySet());
+     }
+ 
++    @Nullable
++    public volatile ClientboundLevelChunkWithLightPacket chunkPacket;
++    public volatile long lastUpdatedPacketTime = -1L;
++
+     public void setHeightmap(Heightmap.Types type, long[] heightmap) {
+         this.getOrCreateHeightmapUnprimed(type).setRawData(this, type, heightmap);
+     }
+@@ -263,7 +268,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+     @Override
+     public void setStartForStructure(Structure structure, StructureStart start) {
+         this.structureStarts.put(structure, start);
+-        this.unsaved = true;
++        this.setUnsaved(true);
+     }
+ 
+     public Map<Structure, StructureStart> getAllStarts() {
+@@ -273,7 +278,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+     public void setAllStarts(Map<Structure, StructureStart> structureStarts) {
+         this.structureStarts.clear();
+         this.structureStarts.putAll(structureStarts);
+-        this.unsaved = true;
++        this.setUnsaved(true);
+     }
+ 
+     @Override
+@@ -286,7 +291,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+         ((LongSet) this.structuresRefences.computeIfAbsent(structure, (structure1) -> {
+             return new LongOpenHashSet();
+         })).add(reference);
+-        this.unsaved = true;
++        this.setUnsaved(true);
+     }
+ 
+     @Override
+@@ -298,7 +303,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+     public void setAllReferences(Map<Structure, LongSet> structureReferences) {
+         this.structuresRefences.clear();
+         this.structuresRefences.putAll(structureReferences);
+-        this.unsaved = true;
++        this.setUnsaved(true);
+     }
+ 
+     public boolean isYSpaceEmpty(int lowerHeight, int upperHeight) {
+@@ -322,6 +327,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+     public void setUnsaved(boolean needsSaving) {
+         this.unsaved = needsSaving;
+         if (!needsSaving) this.persistentDataContainer.dirty(false); // CraftBukkit - SPIGOT-6814: chunk was saved, pdc is no longer dirty
++        else this.chunkPacket = null;
+     }
+ 
+     public boolean isUnsaved() {
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index a91fe025ddcc1b47c4550e2967b392792e80989a..65d8a11be469bdc78b3c8023d878d4eb8629e225 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -269,7 +269,7 @@ public class LevelChunk extends ChunkAccess {
+ 
+         // Paper - starlight - remove skyLightSources
+         this.setLightCorrect(protoChunk.isLightCorrect());
+-        this.unsaved = true;
++        this.setUnsaved(true);
+         this.needsDecoration = true; // CraftBukkit
+         // CraftBukkit start
+         this.persistentDataContainer = protoChunk.persistentDataContainer; // SPIGOT-6814: copy PDC to account for 1.17 to 1.18 chunk upgrading.
+@@ -494,7 +494,7 @@ public class LevelChunk extends ChunkAccess {
+                         }
+                     }
+ 
+-                    this.unsaved = true;
++                    this.setUnsaved(true);
+                     return iblockdata1;
+                 }
+             }
+@@ -508,6 +508,7 @@ public class LevelChunk extends ChunkAccess {
+ 
+     @Nullable
+     private BlockEntity createBlockEntity(BlockPos pos) {
++        this.chunkPacket = null;
+         BlockState iblockdata = this.getBlockState(pos);
+ 
+         return !iblockdata.hasBlockEntity() ? null : ((EntityBlock) iblockdata.getBlock()).newBlockEntity(pos, iblockdata);
+@@ -556,6 +557,7 @@ public class LevelChunk extends ChunkAccess {
+     }
+ 
+     public void addAndRegisterBlockEntity(BlockEntity blockEntity) {
++        this.chunkPacket = null;
+         this.setBlockEntity(blockEntity);
+         if (this.isInLevel()) {
+             Level world = this.level;
+@@ -1039,6 +1041,7 @@ public class LevelChunk extends ChunkAccess {
+     }
+ 
+     public void clearAllBlockEntities() {
++        this.chunkPacket = null;
+         this.blockEntities.values().forEach(BlockEntity::setRemoved);
+         this.blockEntities.clear();
+         this.tickersInLevel.values().forEach((chunk_d) -> {
+diff --git a/src/main/java/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java b/src/main/java/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java
+index 45269115e63cfc3bd7dc740a5694e2cc7c35bcb1..364631edc47a0ed82ce6ccb43178125ecd39dae3 100644
+--- a/src/main/java/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java
++++ b/src/main/java/net/minecraft/world/level/saveddata/maps/MapItemSavedData.java
+@@ -67,6 +67,14 @@ public class MapItemSavedData extends SavedData {
+     private final Map<String, MapFrame> frameMarkers = Maps.newHashMap();
+     private int trackedDecorationCount;
+     private org.bukkit.craftbukkit.map.RenderData vanillaRender = new org.bukkit.craftbukkit.map.RenderData(); // Paper
++    public boolean dirtyColorData;
++    public int minDirtyX;
++    public int minDirtyY;
++    public int maxDirtyX;
++    public int maxDirtyY;
++    public boolean dirtyFrameDecorations;
++    public boolean hasPluginRenderer;
++    public boolean hasContextualRenderer;
+ 
+     // CraftBukkit start
+     public final CraftMapView mapView;
+@@ -332,6 +340,9 @@ public class MapItemSavedData extends SavedData {
+         }
+ 
+         this.setDecorationsDirty();
++        if (mapicon != null && mapicon.renderOnFrame()) {
++            this.dirtyFrameDecorations = true;
++        }
+     }
+ 
+     public static void addTargetDecoration(ItemStack stack, BlockPos pos, String id, MapDecoration.Type type) {
+@@ -427,6 +438,9 @@ public class MapItemSavedData extends SavedData {
+             }
+ 
+             this.setDecorationsDirty();
++            if (type.isRenderedOnFrame() || (mapicon1 != null && mapicon1.type().isRenderedOnFrame())) {
++                this.dirtyFrameDecorations = true;
++            }
+         }
+ 
+     }
+@@ -440,6 +454,18 @@ public class MapItemSavedData extends SavedData {
+ 
+     public void setColorsDirty(int x, int z) {
+         this.setDirty();
++        if (this.dirtyColorData) {
++            this.minDirtyX = Math.min(this.minDirtyX, x);
++            this.minDirtyY = Math.min(this.minDirtyY, z);
++            this.maxDirtyX = Math.max(this.maxDirtyX, x);
++            this.maxDirtyY = Math.max(this.maxDirtyY, z);
++        } else {
++            this.dirtyColorData = true;
++            this.minDirtyX = x;
++            this.minDirtyY = z;
++            this.maxDirtyX = x;
++            this.maxDirtyY = z;
++        }
+         Iterator iterator = this.carriedBy.iterator();
+ 
+         while (iterator.hasNext()) {
+@@ -522,6 +548,7 @@ public class MapItemSavedData extends SavedData {
+     public void removedFromFrame(BlockPos pos, int id) {
+         this.removeDecoration("frame-" + id);
+         this.frameMarkers.remove(MapFrame.frameId(pos));
++        this.dirtyFrameDecorations = true;
+     }
+ 
+     public boolean updateColor(int x, int z, byte color) {
+@@ -579,6 +606,89 @@ public class MapItemSavedData extends SavedData {
+         return this.trackedDecorationCount >= iconCount;
+     }
+ 
++    public @Nullable Packet<?> framedUpdatePacket(int id, @Nullable Player player) {
++        return this.createUpdatePacket(id, player, false);
++    }
++
++    public @Nullable Packet<?> fullUpdatePacket(int id, @Nullable Player player) {
++        return this.createUpdatePacket(id, player, true);
++    }
++
++    public @Nullable Packet<?> createUpdatePacket(int id, @Nullable Player player, boolean full) {
++        if (!this.dirtyColorData && !this.dirtyFrameDecorations && (player == null || this.server.getCurrentTick() % 5 != 0) && !full) {
++            return null;
++        }
++
++        final org.bukkit.craftbukkit.map.RenderData render = player != null ? this.mapView.render((org.bukkit.craftbukkit.entity.CraftPlayer) player.getBukkitEntity()) : this.vanillaRender;
++
++        final MapPatch patch;
++        if (full) {
++            patch = this.createPatch(render.buffer, 0, 0, 127, 127);
++        } else if (this.dirtyColorData) {
++            this.dirtyColorData = false;
++            patch = this.createPatch(render.buffer, this.minDirtyX, this.minDirtyY, this.maxDirtyX, this.maxDirtyY);
++        } else {
++            patch = null;
++        }
++
++        Collection<MapDecoration> decorations = null;
++        if (this.dirtyFrameDecorations || full || this.hasPluginRenderer) {
++            this.dirtyFrameDecorations = false;
++            decorations = new java.util.ArrayList<>();
++
++            if (player == null) {
++                for (MapDecoration decoration : this.decorations.values()) {
++                    if (decoration.renderOnFrame()) {
++                        decorations.add(decoration);
++                    }
++                }
++            }
++
++            for (final org.bukkit.map.MapCursor cursor : render.cursors) {
++                if (cursor.isVisible()) {
++                    decorations.add(new MapDecoration(MapDecoration.Type.byIcon(cursor.getRawType()), cursor.getX(), cursor.getY(), cursor.getDirection(), PaperAdventure.asVanilla(cursor.caption())));
++                }
++            }
++        }
++
++        return new ClientboundMapItemDataPacket(id, this.scale, this.locked, decorations, patch);
++    }
++
++    private MapPatch createPatch(byte[] buffer, int minDirtyX, int minDirtyY, int maxDirtyX, int maxDirtyY) {
++        int i = minDirtyX;
++        int j = minDirtyY;
++        int k = maxDirtyX + 1 - minDirtyX;
++        int l = maxDirtyY + 1 - minDirtyY;
++        byte[] abyte = new byte[k * l];
++
++        for (int i1 = 0; i1 < k; ++i1) {
++            for (int j1 = 0; j1 < l; ++j1) {
++                abyte[i1 + j1 * k] = buffer[i + i1 + (j + j1) * 128];
++            }
++        }
++
++        return new MapPatch(i, j, k, l, abyte);
++    }
++
++    public void addFrameDecoration(ItemFrame frame) {
++        if (this.trackedDecorationCount >= frame.level().paperConfig().maps.itemFrameCursorLimit || this.frameMarkers.containsKey(MapFrame.frameId(frame.getPos()))) {
++            return;
++        }
++
++        MapFrame mapFrame = new MapFrame(frame.getPos(), frame.getDirection().get2DDataValue() * 90, frame.getId());
++        this.addDecoration(MapDecoration.Type.FRAME, frame.level(), "frame-" + frame.getId(), frame.getPos().getX(), frame.getPos().getZ(), mapFrame.getRotation(), null);
++        this.frameMarkers.put(mapFrame.getId(), mapFrame);
++    }
++
++    public void markAllDirty() {
++        this.dirtyColorData = true;
++        this.minDirtyX = 0;
++        this.minDirtyY = 0;
++        this.maxDirtyX = 127;
++        this.maxDirtyY = 127;
++        this.dirtyFrameDecorations = true;
++    }
++
+     public class HoldingPlayer {
+ 
+         // Paper start
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+index 81ceea112e59dfac030b67ef4c56a4f3dad78539..bacced6b52485730c80dbd7fadc043ecf8e6b7da 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+@@ -70,7 +70,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+     private final CraftPersistentDataContainer persistentDataContainer = new CraftPersistentDataContainer(CraftEntity.DATA_TYPE_REGISTRY);
+     protected net.kyori.adventure.pointer.Pointers adventure$pointers; // Paper - implement pointers
+     // Paper start - Folia shedulers
+-    public final io.papermc.paper.threadedregions.EntityScheduler taskScheduler = new io.papermc.paper.threadedregions.EntityScheduler(this);
++    public final io.papermc.paper.threadedregions.EntityScheduler taskScheduler;
+     private final io.papermc.paper.threadedregions.scheduler.FoliaEntityScheduler apiScheduler = new io.papermc.paper.threadedregions.scheduler.FoliaEntityScheduler(this);
+ 
+     @Override
+@@ -83,6 +83,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+         this.server = server;
+         this.entity = entity;
+         this.entityType = CraftEntityType.minecraftToBukkit(entity.getType());
++        this.taskScheduler = new io.papermc.paper.threadedregions.EntityScheduler(this.entity.getServer(), this);
+     }
+ 
+     public static <T extends Entity> CraftEntity getEntity(CraftServer server, T entity) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/map/CraftMapView.java b/src/main/java/org/bukkit/craftbukkit/map/CraftMapView.java
+index c3266c43a073cb7d7eff10d1a1b15f0a2265b859..15ef617deb072f902aad72e4dd9055ffbd7ab328 100644
+--- a/src/main/java/org/bukkit/craftbukkit/map/CraftMapView.java
++++ b/src/main/java/org/bukkit/craftbukkit/map/CraftMapView.java
+@@ -108,6 +108,8 @@ public final class CraftMapView implements MapView {
+             this.renderers.add(renderer);
+             this.canvases.put(renderer, new HashMap<CraftPlayer, CraftMapCanvas>());
+             renderer.initialize(this);
++            this.worldMap.hasPluginRenderer |= !(renderer instanceof CraftMapRenderer);
++            this.worldMap.hasContextualRenderer |= renderer.isContextual();
+         }
+     }
+ 
+@@ -123,6 +125,14 @@ public final class CraftMapView implements MapView {
+                 }
+             }
+             this.canvases.remove(renderer);
++            this.worldMap.hasPluginRenderer = !(this.renderers.size() == 1 && this.renderers.get(0) instanceof CraftMapRenderer);
++            if (renderer.isContextual()) {
++                boolean contextualFound = false;
++                for (final MapRenderer mapRenderer : this.renderers) {
++                    contextualFound |= mapRenderer.isContextual();
++                }
++                this.worldMap.hasContextualRenderer = contextualFound;
++            }
+             return true;
+         } else {
+             return false;
