@@ -1,0 +1,237 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 00:41:24 +0200
+Subject: [PATCH] Reduce player tick and login churn
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index c8850b7e4c7460cc48920ac115afe1272fd5a80d..26aad24bdb0725fcb3ca9a6a7aa1c71522f2d816 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -275,6 +275,7 @@ public class EntropyConfig {
+     public static short spawnerRequiredPlayerRange;
+     public static short spawnerSpawnRange;
+     public static boolean onlyTickItemsInHand;
++    public static int advancementFlushInterval;
+     public static boolean cacheChunkPackets;
+     public static boolean skipIdleEntitySchedulerTicks;
+     public static boolean rewriteFramedMapTracker;
+@@ -341,6 +342,7 @@ public class EntropyConfig {
+         spawnerRequiredPlayerRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.required-player-range", 16, "Spawner required player range."));
+         spawnerSpawnRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.spawn-range", 4, "Spawner spawn range."));
+         onlyTickItemsInHand = getBoolean("starforge.performance.player.only-tick-items-in-hand", true, "Only tick complex item updates for the main hand and off hand.");
++        advancementFlushInterval = Math.max(1, getInt("starforge.performance.player.advancement-flush-interval", 5, "How often dirty advancement updates are flushed to players."));
+         cacheChunkPackets = getBoolean("starforge.performance.chunk.cache-packets", false, "Reuse cached outbound chunk packets when anti-xray does not need per-player rewriting.");
+         skipIdleEntitySchedulerTicks = getBoolean("starforge.performance.scheduler.skip-idle-entity-scheduler-ticks", true, "Skip entity scheduler ticking for entities without queued scheduler tasks.");
+         rewriteFramedMapTracker = getBoolean("starforge.performance.maps.rewrite-framed-map-tracker", true, "Use a cheaper framed-map update path and share packets when possible.");
+diff --git a/src/main/java/net/minecraft/server/PlayerAdvancements.java b/src/main/java/net/minecraft/server/PlayerAdvancements.java
+index 3d6822e2b2bec90ab207f091ec7284b088afc521..7ca93a2effc99b59049647a866cff03f1dad3a36 100644
+--- a/src/main/java/net/minecraft/server/PlayerAdvancements.java
++++ b/src/main/java/net/minecraft/server/PlayerAdvancements.java
+@@ -325,6 +325,14 @@ public class PlayerAdvancements {
+         criterion.trigger().removePlayerListener(this, new CriterionTrigger.Listener<>(criterion.triggerInstance(), advancement, id));
+     }
+ 
++    public boolean shouldFlushDirty(int tickCount, int interval) {
++        if (this.isFirstPacket) {
++            return true;
++        }
++
++        return (!this.rootsToUpdate.isEmpty() || !this.progressChanged.isEmpty()) && (interval <= 1 || tickCount % interval == 0);
++    }
++
+     public void flushDirty(ServerPlayer player) {
+         if (this.isFirstPacket || !this.rootsToUpdate.isEmpty() || !this.progressChanged.isEmpty()) {
+             Map<ResourceLocation, AdvancementProgress> map = new HashMap();
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index cf36d584ab66e66cf5d9b39b2ca239ef789de774..a7ca5b8547249af5dc2cd1e13b612296f7fa6c36 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -784,7 +784,9 @@ public class ServerPlayer extends Player {
+ 
+         this.trackStartFallingPosition();
+         this.trackEnteredOrExitedLavaOnVehicle();
+-        this.advancements.flushDirty(this);
++        if (this.advancements.shouldFlushDirty(this.tickCount, EntropyConfig.advancementFlushInterval)) {
++            this.advancements.flushDirty(this);
++        }
+     }
+ 
+     public void doTick() {
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 3cc4db281cd80b1e91d35701e8a1a15185747620..a77fc060909fe48a0681a95ecb8ee2788f137d1b 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -135,6 +135,7 @@ public abstract class PlayerList {
+     public static final Component DUPLICATE_LOGIN_DISCONNECT_MESSAGE = Component.translatable("multiplayer.disconnect.duplicate_login");
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private static final int SEND_PLAYER_INFO_INTERVAL = 600;
++    private static final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> UPDATE_LATENCY_ACTION = EnumSet.of(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
+     private static final SimpleDateFormat BAN_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd 'at' HH:mm:ss z");
+     private final MinecraftServer server;
+     public final List<ServerPlayer> players = new java.util.concurrent.CopyOnWriteArrayList(); // CraftBukkit - ArrayList -> CopyOnWriteArrayList: Iterator safety
+@@ -158,6 +159,7 @@ public abstract class PlayerList {
+     private int sendAllPlayerInfoIn;
+     private int reducedBroadcastStartIndex;
+     private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
++    private ClientboundUpdateRecipesPacket cachedRecipePacket;
+ 
+     // CraftBukkit start
+     private CraftServer cserver;
+@@ -304,7 +306,7 @@ public abstract class PlayerList {
+         playerconnection.send(new ClientboundChangeDifficultyPacket(worlddata.getDifficulty(), worlddata.isDifficultyLocked()));
+         playerconnection.send(new ClientboundPlayerAbilitiesPacket(player.getAbilities()));
+         playerconnection.send(new ClientboundSetCarriedItemPacket(player.getInventory().selected));
+-        playerconnection.send(new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getRecipes()));
++        playerconnection.send(this.getRecipeUpdatePacket());
+         this.sendPlayerPermissionLevel(player);
+         player.getStats().markAllDirty();
+         player.getRecipeBook().sendInitialRecipeBook(player);
+@@ -1023,24 +1025,43 @@ public abstract class PlayerList {
+     }
+ 
+     public void tick() {
+-        if (++this.sendAllPlayerInfoIn > 600) {
+-            // CraftBukkit start
+-            for (int i = 0; i < this.players.size(); ++i) {
+-                final ServerPlayer target = (ServerPlayer) this.players.get(i);
+-
+-                target.connection.send(new ClientboundPlayerInfoUpdatePacket(EnumSet.of(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY), this.players.stream().filter(new Predicate<ServerPlayer>() {
+-                    @Override
+-                    public boolean test(ServerPlayer input) {
+-                        return target.getBukkitEntity().canSee(input.getBukkitEntity());
++        if (++this.sendAllPlayerInfoIn > PlayerList.SEND_PLAYER_INFO_INTERVAL) {
++            final List<ServerPlayer> players = this.players;
++            final int playerCount = players.size();
++
++            for (int i = 0; i < playerCount; ++i) {
++                final ServerPlayer target = players.get(i);
++                final CraftPlayer targetBukkit = target.getBukkitEntity();
++                final List<ServerPlayer> visiblePlayers = Lists.newArrayListWithExpectedSize(playerCount);
++
++                for (int j = 0; j < playerCount; ++j) {
++                    final ServerPlayer input = players.get(j);
++                    if (targetBukkit.canSee(input.getBukkitEntity())) {
++                        visiblePlayers.add(input);
+                     }
+-                }).collect(Collectors.toList())));
++                }
++
++                target.connection.send(new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, visiblePlayers));
+             }
+-            // CraftBukkit end
++
+             this.sendAllPlayerInfoIn = 0;
+         }
+ 
+     }
+ 
++    public void invalidateRecipeDataPacket() {
++        this.cachedRecipePacket = null;
++    }
++
++    private ClientboundUpdateRecipesPacket getRecipeUpdatePacket() {
++        ClientboundUpdateRecipesPacket packet = this.cachedRecipePacket;
++        if (packet == null) {
++            packet = new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getRecipes());
++            this.cachedRecipePacket = packet;
++        }
++        return packet;
++    }
++
+     public void broadcastAll(Packet<?> packet) {
+         Iterator iterator = this.players.iterator();
+ 
+@@ -1636,6 +1657,7 @@ public abstract class PlayerList {
+     public void reloadRecipeData() {
+         // Paper end - API for updating recipes on clients
+         ClientboundUpdateRecipesPacket packetplayoutrecipeupdate = new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getRecipes());
++        this.cachedRecipePacket = packetplayoutrecipeupdate;
+         Iterator iterator1 = this.players.iterator();
+ 
+         while (iterator1.hasNext()) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index ac64e8c0ba77a883d8cb0aa45a6c742a8d235e1d..c1ea72abafbd565a71264d8d7bbf666ea816ef30 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -14,6 +14,7 @@ import com.mojang.brigadier.tree.CommandNode;
+ import com.mojang.brigadier.tree.LiteralCommandNode;
+ import com.mojang.serialization.Dynamic;
+ import com.mojang.serialization.Lifecycle;
++import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+ import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+ import java.awt.image.BufferedImage;
+ import java.io.ByteArrayOutputStream;
+@@ -281,6 +282,7 @@ public final class CraftServer implements Server {
+     protected final DedicatedServer console;
+     protected final DedicatedPlayerList playerList;
+     private final Map<String, World> worlds = new LinkedHashMap<String, World>();
++    private final Map<UUID, World> worldsByUUID = new Object2ObjectLinkedOpenHashMap<>();
+     private final Map<Class<?>, Registry<?>> registries = new HashMap<>();
+     private YamlConfiguration configuration;
+     private YamlConfiguration commandsConfiguration;
+@@ -1461,6 +1463,7 @@ public final class CraftServer implements Server {
+             this.getLogger().log(Level.SEVERE, null, ex);
+         }
+ 
++        this.worldsByUUID.remove(world.getUID());
+         this.worlds.remove(world.getName().toLowerCase(java.util.Locale.ENGLISH));
+         this.console.removeLevel(handle);
+         return true;
+@@ -1479,12 +1482,7 @@ public final class CraftServer implements Server {
+ 
+     @Override
+     public World getWorld(UUID uid) {
+-        for (World world : this.worlds.values()) {
+-            if (world.getUID().equals(uid)) {
+-                return world;
+-            }
+-        }
+-        return null;
++        return this.worldsByUUID.get(uid);
+     }
+ 
+     // Paper start
+@@ -1502,6 +1500,7 @@ public final class CraftServer implements Server {
+             System.out.println("World " + world.getName() + " is a duplicate of another world and has been prevented from loading. Please delete the uid.dat file from " + world.getName() + "'s world directory if you want to be able to load the duplicate world.");
+             return;
+         }
++        this.worldsByUUID.put(world.getUID(), world);
+         this.worlds.put(world.getName().toLowerCase(java.util.Locale.ENGLISH), world);
+     }
+ 
+@@ -1578,6 +1577,7 @@ public final class CraftServer implements Server {
+             }
+         }
+         toAdd.addToCraftingManager();
++        this.playerList.invalidateRecipeDataPacket();
+         // Paper start - API for updating recipes on clients
+         if (resendRecipes) {
+             this.playerList.reloadRecipeData();
+@@ -1754,10 +1754,12 @@ public final class CraftServer implements Server {
+     @Override
+     public void clearRecipes() {
+         this.console.getRecipeManager().clearRecipes();
++        this.playerList.invalidateRecipeDataPacket();
+     }
+ 
+     @Override
+     public void resetRecipes() {
++        this.playerList.invalidateRecipeDataPacket();
+         this.reloadData(); // Not ideal but hard to reload a subset of a resource pack
+     }
+ 
+@@ -1775,8 +1777,11 @@ public final class CraftServer implements Server {
+         ResourceLocation mcKey = CraftNamespacedKey.toMinecraft(recipeKey);
+         // Paper start - resend recipes on successful removal
+         boolean removed = this.getServer().getRecipeManager().removeRecipe(mcKey);
+-        if (removed && resendRecipes) {
+-            this.playerList.reloadRecipeData();
++        if (removed) {
++            this.playerList.invalidateRecipeDataPacket();
++            if (resendRecipes) {
++                this.playerList.reloadRecipeData();
++            }
+         }
+         return removed;
+         // Paper end
