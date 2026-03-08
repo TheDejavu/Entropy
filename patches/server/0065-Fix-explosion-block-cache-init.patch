@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 14:52:35 +0200
+Subject: [PATCH] Fix explosion block cache init
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index d6578f4a016c3654290d33e7ecc2d18c75f93728..dd0532e636a5a6ef1fa17a8c5630db30a2d4f8b1 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -462,6 +462,11 @@ public class Explosion {
+         int i;
+         int j;
+ 
++        this.blockCache = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
++        this.chunkPosCache = new long[CHUNK_CACHE_WIDTH * CHUNK_CACHE_WIDTH];
++        java.util.Arrays.fill(this.chunkPosCache, ChunkPos.INVALID_CHUNK_POS);
++        this.chunkCache = new net.minecraft.world.level.chunk.LevelChunk[CHUNK_CACHE_WIDTH * CHUNK_CACHE_WIDTH];
++
+         // Entropy start
+         boolean originCached = false;
+         Optional<Float> cachedOriginResistance = Optional.empty();
+@@ -676,6 +681,9 @@ public class Explosion {
+             }
+         }
+ 
++        this.blockCache = null;
++        this.chunkPosCache = null;
++        this.chunkCache = null;
+     }
+ 
+     public void finalizeExplosion(boolean particles) {
