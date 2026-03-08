@@ -1,0 +1,408 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 22:44:40 +0200
+Subject: [PATCH] Log netdebug snapshot on timeout
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index bdc07d4c586617d1680b34867a8c9ffcee9136b0..e9c01cd642f301928b632bbeb6d39ef859f83792 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -494,10 +494,16 @@ public class EntropyConfig {
+     public static boolean ipHashing;
+     public static String ipHashingSalt;
+     public static boolean useAlternateKeepAlive;
++    public static boolean timeoutDebugReportEnabled;
++    public static int timeoutDebugReportCooldownSeconds;
++    public static int timeoutDebugReportConnectionLimit;
+     private static void networking() {
+         ipHashing = getBoolean("starforge.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
+         ipHashingSalt = getString("starforge.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
+         useAlternateKeepAlive = getBoolean("starforge.networking.use-alternate-keepalive", false, "Send keepalives every second and accept recent replies to reduce false timeout kicks under packet saturation.");
++        timeoutDebugReportEnabled = getBoolean("starforge.networking.timeout-debug-report.enabled", true, "Log a netdebug snapshot when the first keepalive timeout in a burst happens.");
++        timeoutDebugReportCooldownSeconds = Math.max(1, getInt("starforge.networking.timeout-debug-report.cooldown-seconds", 30, "Minimum seconds between automatic timeout debug dumps."));
++        timeoutDebugReportConnectionLimit = Math.max(1, getInt("starforge.networking.timeout-debug-report.connection-limit", 10, "How many worst connections to print in an automatic timeout debug dump."));
+ 
+         setComment("starforge.networking", "Changes to the network stack.");
+     }
+diff --git a/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java b/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java
+index ba74ad9fb7455cc8d6fbe69a9657322d92f22457..8a521a611bd89a95fec3e1864945273a6e15c6ff 100644
+--- a/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java
++++ b/src/main/java/dev/orhidea/starforge/command/NetDebugCommand.java
+@@ -4,15 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
+ import com.mojang.brigadier.arguments.IntegerArgumentType;
+ import net.minecraft.commands.CommandSourceStack;
+ import net.minecraft.commands.Commands;
+-import net.minecraft.network.Connection;
+-import net.minecraft.network.PacketListener;
+-import net.minecraft.network.chat.Component;
+-import net.minecraft.server.level.ServerPlayer;
+-import net.minecraft.server.network.ServerCommonPacketListenerImpl;
+-
+-import java.util.ArrayList;
+-import java.util.Comparator;
+-import java.util.List;
++import dev.orhidea.starforge.connection.NetDebugReport;
+ 
+ public final class NetDebugCommand {
+     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+@@ -24,109 +16,6 @@ public final class NetDebugCommand {
+     }
+ 
+     private static int execute(CommandSourceStack source, int limit) {
+-        List<ConnectionSnapshot> snapshots = new ArrayList<>();
+-        List<Connection> connections = source.getServer().getConnection().getConnections();
+-
+-        for (Connection connection : connections) {
+-            ServerPlayer player = connection.getPlayer();
+-            PacketListener packetListener = connection.getPacketListener();
+-            if (player == null || !(packetListener instanceof ServerCommonPacketListenerImpl commonPacketListener)) {
+-                continue;
+-            }
+-
+-            snapshots.add(ConnectionSnapshot.from(player, connection, commonPacketListener));
+-        }
+-
+-        snapshots.sort(Comparator
+-            .comparingInt(ConnectionSnapshot::pendingActions).reversed()
+-            .thenComparing(ConnectionSnapshot::keepAlivePending).reversed()
+-            .thenComparingLong(ConnectionSnapshot::keepAliveAgeMillis).reversed()
+-            .thenComparingInt(ConnectionSnapshot::avgSentPackets).reversed());
+-
+-        source.sendSuccess(() -> Component.literal(
+-            "NetDebug: totalConnections=" + connections.size()
+-                + " playerConnections=" + snapshots.size()
+-                + " altKeepAlive=" + dev.orhidea.starforge.EntropyConfig.useAlternateKeepAlive
+-        ), false);
+-
+-        if (snapshots.isEmpty()) {
+-            source.sendSuccess(() -> Component.literal("No active player connections."), false);
+-            return 0;
+-        }
+-
+-        int shown = Math.min(limit, snapshots.size());
+-        for (int index = 0; index < shown; ++index) {
+-            ConnectionSnapshot snapshot = snapshots.get(index);
+-            int rank = index + 1;
+-            source.sendSuccess(() -> Component.literal(snapshot.format(rank)), false);
+-        }
+-
+-        return shown;
+-    }
+-
+-    private record ConnectionSnapshot(
+-        String playerName,
+-        int ping,
+-        int pendingActions,
+-        int maxPendingActions,
+-        int avgSentPackets,
+-        int avgReceivedPackets,
+-        long queuedPackets,
+-        long immediatePackets,
+-        long flushCalls,
+-        boolean keepAlivePending,
+-        int pendingKeepAlives,
+-        long keepAliveAgeMillis,
+-        long keepAliveLimitMillis,
+-        boolean writable,
+-        long bytesBeforeUnwritable
+-    ) {
+-        private static ConnectionSnapshot from(ServerPlayer player, Connection connection, ServerCommonPacketListenerImpl commonPacketListener) {
+-            return new ConnectionSnapshot(
+-                player.getGameProfile().getName(),
+-                commonPacketListener.latency(),
+-                connection.getPendingActionCount(),
+-                connection.getMaxPendingActionCount(),
+-                Math.round(connection.getAverageSentPackets()),
+-                Math.round(connection.getAverageReceivedPackets()),
+-                connection.getQueuedPacketCount(),
+-                connection.getImmediatePacketCount(),
+-                connection.getFlushCallCount(),
+-                commonPacketListener.isKeepAlivePendingForDebug(),
+-                commonPacketListener.getPendingKeepAliveCountForDebug(),
+-                commonPacketListener.getKeepAliveAgeMillisForDebug(),
+-                commonPacketListener.getKeepAliveLimitMillisForDebug(),
+-                connection.isChannelWritableForDebug(),
+-                connection.getBytesBeforeUnwritableForDebug()
+-            );
+-        }
+-
+-        private String format(int rank) {
+-            return "#" + rank
+-                + " " + this.playerName
+-                + " ping=" + this.ping + "ms"
+-                + " queue=" + this.pendingActions + "/" + this.maxPendingActions
+-                + " avgOut=" + this.avgSentPackets
+-                + " avgIn=" + this.avgReceivedPackets
+-                + " queuedTotal=" + this.queuedPackets
+-                + " immediateTotal=" + this.immediatePackets
+-                + " flushes=" + this.flushCalls
+-                + " keepalive=" + (this.keepAlivePending ? ("pending " + this.keepAliveAgeMillis + "/" + this.keepAliveLimitMillis + "ms queued=" + this.pendingKeepAlives) : "clear")
+-                + " writable=" + this.writable
+-                + " beforeUnwritable=" + formatBytes(this.bytesBeforeUnwritable);
+-        }
+-
+-        private static String formatBytes(long bytes) {
+-            if (bytes < 0L) {
+-                return "n/a";
+-            }
+-            if (bytes < 1024L) {
+-                return bytes + "B";
+-            }
+-            if (bytes < 1024L * 1024L) {
+-                return String.format(java.util.Locale.ROOT, "%.1fKiB", bytes / 1024.0D);
+-            }
+-            return String.format(java.util.Locale.ROOT, "%.1fMiB", bytes / (1024.0D * 1024.0D));
+-        }
++        return NetDebugReport.sendToSource(source, limit);
+     }
+ }
+diff --git a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e0efbbfa4a1a05429d51a06fb5886340bf215680
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+@@ -0,0 +1,207 @@
++package dev.orhidea.starforge.connection;
++
++import com.mojang.logging.LogUtils;
++import dev.orhidea.starforge.EntropyConfig;
++import net.minecraft.network.Connection;
++import net.minecraft.network.PacketListener;
++import net.minecraft.network.chat.Component;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.server.network.ServerCommonPacketListenerImpl;
++import org.slf4j.Logger;
++
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Locale;
++import java.util.concurrent.atomic.AtomicLong;
++
++public final class NetDebugReport {
++    private static final Logger LOGGER = LogUtils.getLogger();
++    private static final AtomicLong NEXT_TIMEOUT_REPORT_AT = new AtomicLong();
++
++    private NetDebugReport() {
++    }
++
++    public static List<ConnectionSnapshot> collect(MinecraftServer server) {
++        final List<ConnectionSnapshot> snapshots = new ArrayList<>();
++        final List<Connection> connections = server.getConnection().getConnections();
++
++        for (final Connection connection : connections) {
++            final ServerPlayer player = connection.getPlayer();
++            final PacketListener packetListener = connection.getPacketListener();
++            if (player == null || !(packetListener instanceof ServerCommonPacketListenerImpl commonPacketListener)) {
++                continue;
++            }
++
++            snapshots.add(ConnectionSnapshot.from(player, connection, commonPacketListener));
++        }
++
++        snapshots.sort(Comparator
++            .comparingInt(ConnectionSnapshot::pendingActions).reversed()
++            .thenComparing(ConnectionSnapshot::keepAlivePending).reversed()
++            .thenComparingLong(ConnectionSnapshot::keepAliveAgeMillis).reversed()
++            .thenComparingInt(ConnectionSnapshot::avgSentPackets).reversed());
++        return snapshots;
++    }
++
++    public static int sendToSource(net.minecraft.commands.CommandSourceStack source, int limit) {
++        final List<Connection> connections = source.getServer().getConnection().getConnections();
++        final List<ConnectionSnapshot> snapshots = collect(source.getServer());
++
++        source.sendSuccess(() -> Component.literal(
++            "NetDebug: totalConnections=" + connections.size()
++                + " playerConnections=" + snapshots.size()
++                + " altKeepAlive=" + EntropyConfig.useAlternateKeepAlive
++        ), false);
++
++        if (snapshots.isEmpty()) {
++            source.sendSuccess(() -> Component.literal("No active player connections."), false);
++            return 0;
++        }
++
++        final int shown = Math.min(limit, snapshots.size());
++        for (int index = 0; index < shown; ++index) {
++            final ConnectionSnapshot snapshot = snapshots.get(index);
++            final int rank = index + 1;
++            source.sendSuccess(() -> Component.literal(snapshot.format(rank)), false);
++        }
++        return shown;
++    }
++
++    public static void logFirstTimeout(MinecraftServer server, ServerCommonPacketListenerImpl timedOutListener) {
++        if (!EntropyConfig.timeoutDebugReportEnabled) {
++            return;
++        }
++
++        final long currentTime = net.minecraft.Util.getMillis();
++        final long nextAllowed = NEXT_TIMEOUT_REPORT_AT.get();
++        if (currentTime < nextAllowed) {
++            return;
++        }
++
++        final long cooldownMillis = Math.max(1L, EntropyConfig.timeoutDebugReportCooldownSeconds) * 1000L;
++        if (!NEXT_TIMEOUT_REPORT_AT.compareAndSet(nextAllowed, currentTime + cooldownMillis)) {
++            return;
++        }
++
++        final List<Connection> connections = server.getConnection().getConnections();
++        final List<ConnectionSnapshot> snapshots = collect(server);
++        final ServerPlayer timedOutPlayer = timedOutListener.connection.getPlayer();
++        if (timedOutPlayer == null) {
++            return;
++        }
++        final ConnectionSnapshot timedOutSnapshot = ConnectionSnapshot.from(timedOutPlayer, timedOutListener.connection, timedOutListener);
++
++        int pendingKeepAliveConnections = 0;
++        long totalQueuedPackets = 0L;
++        long totalImmediatePackets = 0L;
++        long totalFlushCalls = 0L;
++        long totalAvgOut = 0L;
++        int maxAvgOut = 0;
++
++        for (final ConnectionSnapshot snapshot : snapshots) {
++            if (snapshot.keepAlivePending()) {
++                ++pendingKeepAliveConnections;
++            }
++            totalQueuedPackets += snapshot.queuedPackets();
++            totalImmediatePackets += snapshot.immediatePackets();
++            totalFlushCalls += snapshot.flushCalls();
++            totalAvgOut += snapshot.avgSentPackets();
++            maxAvgOut = Math.max(maxAvgOut, snapshot.avgSentPackets());
++        }
++
++        final long averageAvgOut = snapshots.isEmpty() ? 0L : Math.round((double) totalAvgOut / (double) snapshots.size());
++        LOGGER.warn(
++            "TimeoutDebug: player={} ping={}ms keepalive={} totalConnections={} playerConnections={} altKeepAlive={}",
++            timedOutSnapshot.playerName(),
++            timedOutSnapshot.ping(),
++            timedOutSnapshot.keepAlivePending()
++                ? "pending " + timedOutSnapshot.keepAliveAgeMillis() + "/" + timedOutSnapshot.keepAliveLimitMillis() + "ms queued=" + timedOutSnapshot.pendingKeepAlives()
++                : "clear",
++            connections.size(),
++            snapshots.size(),
++            EntropyConfig.useAlternateKeepAlive
++        );
++        LOGGER.warn(
++            "TimeoutDebug: pendingKeepAliveConnections={} avgOut={} maxOut={} queuedTotal={} immediateTotal={} flushes={}",
++            pendingKeepAliveConnections,
++            averageAvgOut,
++            maxAvgOut,
++            totalQueuedPackets,
++            totalImmediatePackets,
++            totalFlushCalls
++        );
++
++        final int shown = Math.min(EntropyConfig.timeoutDebugReportConnectionLimit, snapshots.size());
++        for (int index = 0; index < shown; ++index) {
++            LOGGER.warn("TimeoutDebug: {}", snapshots.get(index).format(index + 1));
++        }
++    }
++
++    public record ConnectionSnapshot(
++        String playerName,
++        int ping,
++        int pendingActions,
++        int maxPendingActions,
++        int avgSentPackets,
++        int avgReceivedPackets,
++        long queuedPackets,
++        long immediatePackets,
++        long flushCalls,
++        boolean keepAlivePending,
++        int pendingKeepAlives,
++        long keepAliveAgeMillis,
++        long keepAliveLimitMillis,
++        boolean writable,
++        long bytesBeforeUnwritable
++    ) {
++        public static ConnectionSnapshot from(ServerPlayer player, Connection connection, ServerCommonPacketListenerImpl commonPacketListener) {
++            return new ConnectionSnapshot(
++                player.getGameProfile().getName(),
++                commonPacketListener.latency(),
++                connection.getPendingActionCount(),
++                connection.getMaxPendingActionCount(),
++                Math.round(connection.getAverageSentPackets()),
++                Math.round(connection.getAverageReceivedPackets()),
++                connection.getQueuedPacketCount(),
++                connection.getImmediatePacketCount(),
++                connection.getFlushCallCount(),
++                commonPacketListener.isKeepAlivePendingForDebug(),
++                commonPacketListener.getPendingKeepAliveCountForDebug(),
++                commonPacketListener.getKeepAliveAgeMillisForDebug(),
++                commonPacketListener.getKeepAliveLimitMillisForDebug(),
++                connection.isChannelWritableForDebug(),
++                connection.getBytesBeforeUnwritableForDebug()
++            );
++        }
++
++        public String format(int rank) {
++            return "#" + rank
++                + " " + this.playerName
++                + " ping=" + this.ping + "ms"
++                + " queue=" + this.pendingActions + "/" + this.maxPendingActions
++                + " avgOut=" + this.avgSentPackets
++                + " avgIn=" + this.avgReceivedPackets
++                + " queuedTotal=" + this.queuedPackets
++                + " immediateTotal=" + this.immediatePackets
++                + " flushes=" + this.flushCalls
++                + " keepalive=" + (this.keepAlivePending ? ("pending " + this.keepAliveAgeMillis + "/" + this.keepAliveLimitMillis + "ms queued=" + this.pendingKeepAlives) : "clear")
++                + " writable=" + this.writable
++                + " beforeUnwritable=" + formatBytes(this.bytesBeforeUnwritable);
++        }
++
++        private static String formatBytes(long bytes) {
++            if (bytes < 0L) {
++                return "n/a";
++            }
++            if (bytes < 1024L) {
++                return bytes + "B";
++            }
++            if (bytes < 1024L * 1024L) {
++                return String.format(Locale.ROOT, "%.1fKiB", bytes / 1024.0D);
++            }
++            return String.format(Locale.ROOT, "%.1fMiB", bytes / (1024.0D * 1024.0D));
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index e8ed6f01c1f2aba2442f59cb478006fb7360ac8f..239175de2a6985093b78f1d09b8e891faa82b8f2 100644
+--- a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -29,6 +29,7 @@ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.util.VisibleForDebug;
+ import net.minecraft.util.thread.BlockableEventLoop;
+ import org.slf4j.Logger;
++import dev.orhidea.starforge.connection.NetDebugReport;
+ 
+ // CraftBukkit start
+ import io.netty.buffer.ByteBuf;
+@@ -111,6 +112,7 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         } else if (!this.isSingleplayerOwner()) {
+             // Paper start - This needs to be handled on the main thread for plugins
+             server.submit(() -> {
++                NetDebugReport.logFirstTimeout(this.server, this);
+                 this.disconnect(ServerCommonPacketListenerImpl.TIMEOUT_DISCONNECTION_MESSAGE, org.bukkit.event.player.PlayerKickEvent.Cause.TIMEOUT); // Paper - kick event cause
+             });
+             // Paper end - This needs to be handled on the main thread for plugins
+@@ -224,6 +226,7 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+             if (elapsedTime >= 1000L) {
+                 if (this.keepAlivePending && !this.processedDisconnect && this.keepAlives.size() * 1000L >= KEEPALIVE_LIMIT) {
+                     ServerGamePacketListenerImpl.LOGGER.warn("{} was kicked due to keepalive timeout!", this.player.getScoreboardName());
++                    NetDebugReport.logFirstTimeout(this.server, this);
+                     this.disconnect(ServerCommonPacketListenerImpl.TIMEOUT_DISCONNECTION_MESSAGE, org.bukkit.event.player.PlayerKickEvent.Cause.TIMEOUT);
+                 } else {
+                     this.keepAlivePending = true;
+@@ -240,6 +243,7 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         if (this.keepAlivePending) {
+             if (!this.processedDisconnect && elapsedTime >= KEEPALIVE_LIMIT) { // check keepalive limit, don't fire if already disconnected
+                 ServerGamePacketListenerImpl.LOGGER.warn("{} was kicked due to keepalive timeout!", this.player.getScoreboardName()); // more info
++                NetDebugReport.logFirstTimeout(this.server, this);
+                 this.disconnect(ServerCommonPacketListenerImpl.TIMEOUT_DISCONNECTION_MESSAGE, org.bukkit.event.player.PlayerKickEvent.Cause.TIMEOUT); // Paper - kick event cause
+             }
+         } else {
