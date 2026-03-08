@@ -1,0 +1,723 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 22:07:52 +0200
+Subject: [PATCH] Remove hotspot packet reduction
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index fd00a88f6617ec48fe2d1b6c320af098ca880db0..d0821e62ba245dd47ae99f7b59701f17cdf09bb6 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -281,24 +281,7 @@ public class EntropyConfig {
+     public static boolean skipMapItemDataUpdatesWithoutCraftRenderer;
+     public static boolean dontSavePrimedTnt;
+     public static boolean dontSaveFallingBlocks;
+-    public static boolean hotspotEnabled;
+-    public static int hotspotRadius;
+-    public static int hotspotEnableThreshold;
+-    public static int hotspotDisableThreshold;
+-    public static int hotspotUpdateInterval;
+-    public static boolean hotspotAsyncComputation;
+-    public static double hotspotTrackingRangeModifier;
+-    public static int hotspotTrackedPairUpdateInterval;
+-    public static int hotspotAdvancementFlushInterval;
+-    public static boolean hotspotHideItems;
+-    public static boolean hotspotHideExperienceOrbs;
+-    public static boolean hotspotHideParticles;
+-    public static boolean hotspotHideSounds;
+     public static int maxFootstepPacketsPerBroadcast;
+-    public static int hotspotMaxLowPrioritySoundPacketsPerBroadcast;
+-    public static int hotspotMetadataUpdateInterval;
+-    public static int hotspotEquipmentUpdateInterval;
+-    public static int hotspotLowPriorityParticleInterval;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -359,24 +342,7 @@ public class EntropyConfig {
+         skipMapItemDataUpdatesWithoutCraftRenderer = getBoolean("starforge.performance.maps.skip-data-updates-without-craft-renderer", false, "Skip vanilla map data updates when a map no longer uses the CraftMapRenderer.");
+         dontSavePrimedTnt = getBoolean("starforge.performance.persistence.dont-save-primed-tnt", false, "Do not save primed TNT entities when chunks unload.");
+         dontSaveFallingBlocks = getBoolean("starforge.performance.persistence.dont-save-falling-blocks", false, "Do not save falling block entities when chunks unload.");
+-        hotspotEnabled = getBoolean("starforge.performance.hotspot.enabled", true, "Automatically reduce viewer-side packet load in dense player hotspots.");
+-        hotspotRadius = Math.max(1, getInt("starforge.performance.hotspot.radius", 100, "Hotspot check radius in blocks."));
+-        hotspotEnableThreshold = Math.max(1, getInt("starforge.performance.hotspot.enable-threshold", 100, "Enable hotspot packet reduction when this many players are within the hotspot radius."));
+-        hotspotDisableThreshold = Math.max(1, Math.min(hotspotEnableThreshold, getInt("starforge.performance.hotspot.disable-threshold", 80, "Disable hotspot packet reduction once nearby players drop below this threshold.")));
+-        hotspotUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.update-interval", 10, "How often each player recomputes hotspot state, in ticks."));
+-        hotspotAsyncComputation = getBoolean("starforge.performance.hotspot.async-computation", true, "Compute hotspot density from world snapshots on a worker thread and reuse cached results on the main thread.");
+-        hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.60D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
+-        hotspotTrackedPairUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.tracker-pair-update-interval", 2, "How often to re-check already tracked entity/viewer pairs while a viewer is inside a hotspot."));
+-        hotspotAdvancementFlushInterval = Math.max(1, getInt("starforge.performance.hotspot.advancement-flush-interval", 5, "How often hotspot players flush dirty advancement progress."));
+-        hotspotHideItems = getBoolean("starforge.performance.hotspot.hide-items", true, "Stop tracking dropped items for viewers inside an active hotspot.");
+-        hotspotHideExperienceOrbs = getBoolean("starforge.performance.hotspot.hide-xp-orbs", true, "Stop tracking XP orbs for viewers inside an active hotspot.");
+-        hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+-        hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
+-        hotspotMaxLowPrioritySoundPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.hotspot.max-low-priority-sound-packets-per-broadcast", -1, "Limit how many hotspot viewers receive each low-priority sound broadcast. Use -1 to disable the cap."));
+-        hotspotMetadataUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.metadata-update-interval", 2, "Only send non-player hotspot metadata updates every N ticks."));
+-        hotspotEquipmentUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.equipment-update-interval", 2, "Only send non-player hotspot equipment updates every N ticks."));
+-        hotspotLowPriorityParticleInterval = Math.max(1, getInt("starforge.performance.hotspot.low-priority-particle-interval", 2, "Only send low-priority hotspot particles every N ticks."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index 109f5dcb9045d9380e1bafa2ed557ce87b374ff3..2b1db0c7218a4336ea1b8a403d7ba1db7c0a207c 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -1,165 +1,27 @@
+ package dev.orhidea.starforge;
+ 
+-import com.destroystokyo.paper.util.maplist.ReferenceList;
+-import io.papermc.paper.util.player.NearbyPlayers;
+-import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+-import net.minecraft.world.entity.Entity;
+-import net.minecraft.world.entity.ExperienceOrb;
+-import net.minecraft.world.entity.LivingEntity;
+-import net.minecraft.world.entity.item.ItemEntity;
+-import net.minecraft.world.entity.decoration.ArmorStand;
+-import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Player;
+ 
+ import java.util.HashMap;
+ import java.util.UUID;
+ 
+-public class EntropyUserManager {
++public final class EntropyUserManager {
+     public static final EntropyUserManager Instance = new EntropyUserManager();
+ 
+-    private final HashMap<UUID, FpsData> PlayerFpsData;
++    private final HashMap<UUID, FpsData> playerFpsData = new HashMap<>();
+ 
+     private EntropyUserManager() {
+-        PlayerFpsData = new HashMap<>();
+     }
+ 
+     public FpsData getFpsData(Player player) {
+-        FpsData data = PlayerFpsData.get(player.getUUID());
+-        if (data == null) {
+-            FpsData nd = new FpsData();
+-            PlayerFpsData.put(player.getUUID(), nd);
+-            return nd;
+-        }
+-        return data;
+-    }
+-
+-    public boolean isHotspotActive(Player player) {
+-        return this.getFpsData(player).HotspotActive;
+-    }
+-
+-    public boolean shouldHideHotspotEntity(Player player, Entity entity) {
+-        FpsData data = this.getFpsData(player);
+-        if (data.HotspotItemsHidden && entity instanceof ItemEntity) {
+-            return true;
+-        }
+-
+-        return data.HotspotExperienceOrbsHidden && entity instanceof ExperienceOrb;
+-    }
+-
+-    public boolean shouldThrottleHotspotMetadata(Player player, Entity entity, int interval) {
+-        return this.shouldThrottleHotspotEntityUpdates(player, entity, interval, false);
+-    }
+-
+-    public boolean shouldThrottleHotspotEquipment(Player player, Entity entity, int interval) {
+-        return this.shouldThrottleHotspotEntityUpdates(player, entity, interval, true);
+-    }
+-
+-    public boolean shouldThrottleHotspotParticle(Player player, ClientboundLevelParticlesPacket packet, int interval) {
+-        if (interval <= 1 || !this.isHotspotActive(player)) {
+-            return false;
+-        }
+-
+-        long positionHash = ((long) Math.floor(packet.getX()) * 73428767L)
+-            ^ ((long) Math.floor(packet.getY()) * 912931L)
+-            ^ ((long) Math.floor(packet.getZ()) * 3644798167L);
+-        long discriminator = net.minecraft.server.MinecraftServer.currentTick + player.getId() + positionHash;
+-        return Math.floorMod(discriminator, interval) != 0;
+-    }
+-
+-    public void updateHotspot(ServerPlayer player) {
+-        FpsData data = this.getFpsData(player);
+-        if (!EntropyConfig.hotspotEnabled) {
+-            data.clearHotspotState();
+-            player.trackingRangeModifier = 1.0D;
+-            return;
+-        }
+-
+-        if (EntropyConfig.hotspotAsyncComputation) {
+-            HotspotAsyncManager.Instance.schedule(player.serverLevel());
+-            Boolean hotspotActive = HotspotAsyncManager.Instance.getHotspotState(player.serverLevel(), player.getUUID());
+-            if (hotspotActive != null) {
+-                this.applyHotspotState(player, data, hotspotActive);
+-                return;
+-            }
+-        }
+-
+-        this.applyHotspotState(player, data, this.computeHotspotState(player, data));
+-    }
+-
+-    private void applyHotspotState(ServerPlayer player, FpsData data, boolean hotspotActive) {
+-        data.HotspotActive = hotspotActive;
+-        data.HotspotItemsHidden = hotspotActive && EntropyConfig.hotspotHideItems;
+-        data.HotspotExperienceOrbsHidden = hotspotActive && EntropyConfig.hotspotHideExperienceOrbs;
+-        data.HotspotParticlesHidden = hotspotActive && EntropyConfig.hotspotHideParticles;
+-        data.HotspotSoundsHidden = hotspotActive && EntropyConfig.hotspotHideSounds;
+-        player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
+-    }
+-
+-    private boolean computeHotspotState(ServerPlayer player, FpsData data) {
+-        double radius = EntropyConfig.hotspotRadius;
+-        double radiusSquared = radius * radius;
+-        int nearbyPlayers = 0;
+-        int requiredPlayers = data.HotspotActive ? EntropyConfig.hotspotDisableThreshold : EntropyConfig.hotspotEnableThreshold;
+-
+-        ReferenceList<ServerPlayer> hotspotCandidates = this.getHotspotCandidates(player, radius);
+-        if (hotspotCandidates != null) {
+-            Object[] rawData = hotspotCandidates.getRawData();
+-            for (int i = 0, len = hotspotCandidates.size(); i < len; ++i) {
+-                ServerPlayer other = (ServerPlayer) rawData[i];
+-                if (other.isRemoved()) {
+-                    continue;
+-                }
+-                if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
+-                    break;
+-                }
+-            }
+-        } else {
+-            for (ServerPlayer other : player.serverLevel().players()) {
+-                if (other.isRemoved()) {
+-                    continue;
+-                }
+-                if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
+-                    break;
+-                }
+-            }
+-        }
+-
+-        return data.HotspotActive
+-            ? nearbyPlayers >= EntropyConfig.hotspotDisableThreshold
+-            : nearbyPlayers >= EntropyConfig.hotspotEnableThreshold;
+-    }
+-
+-    private ReferenceList<ServerPlayer> getHotspotCandidates(ServerPlayer player, double radius) {
+-        NearbyPlayers.NearbyMapType type;
+-        if (radius <= NearbyPlayers.GENERAL_REALLY_SMALL_AREA_VIEW_DISTANCE_BLOCKS) {
+-            type = NearbyPlayers.NearbyMapType.GENERAL_REALLY_SMALL;
+-        } else if (radius <= NearbyPlayers.GENERAL_SMALL_AREA_VIEW_DISTANCE_BLOCKS) {
+-            type = NearbyPlayers.NearbyMapType.GENERAL_SMALL;
+-        } else if (radius <= NearbyPlayers.GENERAL_AREA_VIEW_DISTANCE_BLOCKS) {
+-            type = NearbyPlayers.NearbyMapType.GENERAL;
+-        } else {
+-            return null;
++        FpsData data = this.playerFpsData.get(player.getUUID());
++        if (data != null) {
++            return data;
+         }
+ 
+-        return player.serverLevel().chunkSource.chunkMap.getNearbyPlayers().getPlayersByBlock(
+-            player.getBlockX(),
+-            player.getBlockZ(),
+-            type
+-        );
+-    }
+-
+-    private boolean shouldThrottleHotspotEntityUpdates(Player player, Entity entity, int interval, boolean equipment) {
+-        if (interval <= 1 || !this.isHotspotActive(player)) {
+-            return false;
+-        }
+-        if (!(entity instanceof LivingEntity) || entity instanceof Player || entity instanceof ArmorStand) {
+-            return false;
+-        }
+-        if (equipment && entity.tickCount < 1) {
+-            return false;
+-        }
+-
+-        return (net.minecraft.server.MinecraftServer.currentTick + entity.getId() + player.getId()) % interval != 0;
++        FpsData created = new FpsData();
++        this.playerFpsData.put(player.getUUID(), created);
++        return created;
+     }
+ 
+     public static final class FpsData {
+@@ -170,20 +32,5 @@ public class EntropyUserManager {
+         public boolean ExplosionHidden;
+         public boolean FlashHidden;
+         public boolean PistonHidden;
+-        public boolean HotspotActive;
+-        public boolean HotspotItemsHidden;
+-        public boolean HotspotExperienceOrbsHidden;
+-        public boolean HotspotParticlesHidden;
+-        public boolean HotspotSoundsHidden;
+-
+-        public void clearHotspotState() {
+-            this.HotspotActive = false;
+-            this.HotspotItemsHidden = false;
+-            this.HotspotExperienceOrbsHidden = false;
+-            this.HotspotParticlesHidden = false;
+-            this.HotspotSoundsHidden = false;
+-        }
+     }
+ }
+-
+-
+diff --git a/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java b/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java
+deleted file mode 100644
+index 20b9eb7eeb366ae14a1ad26f989fde04b36f4e2e..0000000000000000000000000000000000000000
+--- a/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java
++++ /dev/null
+@@ -1,155 +0,0 @@
+-package dev.orhidea.starforge;
+-
+-import io.papermc.paper.util.MCUtil;
+-import net.minecraft.server.MinecraftServer;
+-import net.minecraft.server.level.ServerLevel;
+-import net.minecraft.server.level.ServerPlayer;
+-import net.minecraft.util.Mth;
+-
+-import java.util.ArrayList;
+-import java.util.HashMap;
+-import java.util.List;
+-import java.util.UUID;
+-import java.util.concurrent.CompletableFuture;
+-import java.util.concurrent.ConcurrentHashMap;
+-import java.util.concurrent.atomic.AtomicBoolean;
+-import java.util.concurrent.atomic.AtomicReference;
+-
+-public final class HotspotAsyncManager {
+-    public static final HotspotAsyncManager Instance = new HotspotAsyncManager();
+-
+-    private static final WorldState EMPTY_WORLD_STATE = new WorldState();
+-    private final ConcurrentHashMap<String, WorldState> worldStates = new ConcurrentHashMap<>();
+-
+-    private HotspotAsyncManager() {
+-    }
+-
+-    public void schedule(ServerLevel level) {
+-        if (!EntropyConfig.hotspotEnabled || !EntropyConfig.hotspotAsyncComputation) {
+-            return;
+-        }
+-
+-        WorldState state = this.worldStates.computeIfAbsent(level.dimension().location().toString(), ignored -> new WorldState());
+-        int currentTick = MinecraftServer.currentTick;
+-        if (state.lastScheduledTick == currentTick) {
+-            return;
+-        }
+-        state.lastScheduledTick = currentTick;
+-
+-        if (!state.running.compareAndSet(false, true)) {
+-            return;
+-        }
+-
+-        List<ServerPlayer> players = level.players();
+-        if (players.isEmpty()) {
+-            state.result.set(WorldResult.EMPTY);
+-            state.running.set(false);
+-            return;
+-        }
+-
+-        PlayerSnapshot[] snapshots = new PlayerSnapshot[players.size()];
+-        for (int i = 0, len = players.size(); i < len; ++i) {
+-            ServerPlayer player = players.get(i);
+-            snapshots[i] = new PlayerSnapshot(
+-                player.getUUID(),
+-                player.getX(),
+-                player.getZ(),
+-                EntropyUserManager.Instance.isHotspotActive(player)
+-            );
+-        }
+-
+-        double radius = EntropyConfig.hotspotRadius;
+-        int enableThreshold = EntropyConfig.hotspotEnableThreshold;
+-        int disableThreshold = EntropyConfig.hotspotDisableThreshold;
+-        int sourceTick = currentTick;
+-        String worldKey = level.dimension().location().toString();
+-
+-        CompletableFuture
+-            .supplyAsync(() -> computeWorldResult(snapshots, radius, enableThreshold, disableThreshold, sourceTick), MCUtil.asyncExecutor)
+-            .whenComplete((result, throwable) -> {
+-                if (throwable == null && result != null) {
+-                    state.result.set(result);
+-                } else if (throwable != null) {
+-                    MinecraftServer.LOGGER.warn("Failed to compute hotspot state asynchronously for {}", worldKey, throwable);
+-                }
+-                state.running.set(false);
+-            });
+-    }
+-
+-    public Boolean getHotspotState(ServerLevel level, UUID playerId) {
+-        WorldResult result = this.getWorldState(level).result.get();
+-        if (result.tick < 0) {
+-            return null;
+-        }
+-        return result.hotspotStates.get(playerId);
+-    }
+-
+-    public boolean hasFreshResult(ServerLevel level) {
+-        return this.getWorldState(level).result.get().tick >= 0;
+-    }
+-
+-    private WorldState getWorldState(ServerLevel level) {
+-        return this.worldStates.getOrDefault(level.dimension().location().toString(), EMPTY_WORLD_STATE);
+-    }
+-
+-    private static WorldResult computeWorldResult(PlayerSnapshot[] players, double radius, int enableThreshold, int disableThreshold, int tick) {
+-        double radiusSquared = radius * radius;
+-        int cellSize = Math.max(1, Mth.floor(radius));
+-        HashMap<Long, ArrayList<Integer>> cells = new HashMap<>();
+-
+-        for (int i = 0, len = players.length; i < len; ++i) {
+-            PlayerSnapshot player = players[i];
+-            long cellKey = getCellKey(Mth.floor(player.x / cellSize), Mth.floor(player.z / cellSize));
+-            cells.computeIfAbsent(cellKey, ignored -> new ArrayList<>()).add(i);
+-        }
+-
+-        HashMap<UUID, Boolean> hotspotStates = new HashMap<>(players.length);
+-        for (int i = 0, len = players.length; i < len; ++i) {
+-            PlayerSnapshot player = players[i];
+-            int requiredPlayers = player.hotspotActive ? disableThreshold : enableThreshold;
+-            int nearbyPlayers = 0;
+-            int cellX = Mth.floor(player.x / cellSize);
+-            int cellZ = Mth.floor(player.z / cellSize);
+-
+-            outer:
+-            for (int searchX = cellX - 1; searchX <= cellX + 1; ++searchX) {
+-                for (int searchZ = cellZ - 1; searchZ <= cellZ + 1; ++searchZ) {
+-                    ArrayList<Integer> cell = cells.get(getCellKey(searchX, searchZ));
+-                    if (cell == null) {
+-                        continue;
+-                    }
+-
+-                    for (int index : cell) {
+-                        PlayerSnapshot other = players[index];
+-                        double deltaX = player.x - other.x;
+-                        double deltaZ = player.z - other.z;
+-                        if (deltaX * deltaX + deltaZ * deltaZ <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
+-                            break outer;
+-                        }
+-                    }
+-                }
+-            }
+-
+-            hotspotStates.put(player.uuid, player.hotspotActive ? nearbyPlayers >= disableThreshold : nearbyPlayers >= enableThreshold);
+-        }
+-
+-        return new WorldResult(tick, hotspotStates);
+-    }
+-
+-    private static long getCellKey(int x, int z) {
+-        return ((long) z << 32) | (x & 0xFFFFFFFFL);
+-    }
+-
+-    private record PlayerSnapshot(UUID uuid, double x, double z, boolean hotspotActive) {
+-    }
+-
+-    private static final class WorldState {
+-        private final AtomicBoolean running = new AtomicBoolean(false);
+-        private final AtomicReference<WorldResult> result = new AtomicReference<>(WorldResult.EMPTY);
+-        private volatile int lastScheduledTick = Integer.MIN_VALUE;
+-    }
+-
+-    private record WorldResult(int tick, HashMap<UUID, Boolean> hotspotStates) {
+-        private static final WorldResult EMPTY = new WorldResult(-1, new HashMap<>());
+-    }
+-}
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 4193d20d928ed43b0bb1574a3749aadff3bd480b..2cd10c000d50e9a58701a1987b73f965342289b2 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -31,7 +31,6 @@ import io.netty.handler.timeout.TimeoutException;
+ import io.netty.util.AttributeKey;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
+-import java.util.HashSet;
+ import java.util.Objects;
+ import java.util.Queue;
+ import java.util.UUID;
+@@ -43,8 +42,6 @@ import javax.annotation.Nullable;
+ import javax.crypto.Cipher;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.Util;
+-import net.minecraft.core.particles.ParticleType;
+-import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.chat.MutableComponent;
+ import net.minecraft.network.protocol.Packet;
+@@ -56,7 +53,6 @@ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+@@ -95,7 +91,6 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     });
+     public static final AttributeKey<ConnectionProtocol.CodecData<?>> ATTRIBUTE_SERVERBOUND_PROTOCOL = AttributeKey.valueOf("serverbound_protocol");
+     public static final AttributeKey<ConnectionProtocol.CodecData<?>> ATTRIBUTE_CLIENTBOUND_PROTOCOL = AttributeKey.valueOf("clientbound_protocol");
+-    private static final java.util.Set<ParticleType<?>> LOW_PRIORITY_HOTSPOT_PARTICLES = new HashSet<>();
+     public static final Supplier<NioEventLoopGroup> NETWORK_WORKER_GROUP = Suppliers.memoize(() -> {
+         return new NioEventLoopGroup(0, (new ThreadFactoryBuilder()).setNameFormat("Netty Client IO #%d").setDaemon(true).setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(LOGGER)).build()); // Paper
+     });
+@@ -409,24 +404,6 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         Player player = this.getPlayer();
+         if (player != null) {
+             EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+-            if (packet instanceof net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket p) {
+-                if (data.HotspotParticlesHidden) {
+-                    return;
+-                }
+-                if (this.shouldThrottleLowPriorityHotspotParticle(player, p)) {
+-                    return;
+-                }
+-            }
+-            if (data.HotspotSoundsHidden && (packet instanceof net.minecraft.network.protocol.game.ClientboundSoundPacket || packet instanceof net.minecraft.network.protocol.game.ClientboundSoundEntityPacket)) {
+-                return;
+-            }
+-            if (packet instanceof ClientboundSetEquipmentPacket p) {
+-                Entity entity = player.level().getEntity(p.getEntity());
+-                if (entity != null && EntropyUserManager.Instance.shouldThrottleHotspotEquipment(player, entity, EntropyConfig.hotspotEquipmentUpdateInterval)) {
+-                    return;
+-                }
+-            }
+-
+             // Entropy start - fps
+             if (packet instanceof ClientboundMoveEntityPacket p) {
+                 Entity entity = p.getEntity(player.level());
+@@ -474,9 +451,6 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                     }
+                     return;
+                 }
+-                if (entity != null && EntropyUserManager.Instance.shouldThrottleHotspotMetadata(player, entity, EntropyConfig.hotspotMetadataUpdateInterval)) {
+-                    return;
+-                }
+             }
+             // Entropy end
+ 
+@@ -555,34 +529,6 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
+-    private boolean shouldThrottleLowPriorityHotspotParticle(Player player, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket packet) {
+-        if (EntropyConfig.hotspotLowPriorityParticleInterval <= 1) {
+-            return false;
+-        }
+-        if (!this.isLowPriorityHotspotParticle(packet.getParticle().getType())) {
+-            return false;
+-        }
+-
+-        return EntropyUserManager.Instance.shouldThrottleHotspotParticle(player, packet, EntropyConfig.hotspotLowPriorityParticleInterval);
+-    }
+-
+-    private boolean isLowPriorityHotspotParticle(ParticleType<?> particleType) {
+-        if (LOW_PRIORITY_HOTSPOT_PARTICLES.isEmpty()) {
+-            this.prefillLowPriorityHotspotParticles();
+-        }
+-
+-        return LOW_PRIORITY_HOTSPOT_PARTICLES.contains(particleType);
+-    }
+-
+-    private void prefillLowPriorityHotspotParticles() {
+-        for (java.util.Map.Entry<net.minecraft.resources.ResourceKey<ParticleType<?>>, ParticleType<?>> entry : BuiltInRegistries.PARTICLE_TYPE.entrySet()) {
+-            String path = entry.getKey().location().getPath();
+-            if (path.contains("ambient") || path.contains("bubble") || path.contains("poof") || path.contains("smoke") || path.contains("splash")) {
+-                LOW_PRIORITY_HOTSPOT_PARTICLES.add(entry.getValue());
+-            }
+-        }
+-    }
+-
+     public void runOnceConnected(Consumer<Connection> task) {
+         if (this.isConnected()) {
+             this.flushQueue();
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 52e69e7faf79efa0b8612f929cf5f114780f89b7..7f915cf8467f5b0bab4bcec07895a1673b1d9ee8 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1337,9 +1337,6 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                     if (this.shouldSkipUntrackedPlayerUpdate(player)) {
+                         continue;
+                     }
+-                    if (this.shouldSkipHotspotTrackedPlayerUpdate(player)) {
+-                        continue;
+-                    }
+                     this.updatePlayer(player);
+                 }
+             }
+@@ -1360,31 +1357,14 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             }
+         }
+ 
+-        private boolean shouldSkipHotspotTrackedPlayerUpdate(ServerPlayer player) {
+-            if (dev.orhidea.starforge.EntropyConfig.hotspotTrackedPairUpdateInterval <= 1) {
+-                return false;
+-            }
+-            if (!dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(player)) {
+-                return false;
+-            }
+-            if (!this.seenBy.contains(player.connection) || this.entity == player) {
+-                return false;
+-            }
+-
+-            return (net.minecraft.server.MinecraftServer.currentTick + this.entity.getId() + player.getId()) % dev.orhidea.starforge.EntropyConfig.hotspotTrackedPairUpdateInterval != 0;
+-        }
+-
+         private boolean shouldSkipUntrackedPlayerUpdate(ServerPlayer player) {
+             if (player == this.entity || this.seenBy.contains(player.connection)) {
+                 return false;
+             }
+-            if (dev.orhidea.starforge.EntropyUserManager.Instance.shouldHideHotspotEntity(player, this.entity)) {
+-                return true;
+-            }
+ 
+             double deltaX = player.getX() - this.entity.getX();
+             double deltaZ = player.getZ() - this.entity.getZ();
+-            double visibleRange = (double) this.getEffectiveRange() * player.trackingRangeModifier;
++            double visibleRange = (double) this.getEffectiveRange();
+             double range = Math.min(visibleRange, ChunkMap.this.getPlayerViewDistance(player) * 16);
+ 
+             return deltaX * deltaX + deltaZ * deltaZ > range * range;
+@@ -1446,7 +1426,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 double vec3d_dz = player.getZ() - this.entity.getZ();
+                 // Paper end - remove allocation of Vec3D here
+                 int i = ChunkMap.this.getPlayerViewDistance(player);
+-                double visibleRange = (double) this.getEffectiveRange() * player.trackingRangeModifier;
++                double visibleRange = (double) this.getEffectiveRange();
+                 double d0 = Math.min(visibleRange, i * 16);
+                 double d1 = vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz; // Paper
+                 double d2 = d0 * d0;
+@@ -1460,10 +1440,6 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                     }
+                 }
+                 // Paper end - Configurable entity tracking range by Y
+-                if (flag && dev.orhidea.starforge.EntropyUserManager.Instance.shouldHideHotspotEntity(player, this.entity)) {
+-                    flag = false;
+-                }
+-
+                 // CraftBukkit start - respect vanish API
+                 if (flag && !player.getBukkitEntity().canSeeChunkMapUpdatePlayer(this.entity.getBukkitEntity())) { // Paper - only consider hits
+                     flag = false;
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index f5fb911c98a9d51e7ed34cf0ca52ffc3872e068f..cf36d584ab66e66cf5d9b39b2ca239ef789de774 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -188,7 +188,6 @@ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+ import org.bukkit.event.player.PlayerToggleSneakEvent;
+ import org.bukkit.inventory.MainHand;
+ import dev.orhidea.starforge.EntropyConfig;
+-import dev.orhidea.starforge.EntropyUserManager;
+ import dev.orhidea.starforge.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+@@ -334,8 +333,6 @@ public class ServerPlayer extends Player {
+     // Paper start - optimise chunk tick iteration
+     public double lastEntitySpawnRadiusSquared = -1.0;
+     // Paper end - optimise chunk tick iteration
+-    public double trackingRangeModifier = 1.0D;
+-
+     public ServerPlayer(MinecraftServer server, ServerLevel world, GameProfile profile, ClientInformation clientOptions) {
+         super(world, world.getSharedSpawnPos(), world.getSharedSpawnAngle(), profile);
+         this.chatVisibility = ChatVisiblity.FULL;
+@@ -787,9 +784,7 @@ public class ServerPlayer extends Player {
+ 
+         this.trackStartFallingPosition();
+         this.trackEnteredOrExitedLavaOnVehicle();
+-        if (!EntropyUserManager.Instance.isHotspotActive(this) || this.tickCount % EntropyConfig.hotspotAdvancementFlushInterval == 0) {
+-            this.advancements.flushDirty(this);
+-        }
++        this.advancements.flushDirty(this);
+     }
+ 
+     public void doTick() {
+@@ -855,10 +850,6 @@ public class ServerPlayer extends Player {
+                 this.connection.send(new ClientboundSetExperiencePacket(this.experienceProgress, this.totalExperience, this.experienceLevel));
+             }
+ 
+-            if (this.tickCount % EntropyConfig.hotspotUpdateInterval == 0) {
+-                EntropyUserManager.Instance.updateHotspot(this);
+-            }
+-
+             if (this.tickCount % 20 == 0) {
+                 CriteriaTriggers.LOCATION.trigger(this);
+             }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 9a6cba1245f10cc657c7bb80902796ccd2aec7ab..3cc4db281cd80b1e91d35701e8a1a15185747620 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -158,7 +158,6 @@ public abstract class PlayerList {
+     private int sendAllPlayerInfoIn;
+     private int reducedBroadcastStartIndex;
+     private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
+-    private final Set<SoundEvent> hotspotReducedBroadcastSounds = Sets.newHashSet();
+ 
+     // CraftBukkit start
+     private CraftServer cserver;
+@@ -1216,13 +1215,11 @@ public abstract class PlayerList {
+ 
+     public void broadcast(@Nullable net.minecraft.world.entity.player.Player player, double x, double y, double z, double distance, ResourceKey<Level> worldKey, Packet<?> packet) {
+         boolean reduceBroadcast = this.shouldReduceBroadcast(packet);
+-        boolean reduceHotspotBroadcast = this.shouldReduceHotspotBroadcast(packet);
+         int playerCount = this.players.size();
+         int startIndex = 0;
+         int sent = 0;
+-        int hotspotSent = 0;
+ 
+-        if ((reduceBroadcast || reduceHotspotBroadcast) && playerCount > 0) {
++        if (reduceBroadcast && playerCount > 0) {
+             if (++this.reducedBroadcastStartIndex < 0) {
+                 this.reducedBroadcastStartIndex = 0;
+             }
+@@ -1244,13 +1241,7 @@ public abstract class PlayerList {
+                 double d6 = z - entityplayer.getZ();
+ 
+                 if (d4 * d4 + d5 * d5 + d6 * d6 < distance * distance) {
+-                    if (reduceHotspotBroadcast && dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(entityplayer) && hotspotSent >= EntropyConfig.hotspotMaxLowPrioritySoundPacketsPerBroadcast) {
+-                        continue;
+-                    }
+                     entityplayer.connection.send(packet);
+-                    if (reduceHotspotBroadcast && dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(entityplayer)) {
+-                        ++hotspotSent;
+-                    }
+                     if (reduceBroadcast && ++sent >= EntropyConfig.maxFootstepPacketsPerBroadcast) {
+                         break;
+                     }
+@@ -1274,20 +1265,6 @@ public abstract class PlayerList {
+         return false;
+     }
+ 
+-    private boolean shouldReduceHotspotBroadcast(Packet<?> packet) {
+-        if (EntropyConfig.hotspotMaxLowPrioritySoundPacketsPerBroadcast < 0) {
+-            return false;
+-        }
+-        if (packet instanceof ClientboundSoundPacket soundPacket) {
+-            return this.isHotspotReducedBroadcastSound(soundPacket.getSound().value());
+-        }
+-        if (packet instanceof ClientboundSoundEntityPacket soundPacket) {
+-            return this.isHotspotReducedBroadcastSound(soundPacket.getSound().value());
+-        }
+-
+-        return false;
+-    }
+-
+     private boolean isReducedBroadcastSound(SoundEvent sound) {
+         if (this.reducedBroadcastSounds.isEmpty()) {
+             this.prefillReducedBroadcastSounds();
+@@ -1305,23 +1282,6 @@ public abstract class PlayerList {
+         }
+     }
+ 
+-    private boolean isHotspotReducedBroadcastSound(SoundEvent sound) {
+-        if (this.hotspotReducedBroadcastSounds.isEmpty()) {
+-            this.prefillHotspotReducedBroadcastSounds();
+-        }
+-
+-        return this.hotspotReducedBroadcastSounds.contains(sound);
+-    }
+-
+-    private void prefillHotspotReducedBroadcastSounds() {
+-        for (Map.Entry<ResourceKey<SoundEvent>, SoundEvent> entry : BuiltInRegistries.SOUND_EVENT.entrySet()) {
+-            String path = entry.getKey().location().getPath();
+-            if (path.contains("ambient") || path.contains("breathe") || path.contains("flap") || path.contains("step") || path.contains("swim")) {
+-                this.hotspotReducedBroadcastSounds.add(entry.getValue());
+-            }
+-        }
+-    }
+-
+     public void saveAll() {
+         // Paper start - Incremental chunk and player saving
+         this.saveAll(-1);
