@@ -44,14 +44,14 @@ subprojects {
     }
 }
 
-project(":entropy-api") {
+project(":starforge-api") {
     tasks.named<JavaCompile>("compileJava") {
         dependsOn(rootProject.tasks.named("applyApiPatches"))
         dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
     }
 }
 
-project(":entropy-server") {
+project(":starforge-server") {
     tasks.named<JavaCompile>("compileJava") {
         dependsOn(rootProject.tasks.named("applyApiPatches"))
         dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
@@ -60,7 +60,7 @@ project(":entropy-server") {
 }
 
 paperweight {
-    serverProject.set(project(":entropy-server"))
+    serverProject.set(project(":starforge-server"))
 
     remapRepo.set("https://maven.fabricmc.net/")
     decompileRepo.set("https://files.minecraftforge.net/maven/")
@@ -70,8 +70,8 @@ paperweight {
             apiPatchDir.set(layout.projectDirectory.dir("patches/api"))
             serverPatchDir.set(layout.projectDirectory.dir("patches/server"))
 
-            apiOutputDir.set(layout.projectDirectory.dir("entropy-api"))
-            serverOutputDir.set(layout.projectDirectory.dir("entropy-server"))
+            apiOutputDir.set(layout.projectDirectory.dir("starforge-api"))
+            serverOutputDir.set(layout.projectDirectory.dir("starforge-server"))
         }
 
         patchTasks.register("generatedApi") {

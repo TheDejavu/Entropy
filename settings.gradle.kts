@@ -6,5 +6,5 @@ pluginManagement {
 }
 
 rootProject.name = "starforge"
-include("entropy-api", "entropy-server")
+include("starforge-api", "starforge-server")
 

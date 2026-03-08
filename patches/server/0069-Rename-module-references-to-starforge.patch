@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 15:36:35 +0200
+Subject: [PATCH] Rename module references to starforge
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 63bf7f3c54d29f93cdd73eca7ed14dc18e495924..9ce42576d9640d50da2389b204ab3fe992cdc537 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -14,7 +14,7 @@ val alsoShade: Configuration by configurations.creating
+ 
+ dependencies {
+     // Entropy start
+-    implementation(project(":entropy-api"))
++    implementation(project(":starforge-api"))
+     implementation("io.papermc.paper:paper-mojangapi:1.20.1-R0.1-SNAPSHOT") {
+         exclude("io.papermc.paper", "paper-api")
+     }
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+index f7be457fc462986241d04a5c91f5b895c8733b59..b937aadb1817147d4fa48814a2aaf4a828275f2c 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+@@ -11,7 +11,7 @@ public final class Versioning {
+     public static String getBukkitVersion() {
+         String result = "Unknown-Version";
+ 
+-        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/dev.orhidea.starforge/entropy-api/pom.properties"); // Entropy
++        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/dev.orhidea.starforge/starforge-api/pom.properties"); // Starforge
+         Properties properties = new Properties();
+ 
+         if (stream != null) {
