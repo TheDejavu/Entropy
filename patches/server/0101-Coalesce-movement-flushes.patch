@@ -1,0 +1,276 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 23:33:18 +0200
+Subject: [PATCH] Coalesce movement flushes
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 4d65ab524ab0abc4e46cc0abe01e3e1f97f6e1ee..d98de8a9a6d456a1a989fa0c6eeb3f31d888e88f 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -496,6 +496,7 @@ public class EntropyConfig {
+     public static boolean ipHashing;
+     public static String ipHashingSalt;
+     public static boolean useAlternateKeepAlive;
++    public static boolean coalesceMovementFlushes;
+     public static boolean timeoutDebugReportEnabled;
+     public static int timeoutDebugReportCooldownSeconds;
+     public static int timeoutDebugReportConnectionLimit;
+@@ -503,6 +504,7 @@ public class EntropyConfig {
+         ipHashing = getBoolean("starforge.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
+         ipHashingSalt = getString("starforge.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
+         useAlternateKeepAlive = getBoolean("starforge.networking.use-alternate-keepalive", false, "Send keepalives every second and accept recent replies to reduce false timeout kicks under packet saturation.");
++        coalesceMovementFlushes = getBoolean("starforge.networking.coalesce-movement-flushes", true, "Batch movement packet flushes until the next Netty loop turn to reduce writeAndFlush pressure.");
+         timeoutDebugReportEnabled = getBoolean("starforge.networking.timeout-debug-report.enabled", true, "Log a netdebug snapshot when the first keepalive timeout in a burst happens.");
+         timeoutDebugReportCooldownSeconds = Math.max(1, getInt("starforge.networking.timeout-debug-report.cooldown-seconds", 30, "Minimum seconds between automatic timeout debug dumps."));
+         timeoutDebugReportConnectionLimit = Math.max(1, getInt("starforge.networking.timeout-debug-report.connection-limit", 10, "How many worst connections to print in an automatic timeout debug dump."));
+diff --git a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+index d9973052b14b732204f867aca6fef090b26327c8..4a418b04ba7f22112ec5f86a8b23d4aaa0d2fe69 100644
+--- a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
++++ b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+@@ -97,11 +97,16 @@ public final class NetDebugReport {
+         long totalQueuedPackets = 0L;
+         long totalImmediatePackets = 0L;
+         long totalFlushCalls = 0L;
++        long totalCoalescedMovementFlushes = 0L;
+         long totalAvgOut = 0L;
+         long totalChunkPackets = 0L;
+         long totalAddEntityPackets = 0L;
+         long totalPlayerMovePackets = 0L;
+         long totalNonPlayerMovePackets = 0L;
++        long totalMoveEntityPackets = 0L;
++        long totalTeleportEntityPackets = 0L;
++        long totalRotateHeadPackets = 0L;
++        long totalVelocityPackets = 0L;
+         long totalMetadataPackets = 0L;
+         long totalEquipmentPackets = 0L;
+         long totalPlayerInfoPackets = 0L;
+@@ -118,11 +123,16 @@ public final class NetDebugReport {
+             totalQueuedPackets += snapshot.queuedPackets();
+             totalImmediatePackets += snapshot.immediatePackets();
+             totalFlushCalls += snapshot.flushCalls();
++            totalCoalescedMovementFlushes += snapshot.coalescedMovementFlushes();
+             totalAvgOut += snapshot.avgSentPackets();
+             totalChunkPackets += snapshot.chunkPackets();
+             totalAddEntityPackets += snapshot.addEntityPackets();
+             totalPlayerMovePackets += snapshot.playerMovePackets();
+             totalNonPlayerMovePackets += snapshot.nonPlayerMovePackets();
++            totalMoveEntityPackets += snapshot.moveEntityPackets();
++            totalTeleportEntityPackets += snapshot.teleportEntityPackets();
++            totalRotateHeadPackets += snapshot.rotateHeadPackets();
++            totalVelocityPackets += snapshot.velocityPackets();
+             totalMetadataPackets += snapshot.metadataPackets();
+             totalEquipmentPackets += snapshot.equipmentPackets();
+             totalPlayerInfoPackets += snapshot.playerInfoPackets();
+@@ -146,13 +156,14 @@ public final class NetDebugReport {
+             EntropyConfig.useAlternateKeepAlive
+         );
+         LOGGER.warn(
+-            "TimeoutDebug: pendingKeepAliveConnections={} avgOut={} maxOut={} queuedTotal={} immediateTotal={} flushes={}",
++            "TimeoutDebug: pendingKeepAliveConnections={} avgOut={} maxOut={} queuedTotal={} immediateTotal={} flushes={} movementFlushBatches={}",
+             pendingKeepAliveConnections,
+             averageAvgOut,
+             maxAvgOut,
+             totalQueuedPackets,
+             totalImmediatePackets,
+-            totalFlushCalls
++            totalFlushCalls,
++            totalCoalescedMovementFlushes
+         );
+         LOGGER.warn(
+             "TimeoutDebug: packetTypes chunk={} add={} playerMove={} nonPlayerMove={} meta={} equip={} info={} sound={} particle={} keepalive={} other={}",
+@@ -168,6 +179,13 @@ public final class NetDebugReport {
+             totalKeepAlivePackets,
+             totalOtherPackets
+         );
++        LOGGER.warn(
++            "TimeoutDebug: movementTypes delta={} teleport={} head={} velocity={}",
++            totalMoveEntityPackets,
++            totalTeleportEntityPackets,
++            totalRotateHeadPackets,
++            totalVelocityPackets
++        );
+ 
+         final int shown = Math.min(EntropyConfig.timeoutDebugReportConnectionLimit, snapshots.size());
+         for (int index = 0; index < shown; ++index) {
+@@ -185,10 +203,15 @@ public final class NetDebugReport {
+         long queuedPackets,
+         long immediatePackets,
+         long flushCalls,
++        long coalescedMovementFlushes,
+         long chunkPackets,
+         long addEntityPackets,
+         long playerMovePackets,
+         long nonPlayerMovePackets,
++        long moveEntityPackets,
++        long teleportEntityPackets,
++        long rotateHeadPackets,
++        long velocityPackets,
+         long metadataPackets,
+         long equipmentPackets,
+         long playerInfoPackets,
+@@ -214,10 +237,15 @@ public final class NetDebugReport {
+                 connection.getQueuedPacketCount(),
+                 connection.getImmediatePacketCount(),
+                 connection.getFlushCallCount(),
++                connection.getCoalescedMovementFlushCount(),
+                 connection.getChunkPacketCount(),
+                 connection.getAddEntityPacketCount(),
+                 connection.getPlayerMovePacketCount(),
+                 connection.getNonPlayerMovePacketCount(),
++                connection.getMoveEntityPacketCount(),
++                connection.getTeleportEntityPacketCount(),
++                connection.getRotateHeadPacketCount(),
++                connection.getVelocityPacketCount(),
+                 connection.getMetadataPacketCount(),
+                 connection.getEquipmentPacketCount(),
+                 connection.getPlayerInfoPacketCount(),
+@@ -244,11 +272,16 @@ public final class NetDebugReport {
+                 + " queuedTotal=" + this.queuedPackets
+                 + " immediateTotal=" + this.immediatePackets
+                 + " flushes=" + this.flushCalls
++                + " batchedMvFlushes=" + this.coalescedMovementFlushes
+                 + " types="
+                 + "ch:" + this.chunkPackets
+                 + " add:" + this.addEntityPackets
+                 + " pmv:" + this.playerMovePackets
+                 + " nmv:" + this.nonPlayerMovePackets
++                + " dmv:" + this.moveEntityPackets
++                + " tp:" + this.teleportEntityPackets
++                + " head:" + this.rotateHeadPackets
++                + " vel:" + this.velocityPackets
+                 + " md:" + this.metadataPackets
+                 + " eq:" + this.equipmentPackets
+                 + " pi:" + this.playerInfoPackets
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 3f68d5300ab3301bb93ab1d27ed248cd702e59ac..7f2181439c5c09dcc12c80e3db277c23b06e1110 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -34,6 +34,7 @@ import java.net.SocketAddress;
+ import java.util.Objects;
+ import java.util.Queue;
+ import java.util.UUID;
++import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.concurrent.atomic.AtomicLong;
+ import java.util.concurrent.RejectedExecutionException;
+ import java.util.function.Consumer;
+@@ -140,10 +141,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private final AtomicLong queuedPacketCount = new AtomicLong();
+     private final AtomicLong immediatePacketCount = new AtomicLong();
+     private final AtomicLong flushCallCount = new AtomicLong();
++    private final AtomicBoolean movementFlushQueued = new AtomicBoolean();
+     private long chunkPacketCount;
+     private long addEntityPacketCount;
+     private long playerMovePacketCount;
+     private long nonPlayerMovePacketCount;
++    private long moveEntityPacketCount;
++    private long teleportEntityPacketCount;
++    private long rotateHeadPacketCount;
++    private long velocityPacketCount;
+     private long metadataPacketCount;
+     private long equipmentPacketCount;
+     private long playerInfoPacketCount;
+@@ -151,6 +157,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private long particlePacketCount;
+     private long keepAlivePacketCount;
+     private long otherPacketCount;
++    private long coalescedMovementFlushCount;
+     private volatile int maxPendingActions;
+     @Nullable
+     BandwidthDebugMonitor bandwidthDebugMonitor;
+@@ -585,10 +592,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+         try {
+         // Paper end - Optimize network
+-        if (flush) {
++        final boolean coalescedMovementFlush = flush && EntropyConfig.coalesceMovementFlushes && this.shouldCoalesceMovementFlush(packet);
++        if (flush && !coalescedMovementFlush) {
+             this.flushCallCount.incrementAndGet();
+         }
+-        ChannelFuture channelfuture = flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet);
++        ChannelFuture channelfuture = coalescedMovementFlush ? this.channel.write(packet) : (flush ? this.channel.writeAndFlush(packet) : this.channel.write(packet));
++        if (coalescedMovementFlush) {
++            this.scheduleDeferredMovementFlush();
++        }
+ 
+         if (callbacks != null) {
+             channelfuture.addListener((future) -> {
+@@ -1035,6 +1046,10 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return this.flushCallCount.get();
+     }
+ 
++    public long getCoalescedMovementFlushCount() {
++        return this.coalescedMovementFlushCount;
++    }
++
+     public long getChunkPacketCount() {
+         return this.chunkPacketCount;
+     }
+@@ -1055,6 +1070,22 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return this.nonPlayerMovePacketCount;
+     }
+ 
++    public long getMoveEntityPacketCount() {
++        return this.moveEntityPacketCount;
++    }
++
++    public long getTeleportEntityPacketCount() {
++        return this.teleportEntityPacketCount;
++    }
++
++    public long getRotateHeadPacketCount() {
++        return this.rotateHeadPacketCount;
++    }
++
++    public long getVelocityPacketCount() {
++        return this.velocityPacketCount;
++    }
++
+     public long getMetadataPacketCount() {
+         return this.metadataPacketCount;
+     }
+@@ -1128,6 +1159,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             } else {
+                 ++this.nonPlayerMovePacketCount;
+             }
++            if (packet instanceof ClientboundMoveEntityPacket) {
++                ++this.moveEntityPacketCount;
++            } else if (packet instanceof ClientboundTeleportEntityPacket) {
++                ++this.teleportEntityPacketCount;
++            } else if (packet instanceof ClientboundRotateHeadPacket) {
++                ++this.rotateHeadPacketCount;
++            } else {
++                ++this.velocityPacketCount;
++            }
+         } else if (packet instanceof ClientboundSetEntityDataPacket) {
+             ++this.metadataPacketCount;
+         } else if (packet instanceof ClientboundSetEquipmentPacket) {
+@@ -1166,6 +1206,28 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return entity instanceof Player;
+     }
+ 
++    private boolean shouldCoalesceMovementFlush(final Packet<?> packet) {
++        return packet instanceof ClientboundMoveEntityPacket
++            || packet instanceof ClientboundTeleportEntityPacket
++            || packet instanceof ClientboundRotateHeadPacket
++            || packet instanceof ClientboundSetEntityMotionPacket;
++    }
++
++    private void scheduleDeferredMovementFlush() {
++        if (!this.movementFlushQueued.compareAndSet(false, true)) {
++            return;
++        }
++
++        ++this.coalescedMovementFlushCount;
++        this.flushCallCount.incrementAndGet();
++        this.channel.eventLoop().execute(() -> {
++            this.movementFlushQueued.set(false);
++            if (this.channel != null && this.channel.isOpen()) {
++                this.channel.flush();
++            }
++        });
++    }
++
+     private static class InnerUtil { // Attempt to hide these methods from ProtocolLib, so it doesn't accidently pick them up.
+ 
+         @Nullable
