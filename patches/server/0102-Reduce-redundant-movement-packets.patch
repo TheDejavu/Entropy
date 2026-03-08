@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 23:54:42 +0200
+Subject: [PATCH] Reduce redundant movement packets
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index d98de8a9a6d456a1a989fa0c6eeb3f31d888e88f..890ae7b8cad2a7f13b546f633f569c390ba8cc2a 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -285,6 +285,8 @@ public class EntropyConfig {
+     public static boolean asyncTrackerEnabled;
+     public static int asyncTrackerThreads;
+     public static double playerTrackingRangeMultiplier;
++    public static boolean skipRedundantVelocityPackets;
++    public static boolean skipPlayerZeroDeltaMovePackets;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -349,6 +351,8 @@ public class EntropyConfig {
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
++        skipRedundantVelocityPackets = getBoolean("starforge.performance.tracker.skip-redundant-velocity-packets", true, "Skip duplicate velocity packets when the same encoded velocity was already sent in the current tracker tick.");
++        skipPlayerZeroDeltaMovePackets = getBoolean("starforge.performance.tracker.skip-player-zero-delta-move-packets", true, "Avoid player delta-move packets when encoded position deltas are all zero, except for the periodic forced sync.");
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index 233eb345c29f1d10d79c0c2f9d7b28a468bc8ec2..c51314a73783693216d9d0724938674b2e608785 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -3,6 +3,7 @@ package net.minecraft.server.level;
+ import com.google.common.collect.Lists;
+ import com.mojang.datafixers.util.Pair;
+ import com.mojang.logging.LogUtils;
++import dev.orhidea.starforge.EntropyConfig;
+ import java.util.ArrayList;
+ import java.util.Collection;
+ import java.util.Collections;
+@@ -67,6 +68,10 @@ public class ServerEntity {
+     private Vec3 ap;
+     private int tickCount;
+     private int teleportDelay;
++    private int lastVelocityXa = Integer.MIN_VALUE;
++    private int lastVelocityYa = Integer.MIN_VALUE;
++    private int lastVelocityZa = Integer.MIN_VALUE;
++    private int lastVelocityTick = Integer.MIN_VALUE;
+     private List<Entity> lastPassengers;
+     private boolean wasRiding;
+     private boolean wasOnGround;
+@@ -208,9 +213,10 @@ public class ServerEntity {
+                     boolean flag6 = k < -32768L || k > 32767L || l < -32768L || l > 32767L || i1 < -32768L || i1 > 32767L;
+ 
+                     if (!flag6 && this.teleportDelay <= 400 && !this.wasRiding && this.wasOnGround == this.entity.onGround() && !(io.papermc.paper.configuration.GlobalConfiguration.get().collisions.sendFullPosForHardCollidingEntities && this.entity.hardCollides())) { // Paper - send full pos for hard colliding entities to prevent collision problems due to desync
+-                        if (flag2 || flag3 || this.entity instanceof AbstractArrow) { // Pufferfish
+-                        if ((!flag2 || !flag3) && !(this.entity instanceof AbstractArrow)) {
+-                            if (flag2) {
++                        final boolean sendPositionPacket = flag2 && (!EntropyConfig.skipPlayerZeroDeltaMovePackets || !(this.entity instanceof ServerPlayer) || k != 0L || l != 0L || i1 != 0L || this.tickCount % ServerEntity.FORCED_POS_UPDATE_PERIOD == 0);
++                        if (sendPositionPacket || flag3 || this.entity instanceof AbstractArrow) { // Pufferfish
++                        if ((!sendPositionPacket || !flag3) && !(this.entity instanceof AbstractArrow)) {
++                            if (sendPositionPacket) {
+                                 packet1 = new ClientboundMoveEntityPacket.Pos(this.entity.getId(), (short) ((int) k), (short) ((int) l), (short) ((int) i1), this.entity.onGround());
+                                 flag4 = true;
+                             } else if (flag3) {
+@@ -239,7 +245,7 @@ public class ServerEntity {
+ 
+                         if (d0 > 1.0E-7D || d0 > 0.0D && vec3d1.lengthSqr() == 0.0D) {
+                             this.ap = vec3d1;
+-                            this.broadcast.accept(new ClientboundSetEntityMotionPacket(this.entity.getId(), this.ap));
++                            this.sendVelocityPacket(this.entity.getId(), this.ap, false);
+                         }
+                     }
+                 }
+@@ -290,7 +296,7 @@ public class ServerEntity {
+             }
+ 
+             if (!cancelled) {
+-                this.broadcastAndSend(new ClientboundSetEntityMotionPacket(this.entity));
++                this.sendVelocityPacket(this.entity.getId(), this.entity.getDeltaMovement(), true);
+             }
+             // CraftBukkit end
+             this.entity.hurtMarked = false;
+@@ -298,6 +304,27 @@ public class ServerEntity {
+ 
+     }
+ 
++    private void sendVelocityPacket(final int entityId, final Vec3 velocity, final boolean includeSelf) {
++        final int xa = Mth.clamp((int) (velocity.x * 8000.0D), -31200, 31200);
++        final int ya = Mth.clamp((int) (velocity.y * 8000.0D), -31200, 31200);
++        final int za = Mth.clamp((int) (velocity.z * 8000.0D), -31200, 31200);
++        if (EntropyConfig.skipRedundantVelocityPackets && this.lastVelocityTick == this.tickCount && this.lastVelocityXa == xa && this.lastVelocityYa == ya && this.lastVelocityZa == za) {
++            return;
++        }
++
++        this.lastVelocityTick = this.tickCount;
++        this.lastVelocityXa = xa;
++        this.lastVelocityYa = ya;
++        this.lastVelocityZa = za;
++
++        final ClientboundSetEntityMotionPacket packet = new ClientboundSetEntityMotionPacket(entityId, velocity);
++        if (includeSelf) {
++            this.broadcastAndSend(packet);
++        } else {
++            this.broadcast.accept(packet);
++        }
++    }
++
+     private static Stream<Entity> removedPassengers(List<Entity> passengers, List<Entity> lastPassengers) {
+         return lastPassengers.stream().filter((entity) -> {
+             return !passengers.contains(entity);
