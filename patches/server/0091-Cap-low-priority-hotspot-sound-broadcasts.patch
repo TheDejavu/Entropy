@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:09:54 +0200
+Subject: [PATCH] Cap low-priority hotspot sound broadcasts
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index a73ced93113a208adcac3291f54790dfc545cafb..536c0f02786fa7fbadfa8f5bf91096f88633c3bd 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -294,6 +294,7 @@ public class EntropyConfig {
+     public static boolean hotspotHideParticles;
+     public static boolean hotspotHideSounds;
+     public static int maxFootstepPacketsPerBroadcast;
++    public static int hotspotMaxLowPrioritySoundPacketsPerBroadcast;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -367,6 +368,7 @@ public class EntropyConfig {
+         hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+         hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
++        hotspotMaxLowPrioritySoundPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.hotspot.max-low-priority-sound-packets-per-broadcast", -1, "Limit how many hotspot viewers receive each low-priority sound broadcast. Use -1 to disable the cap."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 3cc4db281cd80b1e91d35701e8a1a15185747620..9a6cba1245f10cc657c7bb80902796ccd2aec7ab 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -158,6 +158,7 @@ public abstract class PlayerList {
+     private int sendAllPlayerInfoIn;
+     private int reducedBroadcastStartIndex;
+     private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
++    private final Set<SoundEvent> hotspotReducedBroadcastSounds = Sets.newHashSet();
+ 
+     // CraftBukkit start
+     private CraftServer cserver;
+@@ -1215,11 +1216,13 @@ public abstract class PlayerList {
+ 
+     public void broadcast(@Nullable net.minecraft.world.entity.player.Player player, double x, double y, double z, double distance, ResourceKey<Level> worldKey, Packet<?> packet) {
+         boolean reduceBroadcast = this.shouldReduceBroadcast(packet);
++        boolean reduceHotspotBroadcast = this.shouldReduceHotspotBroadcast(packet);
+         int playerCount = this.players.size();
+         int startIndex = 0;
+         int sent = 0;
++        int hotspotSent = 0;
+ 
+-        if (reduceBroadcast && playerCount > 0) {
++        if ((reduceBroadcast || reduceHotspotBroadcast) && playerCount > 0) {
+             if (++this.reducedBroadcastStartIndex < 0) {
+                 this.reducedBroadcastStartIndex = 0;
+             }
+@@ -1241,7 +1244,13 @@ public abstract class PlayerList {
+                 double d6 = z - entityplayer.getZ();
+ 
+                 if (d4 * d4 + d5 * d5 + d6 * d6 < distance * distance) {
++                    if (reduceHotspotBroadcast && dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(entityplayer) && hotspotSent >= EntropyConfig.hotspotMaxLowPrioritySoundPacketsPerBroadcast) {
++                        continue;
++                    }
+                     entityplayer.connection.send(packet);
++                    if (reduceHotspotBroadcast && dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(entityplayer)) {
++                        ++hotspotSent;
++                    }
+                     if (reduceBroadcast && ++sent >= EntropyConfig.maxFootstepPacketsPerBroadcast) {
+                         break;
+                     }
+@@ -1265,6 +1274,20 @@ public abstract class PlayerList {
+         return false;
+     }
+ 
++    private boolean shouldReduceHotspotBroadcast(Packet<?> packet) {
++        if (EntropyConfig.hotspotMaxLowPrioritySoundPacketsPerBroadcast < 0) {
++            return false;
++        }
++        if (packet instanceof ClientboundSoundPacket soundPacket) {
++            return this.isHotspotReducedBroadcastSound(soundPacket.getSound().value());
++        }
++        if (packet instanceof ClientboundSoundEntityPacket soundPacket) {
++            return this.isHotspotReducedBroadcastSound(soundPacket.getSound().value());
++        }
++
++        return false;
++    }
++
+     private boolean isReducedBroadcastSound(SoundEvent sound) {
+         if (this.reducedBroadcastSounds.isEmpty()) {
+             this.prefillReducedBroadcastSounds();
+@@ -1282,6 +1305,23 @@ public abstract class PlayerList {
+         }
+     }
+ 
++    private boolean isHotspotReducedBroadcastSound(SoundEvent sound) {
++        if (this.hotspotReducedBroadcastSounds.isEmpty()) {
++            this.prefillHotspotReducedBroadcastSounds();
++        }
++
++        return this.hotspotReducedBroadcastSounds.contains(sound);
++    }
++
++    private void prefillHotspotReducedBroadcastSounds() {
++        for (Map.Entry<ResourceKey<SoundEvent>, SoundEvent> entry : BuiltInRegistries.SOUND_EVENT.entrySet()) {
++            String path = entry.getKey().location().getPath();
++            if (path.contains("ambient") || path.contains("breathe") || path.contains("flap") || path.contains("step") || path.contains("swim")) {
++                this.hotspotReducedBroadcastSounds.add(entry.getValue());
++            }
++        }
++    }
++
+     public void saveAll() {
+         // Paper start - Incremental chunk and player saving
+         this.saveAll(-1);
