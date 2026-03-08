@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:48:33 +0200
+Subject: [PATCH] Add alternate keepalive handling
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 49af43ac8bb429d13d178afa10d9fa704757226c..f22d4d5b64583428134bfbf005bb030a5aa00e56 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -507,9 +507,11 @@ public class EntropyConfig {
+ 
+     public static boolean ipHashing;
+     public static String ipHashingSalt;
++    public static boolean useAlternateKeepAlive;
+     private static void networking() {
+         ipHashing = getBoolean("starforge.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
+         ipHashingSalt = getString("starforge.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
++        useAlternateKeepAlive = getBoolean("starforge.networking.use-alternate-keepalive", false, "Send keepalives every second and accept recent replies to reduce false timeout kicks under packet saturation.");
+ 
+         setComment("starforge.networking", "Changes to the network stack.");
+     }
+diff --git a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+index 0306771b8f90dcdd77f151c19c6c2d75c41f8feb..430198f4323f4e6a860ffa8c10311a0c01916113 100644
+--- a/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerCommonPacketListenerImpl.java
+@@ -51,6 +51,7 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+     private long keepAliveTime = Util.getMillis(); // Paper
+     private boolean keepAlivePending;
+     private long keepAliveChallenge;
++    private final it.unimi.dsi.fastutil.longs.LongList keepAlives = new it.unimi.dsi.fastutil.longs.LongArrayList();
+     private int latency;
+     private volatile boolean suspendFlushingOnServerThread = false;
+     public final java.util.Map<java.util.UUID, net.kyori.adventure.resource.ResourcePackCallback> packCallbacks = new java.util.concurrent.ConcurrentHashMap<>(); // Paper - adventure resource pack callbacks
+@@ -91,6 +92,16 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+ 
+     @Override
+     public void handleKeepAlive(ServerboundKeepAlivePacket packet) {
++        if (dev.orhidea.starforge.EntropyConfig.useAlternateKeepAlive) {
++            if (this.keepAlivePending && !this.keepAlives.isEmpty() && this.keepAlives.contains(packet.getId())) {
++                int ping = (int) (Util.getMillis() - packet.getId());
++
++                this.latency = (this.latency * 3 + ping) / 4;
++                this.keepAlivePending = false;
++                this.keepAlives.clear();
++                return;
++            }
++        }
+         //PacketUtils.ensureRunningOnSameThread(packet, this, this.player.serverLevel()); // CraftBukkit // Paper - handle ServerboundKeepAlivePacket async
+         if (this.keepAlivePending && packet.getId() == this.keepAliveChallenge) {
+             int i = (int) (Util.getMillis() - this.keepAliveTime);
+@@ -209,6 +220,23 @@ public abstract class ServerCommonPacketListenerImpl implements ServerCommonPack
+         long currentTime = Util.getMillis();
+         long elapsedTime = currentTime - this.keepAliveTime;
+ 
++        if (dev.orhidea.starforge.EntropyConfig.useAlternateKeepAlive) {
++            if (elapsedTime >= 1000L) {
++                if (this.keepAlivePending && !this.processedDisconnect && this.keepAlives.size() * 1000L >= KEEPALIVE_LIMIT) {
++                    ServerGamePacketListenerImpl.LOGGER.warn("{} was kicked due to keepalive timeout!", this.player.getScoreboardName());
++                    this.disconnect(ServerCommonPacketListenerImpl.TIMEOUT_DISCONNECTION_MESSAGE, org.bukkit.event.player.PlayerKickEvent.Cause.TIMEOUT);
++                } else {
++                    this.keepAlivePending = true;
++                    this.keepAliveTime = currentTime;
++                    this.keepAlives.add(currentTime);
++                    this.send(new ClientboundKeepAlivePacket(currentTime));
++                }
++            }
++
++            this.server.getProfiler().pop();
++            return;
++        }
++
+         if (this.keepAlivePending) {
+             if (!this.processedDisconnect && elapsedTime >= KEEPALIVE_LIMIT) { // check keepalive limit, don't fire if already disconnected
+                 ServerGamePacketListenerImpl.LOGGER.warn("{} was kicked due to keepalive timeout!", this.player.getScoreboardName()); // more info
