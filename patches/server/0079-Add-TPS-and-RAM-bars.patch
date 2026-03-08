@@ -1,0 +1,691 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 19:41:43 +0200
+Subject: [PATCH] Add TPS and RAM bars
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 445c977433983aefd74cf01c79cf87c3d8b6401e..ab7ca567f663be493426664bb33a63cfe468afad 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -1,6 +1,7 @@
+ package dev.orhidea.starforge;
+ 
+ import it.unimi.dsi.fastutil.ints.Int2IntMap;
++import net.kyori.adventure.bossbar.BossBar;
+ import net.minecraft.server.MinecraftServer;
+ import org.simpleyaml.configuration.ConfigurationSection;
+ import org.simpleyaml.configuration.MemoryConfiguration;
+@@ -10,6 +11,7 @@ import org.simpleyaml.configuration.file.YamlFile;
+ import org.simpleyaml.exceptions.InvalidConfigurationException;
+ import dev.orhidea.starforge.explosion.ExplosionProofItems;
+ import dev.orhidea.starforge.explosion.UnbreakableDurability;
++import dev.orhidea.starforge.task.TPSBarTask;
+ 
+ import java.io.File;
+ import java.io.IOException;
+@@ -503,6 +505,57 @@ public class EntropyConfig {
+ 
+         setComment("starforge.gui", "Settings for Starforge menus");
+     }
++
++    public static String tpsbarCommandOutput;
++    public static String rambarCommandOutput;
++    public static String ramCommandOutput;
++    public static String commandTPSBarTitle;
++    public static BossBar.Overlay commandTPSBarProgressOverlay;
++    public static TPSBarTask.FillMode commandTPSBarProgressFillMode;
++    public static BossBar.Color commandTPSBarProgressColorGood;
++    public static BossBar.Color commandTPSBarProgressColorMedium;
++    public static BossBar.Color commandTPSBarProgressColorLow;
++    public static String commandTPSBarTextColorGood;
++    public static String commandTPSBarTextColorMedium;
++    public static String commandTPSBarTextColorLow;
++    public static int commandTPSBarTickInterval;
++    public static String commandRamBarTitle;
++    public static BossBar.Overlay commandRamBarProgressOverlay;
++    public static BossBar.Color commandRamBarProgressColorGood;
++    public static BossBar.Color commandRamBarProgressColorMedium;
++    public static BossBar.Color commandRamBarProgressColorLow;
++    public static String commandRamBarTextColorGood;
++    public static String commandRamBarTextColorMedium;
++    public static String commandRamBarTextColorLow;
++    public static int commandRamBarTickInterval;
++    private static void bars() {
++        tpsbarCommandOutput = getString("starforge.command.messages.tpsbar-output", "<green>Tpsbar toggled <onoff> for <target>", "Message shown after toggling tpsbar.");
++        rambarCommandOutput = getString("starforge.command.messages.rambar-output", "<green>Rambar toggled <onoff> for <target>", "Message shown after toggling rambar.");
++        ramCommandOutput = getString("starforge.command.messages.ram-output", "<green>Ram Usage: <used>/<xmx> (<percent>)", "Message shown by /ram.");
++
++        commandTPSBarTitle = getString("starforge.command.tpsbar.title", "<gray>TPS<yellow>:</yellow> <tps> MSPT<yellow>:</yellow> <mspt> Ping<yellow>:</yellow> <ping>ms", "Bossbar title for /tpsbar.");
++        commandTPSBarProgressOverlay = BossBar.Overlay.valueOf(getString("starforge.command.tpsbar.overlay", BossBar.Overlay.NOTCHED_20.name()));
++        commandTPSBarProgressFillMode = TPSBarTask.FillMode.valueOf(getString("starforge.command.tpsbar.fill-mode", TPSBarTask.FillMode.MSPT.name()));
++        commandTPSBarProgressColorGood = BossBar.Color.valueOf(getString("starforge.command.tpsbar.progress-color.good", BossBar.Color.GREEN.name()));
++        commandTPSBarProgressColorMedium = BossBar.Color.valueOf(getString("starforge.command.tpsbar.progress-color.medium", BossBar.Color.YELLOW.name()));
++        commandTPSBarProgressColorLow = BossBar.Color.valueOf(getString("starforge.command.tpsbar.progress-color.low", BossBar.Color.RED.name()));
++        commandTPSBarTextColorGood = getString("starforge.command.tpsbar.text-color.good", "<gradient:#55ff55:#00aa00><text></gradient>");
++        commandTPSBarTextColorMedium = getString("starforge.command.tpsbar.text-color.medium", "<gradient:#ffff55:#ffaa00><text></gradient>");
++        commandTPSBarTextColorLow = getString("starforge.command.tpsbar.text-color.low", "<gradient:#ff5555:#aa0000><text></gradient>");
++        commandTPSBarTickInterval = Math.max(1, getInt("starforge.command.tpsbar.tick-interval", 20, "Ticks between tpsbar refreshes."));
++
++        commandRamBarTitle = getString("starforge.command.rambar.title", "<gray>Ram<yellow>:</yellow> <used>/<xmx> (<percent>)", "Bossbar title for /rambar.");
++        commandRamBarProgressOverlay = BossBar.Overlay.valueOf(getString("starforge.command.rambar.overlay", BossBar.Overlay.NOTCHED_20.name()));
++        commandRamBarProgressColorGood = BossBar.Color.valueOf(getString("starforge.command.rambar.progress-color.good", BossBar.Color.GREEN.name()));
++        commandRamBarProgressColorMedium = BossBar.Color.valueOf(getString("starforge.command.rambar.progress-color.medium", BossBar.Color.YELLOW.name()));
++        commandRamBarProgressColorLow = BossBar.Color.valueOf(getString("starforge.command.rambar.progress-color.low", BossBar.Color.RED.name()));
++        commandRamBarTextColorGood = getString("starforge.command.rambar.text-color.good", "<gradient:#55ff55:#00aa00><text></gradient>");
++        commandRamBarTextColorMedium = getString("starforge.command.rambar.text-color.medium", "<gradient:#ffff55:#ffaa00><text></gradient>");
++        commandRamBarTextColorLow = getString("starforge.command.rambar.text-color.low", "<gradient:#ff5555:#aa0000><text></gradient>");
++        commandRamBarTickInterval = Math.max(1, getInt("starforge.command.rambar.tick-interval", 20, "Ticks between rambar refreshes."));
++
++        setComment("starforge.command", "Server utility command settings.");
++    }
+ }
+ 
+ 
+diff --git a/src/main/java/dev/orhidea/starforge/command/RamBarCommand.java b/src/main/java/dev/orhidea/starforge/command/RamBarCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..67ee8167e51c06328c9a4a736a9f868ccf9972a6
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/command/RamBarCommand.java
+@@ -0,0 +1,41 @@
++package dev.orhidea.starforge.command;
++
++import com.mojang.brigadier.CommandDispatcher;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.task.RamBarTask;
++import io.papermc.paper.adventure.PaperAdventure;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.format.NamedTextColor;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
++import net.minecraft.commands.CommandSourceStack;
++import net.minecraft.commands.Commands;
++import net.minecraft.commands.arguments.EntityArgument;
++import net.minecraft.server.level.ServerPlayer;
++
++import java.util.Collection;
++import java.util.Collections;
++
++public final class RamBarCommand {
++    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
++        dispatcher.register(Commands.literal("rambar")
++                .requires(listener -> listener.hasPermission(2, "starforge.command.rambar"))
++                .executes(context -> execute(context.getSource(), Collections.singleton(context.getSource().getPlayerOrException())))
++                .then(Commands.argument("targets", EntityArgument.players())
++                        .requires(listener -> listener.hasPermission(2, "starforge.command.rambar.other"))
++                        .executes(context -> execute(context.getSource(), EntityArgument.getPlayers(context, "targets")))));
++    }
++
++    private static int execute(CommandSourceStack sender, Collection<ServerPlayer> targets) {
++        for (ServerPlayer player : targets) {
++            boolean enabled = RamBarTask.instance().togglePlayer(player.getBukkitEntity());
++            player.ramBar(enabled);
++            Component output = MiniMessage.miniMessage().deserialize(EntropyConfig.rambarCommandOutput,
++                    Placeholder.component("onoff", Component.translatable(enabled ? "options.on" : "options.off")
++                            .color(enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
++                    Placeholder.parsed("target", player.getGameProfile().getName()));
++            sender.sendSuccess(() -> PaperAdventure.asVanilla(output), false);
++        }
++        return targets.size();
++    }
++}
+diff --git a/src/main/java/dev/orhidea/starforge/command/RamCommand.java b/src/main/java/dev/orhidea/starforge/command/RamCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5fb950095b3b33d5022fac9334ad4f4d6bb8de2
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/command/RamCommand.java
+@@ -0,0 +1,26 @@
++package dev.orhidea.starforge.command;
++
++import com.mojang.brigadier.CommandDispatcher;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.task.RamBarTask;
++import io.papermc.paper.adventure.PaperAdventure;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
++import net.minecraft.commands.Commands;
++
++public final class RamCommand {
++    public static void register(CommandDispatcher<net.minecraft.commands.CommandSourceStack> dispatcher) {
++        dispatcher.register(Commands.literal("ram")
++                .requires(listener -> listener.hasPermission(2, "starforge.command.ram"))
++                .executes(context -> {
++                    RamBarTask ramBar = RamBarTask.instance();
++                    context.getSource().sendSuccess(() -> PaperAdventure.asVanilla(MiniMessage.miniMessage().deserialize(EntropyConfig.ramCommandOutput,
++                            Placeholder.component("allocated", ramBar.format(ramBar.getAllocated())),
++                            Placeholder.component("used", ramBar.format(ramBar.getUsed())),
++                            Placeholder.component("xmx", ramBar.format(ramBar.getXmx())),
++                            Placeholder.component("xms", ramBar.format(ramBar.getXms())),
++                            Placeholder.unparsed("percent", ((int) (ramBar.getPercent() * 100.0F)) + "%"))), false);
++                    return 1;
++                }));
++    }
++}
+diff --git a/src/main/java/dev/orhidea/starforge/command/TPSBarCommand.java b/src/main/java/dev/orhidea/starforge/command/TPSBarCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a088968099462970a3905ba53e9938af804ca0d
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/command/TPSBarCommand.java
+@@ -0,0 +1,40 @@
++package dev.orhidea.starforge.command;
++
++import com.mojang.brigadier.CommandDispatcher;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.task.TPSBarTask;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.format.NamedTextColor;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
++import net.minecraft.commands.CommandSourceStack;
++import net.minecraft.commands.Commands;
++import net.minecraft.commands.arguments.EntityArgument;
++import net.minecraft.server.level.ServerPlayer;
++
++import java.util.Collection;
++import java.util.Collections;
++
++public final class TPSBarCommand {
++    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
++        dispatcher.register(Commands.literal("tpsbar")
++                .requires(listener -> listener.hasPermission(2, "starforge.command.tpsbar"))
++                .executes(context -> execute(context.getSource(), Collections.singleton(context.getSource().getPlayerOrException())))
++                .then(Commands.argument("targets", EntityArgument.players())
++                        .requires(listener -> listener.hasPermission(2, "starforge.command.tpsbar.other"))
++                        .executes(context -> execute(context.getSource(), EntityArgument.getPlayers(context, "targets")))));
++    }
++
++    private static int execute(CommandSourceStack sender, Collection<ServerPlayer> targets) {
++        for (ServerPlayer player : targets) {
++            boolean enabled = TPSBarTask.instance().togglePlayer(player.getBukkitEntity());
++            player.tpsBar(enabled);
++            Component output = MiniMessage.miniMessage().deserialize(EntropyConfig.tpsbarCommandOutput,
++                    Placeholder.component("onoff", Component.translatable(enabled ? "options.on" : "options.off")
++                            .color(enabled ? NamedTextColor.GREEN : NamedTextColor.RED)),
++                    Placeholder.parsed("target", player.getGameProfile().getName()));
++            sender.sendSuccess(() -> io.papermc.paper.adventure.PaperAdventure.asVanilla(output), false);
++        }
++        return targets.size();
++    }
++}
+diff --git a/src/main/java/dev/orhidea/starforge/task/BossBarTask.java b/src/main/java/dev/orhidea/starforge/task/BossBarTask.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..f9f49835e58be5fde77103e8432656ea7d5348f2
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/task/BossBarTask.java
+@@ -0,0 +1,112 @@
++package dev.orhidea.starforge.task;
++
++import net.kyori.adventure.bossbar.BossBar;
++import net.minecraft.server.level.ServerPlayer;
++import org.bukkit.Bukkit;
++import org.bukkit.craftbukkit.scheduler.MinecraftInternalPlugin;
++import org.bukkit.entity.Player;
++import org.bukkit.scheduler.BukkitRunnable;
++
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.Iterator;
++import java.util.Map;
++import java.util.UUID;
++
++public abstract class BossBarTask extends BukkitRunnable {
++    private final Map<UUID, BossBar> bossbars = new HashMap<>();
++    private boolean started;
++
++    abstract BossBar createBossBar();
++
++    abstract void updateBossBar(BossBar bossbar, Player player);
++
++    @Override
++    public void run() {
++        Iterator<Map.Entry<UUID, BossBar>> iterator = this.bossbars.entrySet().iterator();
++        while (iterator.hasNext()) {
++            Map.Entry<UUID, BossBar> entry = iterator.next();
++            Player player = Bukkit.getPlayer(entry.getKey());
++            if (player == null) {
++                iterator.remove();
++                continue;
++            }
++            this.updateBossBar(entry.getValue(), player);
++        }
++    }
++
++    @Override
++    public void cancel() {
++        super.cancel();
++        for (UUID uuid : new HashSet<>(this.bossbars.keySet())) {
++            Player player = Bukkit.getPlayer(uuid);
++            if (player != null) {
++                this.removePlayer(player);
++            }
++        }
++        this.bossbars.clear();
++        this.started = false;
++    }
++
++    public boolean removePlayer(Player player) {
++        BossBar bossbar = this.bossbars.remove(player.getUniqueId());
++        if (bossbar != null) {
++            player.hideBossBar(bossbar);
++            return true;
++        }
++        return false;
++    }
++
++    public void addPlayer(Player player) {
++        this.removePlayer(player);
++        BossBar bossbar = this.createBossBar();
++        this.bossbars.put(player.getUniqueId(), bossbar);
++        this.updateBossBar(bossbar, player);
++        player.showBossBar(bossbar);
++    }
++
++    public boolean togglePlayer(Player player) {
++        if (this.removePlayer(player)) {
++            return false;
++        }
++        this.addPlayer(player);
++        return true;
++    }
++
++    public void start() {
++        this.stop();
++        this.runTaskTimer(new MinecraftInternalPlugin(), 1L, 1L);
++        this.started = true;
++    }
++
++    public void stop() {
++        if (this.started) {
++            this.cancel();
++        }
++    }
++
++    public static void startAll() {
++        RamBarTask.instance().start();
++        TPSBarTask.instance().start();
++    }
++
++    public static void stopAll() {
++        RamBarTask.instance().stop();
++        TPSBarTask.instance().stop();
++    }
++
++    public static void addToAll(ServerPlayer player) {
++        Player bukkit = player.getBukkitEntity();
++        if (player.ramBar()) {
++            RamBarTask.instance().addPlayer(bukkit);
++        }
++        if (player.tpsBar()) {
++            TPSBarTask.instance().addPlayer(bukkit);
++        }
++    }
++
++    public static void removeFromAll(Player player) {
++        RamBarTask.instance().removePlayer(player);
++        TPSBarTask.instance().removePlayer(player);
++    }
++}
+diff --git a/src/main/java/dev/orhidea/starforge/task/RamBarTask.java b/src/main/java/dev/orhidea/starforge/task/RamBarTask.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..36ef7b8f9cdb3a33fa8c5a8dc7c2b261c29a8627
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/task/RamBarTask.java
+@@ -0,0 +1,110 @@
++package dev.orhidea.starforge.task;
++
++import dev.orhidea.starforge.EntropyConfig;
++import net.kyori.adventure.bossbar.BossBar;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
++import org.bukkit.entity.Player;
++
++import java.lang.management.ManagementFactory;
++import java.lang.management.MemoryUsage;
++
++public final class RamBarTask extends BossBarTask {
++    private static RamBarTask instance;
++    private long allocated;
++    private long used;
++    private long xmx;
++    private long xms;
++    private float percent;
++    private int tick;
++
++    public static RamBarTask instance() {
++        if (instance == null) {
++            instance = new RamBarTask();
++        }
++        return instance;
++    }
++
++    @Override
++    BossBar createBossBar() {
++        return BossBar.bossBar(Component.empty(), 0.0F, this.getBossBarColor(), EntropyConfig.commandRamBarProgressOverlay);
++    }
++
++    @Override
++    void updateBossBar(BossBar bossbar, Player player) {
++        bossbar.progress(this.getBossBarProgress());
++        bossbar.color(this.getBossBarColor());
++        bossbar.name(MiniMessage.miniMessage().deserialize(EntropyConfig.commandRamBarTitle,
++                Placeholder.component("allocated", this.format(this.allocated)),
++                Placeholder.component("used", this.format(this.used)),
++                Placeholder.component("xmx", this.format(this.xmx)),
++                Placeholder.component("xms", this.format(this.xms)),
++                Placeholder.unparsed("percent", ((int) (this.percent * 100.0F)) + "%")));
++    }
++
++    @Override
++    public void run() {
++        if (++this.tick < EntropyConfig.commandRamBarTickInterval) {
++            return;
++        }
++        this.tick = 0;
++
++        MemoryUsage heap = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
++        this.allocated = heap.getCommitted();
++        this.used = heap.getUsed();
++        this.xmx = heap.getMax();
++        this.xms = heap.getInit();
++        this.percent = Math.max(Math.min((float) this.used / this.xmx, 1.0F), 0.0F);
++
++        super.run();
++    }
++
++    private float getBossBarProgress() {
++        return this.percent;
++    }
++
++    private BossBar.Color getBossBarColor() {
++        if (this.percent < 0.5F) {
++            return EntropyConfig.commandRamBarProgressColorGood;
++        }
++        if (this.percent < 0.75F) {
++            return EntropyConfig.commandRamBarProgressColorMedium;
++        }
++        return EntropyConfig.commandRamBarProgressColorLow;
++    }
++
++    public Component format(long value) {
++        String color = this.percent < 0.60F ? EntropyConfig.commandRamBarTextColorGood
++                : this.percent < 0.85F ? EntropyConfig.commandRamBarTextColorMedium
++                : EntropyConfig.commandRamBarTextColorLow;
++        String text;
++        if (value < 1024L) {
++            text = value + "B";
++        } else {
++            int unit = (63 - Long.numberOfLeadingZeros(value)) / 10;
++            text = String.format("%.1f%s", (double) value / (1L << (unit * 10)), "BKMGTPE".charAt(unit));
++        }
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.unparsed("text", text));
++    }
++
++    public long getAllocated() {
++        return this.allocated;
++    }
++
++    public long getUsed() {
++        return this.used;
++    }
++
++    public long getXmx() {
++        return this.xmx;
++    }
++
++    public long getXms() {
++        return this.xms;
++    }
++
++    public float getPercent() {
++        return this.percent;
++    }
++}
+diff --git a/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java b/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..87a6390634bdef8bcf2a01b325be315d690b7c16
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java
+@@ -0,0 +1,120 @@
++package dev.orhidea.starforge.task;
++
++import dev.orhidea.starforge.EntropyConfig;
++import net.kyori.adventure.bossbar.BossBar;
++import net.kyori.adventure.text.Component;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
++import org.bukkit.Bukkit;
++import org.bukkit.entity.Player;
++
++public final class TPSBarTask extends BossBarTask {
++    private static TPSBarTask instance;
++    private double tps = 20.0D;
++    private double mspt = 0.0D;
++    private int tick;
++
++    public static TPSBarTask instance() {
++        if (instance == null) {
++            instance = new TPSBarTask();
++        }
++        return instance;
++    }
++
++    @Override
++    BossBar createBossBar() {
++        return BossBar.bossBar(Component.empty(), 0.0F, this.getBossBarColor(), EntropyConfig.commandTPSBarProgressOverlay);
++    }
++
++    @Override
++    void updateBossBar(BossBar bossbar, Player player) {
++        bossbar.progress(this.getBossBarProgress(player));
++        bossbar.color(this.getBossBarColor(player));
++        bossbar.name(MiniMessage.miniMessage().deserialize(EntropyConfig.commandTPSBarTitle,
++                Placeholder.component("tps", this.getTPSColor()),
++                Placeholder.component("mspt", this.getMSPTColor()),
++                Placeholder.component("ping", this.getPingColor(player.getPing()))));
++    }
++
++    @Override
++    public void run() {
++        if (++this.tick < EntropyConfig.commandTPSBarTickInterval) {
++            return;
++        }
++        this.tick = 0;
++        this.tps = Math.max(Math.min(Bukkit.getTPS()[0], 20.0D), 0.0D);
++        this.mspt = Bukkit.getAverageTickTime();
++        super.run();
++    }
++
++    private float getBossBarProgress(Player player) {
++        if (EntropyConfig.commandTPSBarProgressFillMode == FillMode.MSPT) {
++            return Math.max(Math.min((float) this.mspt / 50.0F, 1.0F), 0.0F);
++        }
++        if (EntropyConfig.commandTPSBarProgressFillMode == FillMode.PING) {
++            return Math.max(Math.min((float) player.getPing() / 200.0F, 1.0F), 0.0F);
++        }
++        return Math.max(Math.min((float) this.tps / 20.0F, 1.0F), 0.0F);
++    }
++
++    private BossBar.Color getBossBarColor(Player player) {
++        if (this.isGood(EntropyConfig.commandTPSBarProgressFillMode, player.getPing())) {
++            return EntropyConfig.commandTPSBarProgressColorGood;
++        }
++        if (this.isMedium(EntropyConfig.commandTPSBarProgressFillMode, player.getPing())) {
++            return EntropyConfig.commandTPSBarProgressColorMedium;
++        }
++        return EntropyConfig.commandTPSBarProgressColorLow;
++    }
++
++    private boolean isGood(FillMode mode) {
++        return this.isGood(mode, 0);
++    }
++
++    private boolean isGood(FillMode mode, int ping) {
++        return switch (mode) {
++            case MSPT -> this.mspt < 40.0D;
++            case TPS -> this.tps >= 19.0D;
++            case PING -> ping < 100;
++        };
++    }
++
++    private boolean isMedium(FillMode mode) {
++        return this.isMedium(mode, 0);
++    }
++
++    private boolean isMedium(FillMode mode, int ping) {
++        return switch (mode) {
++            case MSPT -> this.mspt < 50.0D;
++            case TPS -> this.tps >= 15.0D;
++            case PING -> ping < 200;
++        };
++    }
++
++    private Component getTPSColor() {
++        String color = this.isGood(FillMode.TPS) ? EntropyConfig.commandTPSBarTextColorGood
++                : this.isMedium(FillMode.TPS) ? EntropyConfig.commandTPSBarTextColorMedium
++                : EntropyConfig.commandTPSBarTextColorLow;
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", this.tps)));
++    }
++
++    private Component getMSPTColor() {
++        String color = this.isGood(FillMode.MSPT) ? EntropyConfig.commandTPSBarTextColorGood
++                : this.isMedium(FillMode.MSPT) ? EntropyConfig.commandTPSBarTextColorMedium
++                : EntropyConfig.commandTPSBarTextColorLow;
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", String.format("%.2f", this.mspt)));
++    }
++
++    private Component getPingColor(int ping) {
++        String color = this.isGood(FillMode.PING, ping) ? EntropyConfig.commandTPSBarTextColorGood
++                : this.isMedium(FillMode.PING, ping) ? EntropyConfig.commandTPSBarTextColorMedium
++                : EntropyConfig.commandTPSBarTextColorLow;
++        return MiniMessage.miniMessage().deserialize(color, Placeholder.parsed("text", Integer.toString(ping)));
++    }
++
++    public enum FillMode {
++        TPS,
++        MSPT,
++        PING
++    }
++}
+diff --git a/src/main/java/net/minecraft/commands/Commands.java b/src/main/java/net/minecraft/commands/Commands.java
+index b7f338e982d0dcab99137ab6dc200b82ac6b7cba..a6b02e2d21f1bae8c6414cc42fb276442d8e0db8 100644
+--- a/src/main/java/net/minecraft/commands/Commands.java
++++ b/src/main/java/net/minecraft/commands/Commands.java
+@@ -250,6 +250,9 @@ public class Commands {
+             SetPlayerIdleTimeoutCommand.register(this.dispatcher);
+             StopCommand.register(this.dispatcher);
+             WhitelistCommand.register(this.dispatcher);
++            dev.orhidea.starforge.command.TPSBarCommand.register(this.dispatcher); // Starforge
++            dev.orhidea.starforge.command.RamBarCommand.register(this.dispatcher); // Starforge
++            dev.orhidea.starforge.command.RamCommand.register(this.dispatcher); // Starforge
+         }
+ 
+         if (environment.includeIntegrated) {
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index df6f05f01981c153906cb550a313719f412a0d9c..4fdd41c99c0bb9b20b1ba51a7d39b3405f51b6fe 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1049,6 +1049,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         this.safeShutdown(waitForShutdown, false);
+     }
+     public void safeShutdown(boolean waitForShutdown, boolean isRestarting) {
++        dev.orhidea.starforge.task.BossBarTask.stopAll(); // Starforge
+         this.isRestarting = isRestarting;
+         this.hasLoggedStop = true; // Paper - Debugging
+         if (isDebugging()) io.papermc.paper.util.TraceUtil.dumpTraceForThread("Server stopped"); // Paper - Debugging
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 65ec33271d4be0ecfbb86495e7266db5e7330692..cbfdba6ff2732ec2947c32c4dff3342086bb622f 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -226,6 +226,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+         dev.orhidea.starforge.EntropyConfig.load(); // Entropy
+         dev.orhidea.starforge.command.EntropyCommandLoader.loadCommands(); // Entropy
++        dev.orhidea.starforge.task.BossBarTask.startAll(); // Starforge
+ 
+         this.setPvpAllowed(dedicatedserverproperties.pvp);
+         this.setFlightAllowed(dedicatedserverproperties.allowFlight);
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index d31a65c6067a89fe3ebe59b4565c52e54530c601..9fc724b8725249ca3224a11555317dbffd41d761 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -284,6 +284,8 @@ public class ServerPlayer extends Player {
+     public com.destroystokyo.paper.event.entity.PlayerNaturallySpawnCreaturesEvent playerNaturallySpawnedEvent; // Paper - PlayerNaturallySpawnCreaturesEvent
+     public @Nullable String clientBrandName = null; // Paper - Brand support
+     public org.bukkit.event.player.PlayerQuitEvent.QuitReason quitReason = null; // Paper - Add API for quit reason; there are a lot of changes to do if we change all methods leading to the event
++    private boolean tpsBar = false; // Starforge
++    private boolean ramBar = false; // Starforge
+ 
+     // Paper start - replace player chunk loader
+     private final java.util.concurrent.atomic.AtomicReference<io.papermc.paper.chunk.system.RegionizedPlayerChunkLoader.ViewDistances> viewDistances = new java.util.concurrent.atomic.AtomicReference<>(new io.papermc.paper.chunk.system.RegionizedPlayerChunkLoader.ViewDistances(-1, -1, -1));
+@@ -576,6 +578,18 @@ public class ServerPlayer extends Player {
+             }
+         }
+ 
++        if (nbt.contains("Starforge.TPSBar")) {
++            this.tpsBar = nbt.getBoolean("Starforge.TPSBar");
++        } else if (nbt.contains("Purpur.TPSBar")) {
++            this.tpsBar = nbt.getBoolean("Purpur.TPSBar");
++        }
++
++        if (nbt.contains("Starforge.RamBar")) {
++            this.ramBar = nbt.getBoolean("Starforge.RamBar");
++        } else if (nbt.contains("Purpur.RamBar")) {
++            this.ramBar = nbt.getBoolean("Purpur.RamBar");
++        }
++
+     }
+ 
+     @Override
+@@ -641,6 +655,8 @@ public class ServerPlayer extends Player {
+             });
+         }
+         this.getBukkitEntity().setExtraData(nbt); // CraftBukkit
++        nbt.putBoolean("Starforge.TPSBar", this.tpsBar); // Starforge
++        nbt.putBoolean("Starforge.RamBar", this.ramBar); // Starforge
+ 
+     }
+ 
+@@ -2778,6 +2794,22 @@ public class ServerPlayer extends Player {
+     public CraftPlayer getBukkitEntity() {
+         return (CraftPlayer) super.getBukkitEntity();
+     }
++
++    public boolean tpsBar() {
++        return this.tpsBar;
++    }
++
++    public void tpsBar(boolean tpsBar) {
++        this.tpsBar = tpsBar;
++    }
++
++    public boolean ramBar() {
++        return this.ramBar;
++    }
++
++    public void ramBar(boolean ramBar) {
++        this.ramBar = ramBar;
++    }
+     // CraftBukkit end
+ }
+ 
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 93882f586d9a8e697522646f7a2cc80d16749915..e5902e4108e5c8fc23d85be70e99a8e6cdaa25a1 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -487,6 +487,7 @@ public abstract class PlayerList {
+             scoreboard.addPlayerToTeam(player.getScoreboardName(), collideRuleTeam);
+         }
+         // Paper end - Configurable player collision
++        dev.orhidea.starforge.task.BossBarTask.addToAll(player); // Starforge
+         PlayerList.LOGGER.info("{}[{}] logged in with entity id {} at ([{}]{}, {}, {})", player.getName().getString(), s1, player.getId(), worldserver1.serverLevelData.getLevelName(), player.getX(), player.getY(), player.getZ());
+     }
+ 
+@@ -599,6 +600,7 @@ public abstract class PlayerList {
+     }
+     public net.kyori.adventure.text.Component remove(ServerPlayer entityplayer, net.kyori.adventure.text.Component leaveMessage) {
+         // Paper end - Fix kick event leave message not being sent
++        dev.orhidea.starforge.task.BossBarTask.removeFromAll(entityplayer.getBukkitEntity()); // Starforge
+         ServerLevel worldserver = entityplayer.serverLevel();
+ 
+         entityplayer.awardStat(Stats.LEAVE_GAME);

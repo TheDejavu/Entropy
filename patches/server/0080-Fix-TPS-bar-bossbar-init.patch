@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 19:42:57 +0200
+Subject: [PATCH] Fix TPS bar bossbar init
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java b/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java
+index 87a6390634bdef8bcf2a01b325be315d690b7c16..4069b80673b04d4658a7dc83a755a3eb6e020a6d 100644
+--- a/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java
++++ b/src/main/java/dev/orhidea/starforge/task/TPSBarTask.java
+@@ -23,7 +23,7 @@ public final class TPSBarTask extends BossBarTask {
+ 
+     @Override
+     BossBar createBossBar() {
+-        return BossBar.bossBar(Component.empty(), 0.0F, this.getBossBarColor(), EntropyConfig.commandTPSBarProgressOverlay);
++        return BossBar.bossBar(Component.empty(), 0.0F, EntropyConfig.commandTPSBarProgressColorGood, EntropyConfig.commandTPSBarProgressOverlay);
+     }
+ 
+     @Override
