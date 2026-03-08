@@ -1,0 +1,236 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 16:11:20 +0200
+Subject: [PATCH] Import remaining Pluto feature toggles
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 9bca1d78a2ce786f5c66d4cc634d0469b9dd20cf..eb3aa6337ff3ffb33cc38091ef778c780ad0708e 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -258,6 +258,20 @@ public class EntropyConfig {
+     public static boolean disableShulkersDroppingContentsWhenDestroyed;
+     public static boolean disableShulkerSplitting;
+     public static boolean disableShulkerTeleporting;
++    public static boolean disableBlockGenerationFromFluids;
++    public static boolean disableNetherPortalGeneration;
++    public static boolean spawnerSettingsEnabled;
++    public static boolean spawnerCheckForNearbyPlayers;
++    public static boolean spawnerCheckForNearbyEntities;
++    public static boolean spawnerCheckForBlockCollision;
++    public static boolean spawnerDisableBabySpawns;
++    public static boolean spawnerDisableParticles;
++    public static int spawnerMinSpawnDelay;
++    public static int spawnerMaxSpawnDelay;
++    public static short spawnerSpawnCount;
++    public static short spawnerMaxNearbyEntities;
++    public static short spawnerRequiredPlayerRange;
++    public static short spawnerSpawnRange;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -297,6 +311,20 @@ public class EntropyConfig {
+         disableShulkersDroppingContentsWhenDestroyed = getBoolean("starforge.performance.shulker.disable-drop-contents-when-destroyed", false, "Prevent shulker boxes from dropping their contents when destroyed as items.");
+         disableShulkerSplitting = getBoolean("starforge.performance.shulker.disable-splitting", false, "Disable shulker splitting from shulker bullets.");
+         disableShulkerTeleporting = getBoolean("starforge.performance.shulker.disable-teleporting", false, "Disable random shulker teleports.");
++        disableBlockGenerationFromFluids = getBoolean("starforge.performance.fluids.disable-block-generation", false, "Prevent lava and water interactions from generating blocks.");
++        disableNetherPortalGeneration = getBoolean("starforge.performance.fire.disable-nether-portal-generation", false, "Prevent fire from creating nether portals.");
++        spawnerSettingsEnabled = getBoolean("starforge.performance.spawner.custom-settings.enabled", false, "Enable Starforge-controlled mob spawner settings.");
++        spawnerCheckForNearbyPlayers = getBoolean("starforge.performance.spawner.custom-settings.check-nearby-players", true, "Require a nearby player for spawner ticking.");
++        spawnerCheckForNearbyEntities = getBoolean("starforge.performance.spawner.custom-settings.check-nearby-entities", true, "Respect the nearby-entity cap when spawning.");
++        spawnerCheckForBlockCollision = getBoolean("starforge.performance.spawner.custom-settings.check-block-collision", true, "Require a collision-free spawn box for spawners.");
++        spawnerDisableBabySpawns = getBoolean("starforge.performance.spawner.custom-settings.disable-baby-spawns", false, "Prevent baby mobs from spawning from spawners.");
++        spawnerDisableParticles = getBoolean("starforge.performance.spawner.custom-settings.disable-particles", false, "Disable mob spawner particles and spawn effect.");
++        spawnerMinSpawnDelay = getInt("starforge.performance.spawner.custom-settings.min-spawn-delay", 200, "Spawner minimum spawn delay.");
++        spawnerMaxSpawnDelay = getInt("starforge.performance.spawner.custom-settings.max-spawn-delay", 800, "Spawner maximum spawn delay.");
++        spawnerSpawnCount = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.spawn-count", 4, "Spawner spawn count."));
++        spawnerMaxNearbyEntities = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.max-nearby-entities", 6, "Spawner max nearby entities."));
++        spawnerRequiredPlayerRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.required-player-range", 16, "Spawner required player range."));
++        spawnerSpawnRange = (short) Math.min(Short.MAX_VALUE, getInt("starforge.performance.spawner.custom-settings.spawn-range", 4, "Spawner spawn range."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/world/level/BaseSpawner.java b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+index 11924211dd45d315102fd0da793c507461067c11..af778f44f25725ac3a903373102fa7e64a01f88b 100644
+--- a/src/main/java/net/minecraft/world/level/BaseSpawner.java
++++ b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+@@ -49,6 +49,7 @@ public abstract class BaseSpawner {
+     public int requiredPlayerRange = 16;
+     public int spawnRange = 4;
+     private int tickDelay = 0; // Paper - Configurable mob spawner tick rate
++    public boolean wasApiUsed = false;
+ 
+     public BaseSpawner() {}
+ 
+@@ -89,7 +90,15 @@ public abstract class BaseSpawner {
+         tickDelay = world.paperConfig().tickRates.mobSpawner;
+         if (tickDelay == -1) { return; } // If disabled
+         // Paper end - Configurable mob spawner tick rate
+-        if (this.isNearPlayer(world, pos)) {
++        if (!this.wasApiUsed && dev.orhidea.starforge.EntropyConfig.spawnerSettingsEnabled) {
++            this.minSpawnDelay = dev.orhidea.starforge.EntropyConfig.spawnerMinSpawnDelay;
++            this.maxSpawnDelay = dev.orhidea.starforge.EntropyConfig.spawnerMaxSpawnDelay;
++            this.spawnCount = dev.orhidea.starforge.EntropyConfig.spawnerSpawnCount;
++            this.maxNearbyEntities = dev.orhidea.starforge.EntropyConfig.spawnerMaxNearbyEntities;
++            this.requiredPlayerRange = dev.orhidea.starforge.EntropyConfig.spawnerRequiredPlayerRange;
++            this.spawnRange = dev.orhidea.starforge.EntropyConfig.spawnerSpawnRange;
++        }
++        if (!dev.orhidea.starforge.EntropyConfig.spawnerCheckForNearbyPlayers || this.isNearPlayer(world, pos)) {
+             if (this.spawnDelay < -tickDelay) { // Paper - Configurable mob spawner tick rate
+                 this.delay(world, pos);
+             }
+@@ -116,7 +125,7 @@ public abstract class BaseSpawner {
+                     double d1 = j >= 2 ? nbttaglist.getDouble(1) : (double) (pos.getY() + randomsource.nextInt(3) - 1);
+                     double d2 = j >= 3 ? nbttaglist.getDouble(2) : (double) pos.getZ() + (randomsource.nextDouble() - randomsource.nextDouble()) * (double) this.spawnRange + 0.5D;
+ 
+-                    if (world.noCollision(((EntityType) optional.get()).getAABB(d0, d1, d2))) {
++                    if (!dev.orhidea.starforge.EntropyConfig.spawnerCheckForBlockCollision || world.noCollision(((EntityType) optional.get()).getAABB(d0, d1, d2))) {
+                         BlockPos blockposition1 = BlockPos.containing(d0, d1, d2);
+ 
+                         if (mobspawnerdata.getCustomSpawnRules().isPresent()) {
+@@ -157,7 +166,7 @@ public abstract class BaseSpawner {
+                             return;
+                         }
+ 
+-                        int k = world.getEntities(EntityTypeTest.forExactClass(entity.getClass()), (new AABB((double) pos.getX(), (double) pos.getY(), (double) pos.getZ(), (double) (pos.getX() + 1), (double) (pos.getY() + 1), (double) (pos.getZ() + 1))).inflate((double) this.spawnRange), EntitySelector.NO_SPECTATORS).size();
++                        int k = !dev.orhidea.starforge.EntropyConfig.spawnerCheckForNearbyEntities ? 0 : world.getEntities(EntityTypeTest.forExactClass(entity.getClass()), (new AABB((double) pos.getX(), (double) pos.getY(), (double) pos.getZ(), (double) (pos.getX() + 1), (double) (pos.getY() + 1), (double) (pos.getZ() + 1))).inflate((double) this.spawnRange), EntitySelector.NO_SPECTATORS).size();
+ 
+                         if (k >= this.maxNearbyEntities) {
+                             this.delay(world, pos);
+@@ -176,6 +185,10 @@ public abstract class BaseSpawner {
+                             if (mobspawnerdata.getEntityToSpawn().size() == 1 && mobspawnerdata.getEntityToSpawn().contains("id", 8)) {
+                                 ((Mob) entity).finalizeSpawn(world, world.getCurrentDifficultyAt(entity.blockPosition()), MobSpawnType.SPAWNER, (SpawnGroupData) null, (CompoundTag) null);
+                             }
++                            if (dev.orhidea.starforge.EntropyConfig.spawnerDisableBabySpawns && entityinsentient.isBaby()) {
++                                if (entityinsentient.getVehicle() != null) entityinsentient.getVehicle().discard();
++                                continue;
++                            }
+                             // Spigot Start
+                             if ( entityinsentient.level().spigotConfig.nerfSpawnerMobs )
+                             {
+@@ -202,6 +215,7 @@ public abstract class BaseSpawner {
+                         if(EntropyConfig.spawnerOverrideEntityHealth && entity instanceof Mob mob) mob.setHealth(EntropyConfig.spawnerEntityHealth);
+                         // Entropy end
+ 
++                        if (dev.orhidea.starforge.EntropyConfig.spawnerDisableParticles) continue;
+                         world.levelEvent(2004, pos, 0);
+                         world.gameEvent(entity, GameEvent.ENTITY_PLACE, blockposition1);
+                         if (entity instanceof Mob) {
+@@ -287,9 +301,11 @@ public abstract class BaseSpawner {
+         }
+ 
+         this.displayEntity = null;
++        this.wasApiUsed = nbt.getBoolean("Starforge.WasApiUsed");
+     }
+ 
+     public CompoundTag save(CompoundTag nbt) {
++        nbt.putBoolean("Starforge.WasApiUsed", this.wasApiUsed);
+         // Paper start
+         if (spawnDelay > Short.MAX_VALUE) {
+             nbt.putInt("Paper.Delay", this.spawnDelay);
+diff --git a/src/main/java/net/minecraft/world/level/block/BaseFireBlock.java b/src/main/java/net/minecraft/world/level/block/BaseFireBlock.java
+index bd7cb2ddcac5cdc1d61899d12fc3383fd00598b1..b3f016ab9607c9f8b59383bf4fd951e3d5ff96b5 100644
+--- a/src/main/java/net/minecraft/world/level/block/BaseFireBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/BaseFireBlock.java
+@@ -157,7 +157,7 @@ public abstract class BaseFireBlock extends Block {
+     public void onPlace(BlockState state, Level world, BlockPos pos, BlockState oldState, boolean notify, net.minecraft.world.item.context.UseOnContext context) {
+         // Paper end - UseOnContext param
+         if (!oldState.is(state.getBlock())) {
+-            if (BaseFireBlock.inPortalDimension(world)) {
++            if (!dev.orhidea.starforge.EntropyConfig.disableNetherPortalGeneration && BaseFireBlock.inPortalDimension(world)) {
+                 Optional<PortalShape> optional = PortalShape.findEmptyPortalShape(world, pos, Direction.Axis.X);
+ 
+                 if (optional.isPresent()) {
+diff --git a/src/main/java/net/minecraft/world/level/block/LiquidBlock.java b/src/main/java/net/minecraft/world/level/block/LiquidBlock.java
+index 9b3dcf1a4d4cece92a629506d341f6bfe79d13d0..493b54c3470e9a04b29cb43518699ef3f73d3ead 100644
+--- a/src/main/java/net/minecraft/world/level/block/LiquidBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/LiquidBlock.java
+@@ -192,6 +192,7 @@ public class LiquidBlock extends Block implements BucketPickup {
+                 BlockPos blockposition1 = pos.relative(enumdirection.getOpposite());
+ 
+                 if (world.getFluidState(blockposition1).is(FluidTags.WATER)) {
++                    if (dev.orhidea.starforge.EntropyConfig.disableBlockGenerationFromFluids) return false;
+                     Block block = world.getFluidState(pos).isSource() ? Blocks.OBSIDIAN : Blocks.COBBLESTONE;
+ 
+                     // CraftBukkit start
+@@ -203,6 +204,7 @@ public class LiquidBlock extends Block implements BucketPickup {
+                 }
+ 
+                 if (flag && world.getBlockState(blockposition1).is(Blocks.BLUE_ICE)) {
++                    if (dev.orhidea.starforge.EntropyConfig.disableBlockGenerationFromFluids) return false;
+                     // CraftBukkit start
+                     if (org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockFormEvent(world, pos, Blocks.BASALT.defaultBlockState())) {
+                         this.fizz(world, pos);
+diff --git a/src/main/java/net/minecraft/world/level/material/LavaFluid.java b/src/main/java/net/minecraft/world/level/material/LavaFluid.java
+index 3bb4a9a1a6249e8ba2de237f801210e7f4fd5825..134c80684eee2f0299897b1e9855945875e188d2 100644
+--- a/src/main/java/net/minecraft/world/level/material/LavaFluid.java
++++ b/src/main/java/net/minecraft/world/level/material/LavaFluid.java
+@@ -209,7 +209,7 @@ public abstract class LavaFluid extends FlowingFluid {
+             FluidState fluid1 = world.getFluidState(pos);
+ 
+             if (this.is(FluidTags.LAVA) && fluid1.is(FluidTags.WATER)) {
+-                if (state.getBlock() instanceof LiquidBlock) {
++                if (state.getBlock() instanceof LiquidBlock && !dev.orhidea.starforge.EntropyConfig.disableBlockGenerationFromFluids) {
+                     // CraftBukkit start
+                     if (!org.bukkit.craftbukkit.event.CraftEventFactory.handleBlockFormEvent(world.getMinecraftWorld(), pos, Blocks.STONE.defaultBlockState(), 3)) {
+                         return;
+diff --git a/src/main/java/org/bukkit/craftbukkit/block/CraftCreatureSpawner.java b/src/main/java/org/bukkit/craftbukkit/block/CraftCreatureSpawner.java
+index 0d39223d1eaa3fe7065eb9dc9f945ca965d3b43e..c4933cebe6320c8e24f84d27c4b5efd027fc5dec 100644
+--- a/src/main/java/org/bukkit/craftbukkit/block/CraftCreatureSpawner.java
++++ b/src/main/java/org/bukkit/craftbukkit/block/CraftCreatureSpawner.java
+@@ -157,6 +157,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     @Override
+     public void setDelay(int delay) {
+         this.getSnapshot().getSpawner().spawnDelay = delay;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -168,6 +169,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     public void setMinSpawnDelay(int spawnDelay) {
+         Preconditions.checkArgument(spawnDelay <= this.getMaxSpawnDelay(), "Minimum Spawn Delay must be less than or equal to Maximum Spawn Delay");
+         this.getSnapshot().getSpawner().minSpawnDelay = spawnDelay;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -180,6 +182,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+         Preconditions.checkArgument(spawnDelay > 0, "Maximum Spawn Delay must be greater than 0.");
+         Preconditions.checkArgument(spawnDelay >= this.getMinSpawnDelay(), "Maximum Spawn Delay must be greater than or equal to Minimum Spawn Delay");
+         this.getSnapshot().getSpawner().maxSpawnDelay = spawnDelay;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -190,6 +193,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     @Override
+     public void setMaxNearbyEntities(int maxNearbyEntities) {
+         this.getSnapshot().getSpawner().maxNearbyEntities = maxNearbyEntities;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -200,6 +204,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     @Override
+     public void setSpawnCount(int count) {
+         this.getSnapshot().getSpawner().spawnCount = count;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -210,6 +215,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     @Override
+     public void setRequiredPlayerRange(int requiredPlayerRange) {
+         this.getSnapshot().getSpawner().requiredPlayerRange = requiredPlayerRange;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
+@@ -220,6 +226,7 @@ public class CraftCreatureSpawner extends CraftBlockEntityState<SpawnerBlockEnti
+     @Override
+     public void setSpawnRange(int spawnRange) {
+         this.getSnapshot().getSpawner().spawnRange = spawnRange;
++        this.getSnapshot().getSpawner().wasApiUsed = true;
+     }
+ 
+     @Override
