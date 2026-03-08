@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:57:56 +0200
+Subject: [PATCH] Prefilter untracked hotspot tracker pairs
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 13364c90703dc4cc5aa5cb125b75cf5031bc91ba..52e69e7faf79efa0b8612f929cf5f114780f89b7 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1334,6 +1334,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                         continue;
+                     }
+                     ServerPlayer player = (ServerPlayer)raw;
++                    if (this.shouldSkipUntrackedPlayerUpdate(player)) {
++                        continue;
++                    }
+                     if (this.shouldSkipHotspotTrackedPlayerUpdate(player)) {
+                         continue;
+                     }
+@@ -1370,6 +1373,22 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+             return (net.minecraft.server.MinecraftServer.currentTick + this.entity.getId() + player.getId()) % dev.orhidea.starforge.EntropyConfig.hotspotTrackedPairUpdateInterval != 0;
+         }
++
++        private boolean shouldSkipUntrackedPlayerUpdate(ServerPlayer player) {
++            if (player == this.entity || this.seenBy.contains(player.connection)) {
++                return false;
++            }
++            if (dev.orhidea.starforge.EntropyUserManager.Instance.shouldHideHotspotEntity(player, this.entity)) {
++                return true;
++            }
++
++            double deltaX = player.getX() - this.entity.getX();
++            double deltaZ = player.getZ() - this.entity.getZ();
++            double visibleRange = (double) this.getEffectiveRange() * player.trackingRangeModifier;
++            double range = Math.min(visibleRange, ChunkMap.this.getPlayerViewDistance(player) * 16);
++
++            return deltaX * deltaX + deltaZ * deltaZ > range * range;
++        }
+         // Paper end - use distance map to optimise tracker
+ 
+         public boolean equals(Object object) {
