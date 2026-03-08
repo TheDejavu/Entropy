@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 01:51:48 +0200
+Subject: [PATCH] Cache tracker effective range per tick
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 38656544a932da19ceda627a6a82f55521253336..319d922476b7da6a959021195c16e73a26138e4c 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1361,6 +1361,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         private final ReferenceArrayList<ServerPlayerConnection> pendingRemovalChecks = new ReferenceArrayList<>();
+         private final int playerSearchInterval;
+         private final boolean alwaysSearchForPlayers;
++        private int cachedEffectiveRangeTick = Integer.MIN_VALUE;
++        private int cachedEffectiveRange;
+         private Vec3 entityPosition;
+ 
+         public TrackedEntity(Entity entity, int i, int j, boolean flag) {
+@@ -1504,7 +1506,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 double vec3d_dz = player.getZ() - this.entity.getZ();
+                 // Paper end - remove allocation of Vec3D here
+                 int i = ChunkMap.this.getPlayerViewDistance(player);
+-                double visibleRange = (double) this.getEffectiveRange();
++                double visibleRange = (double) this.getEffectiveRangeCached();
+                 double d0 = Math.min(visibleRange, i * 16);
+                 double d1 = vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz; // Paper
+                 double d2 = d0 * d0;
+@@ -1591,6 +1593,15 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             return this.scaledRange(i);
+         }
+ 
++        private int getEffectiveRangeCached() {
++            int tick = this.entity.tickCount;
++            if (this.cachedEffectiveRangeTick != tick) {
++                this.cachedEffectiveRangeTick = tick;
++                this.cachedEffectiveRange = this.getEffectiveRange();
++            }
++            return this.cachedEffectiveRange;
++        }
++
+         public void updatePlayers(List<ServerPlayer> players) {
+             Iterator iterator = players.iterator();
+ 
