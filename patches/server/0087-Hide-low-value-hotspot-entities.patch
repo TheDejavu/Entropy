@@ -1,0 +1,96 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:53:33 +0200
+Subject: [PATCH] Hide low-value hotspot entities
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index f22d4d5b64583428134bfbf005bb030a5aa00e56..93b244b56116eb76dab18b55215af60a7fb0924c 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -289,6 +289,8 @@ public class EntropyConfig {
+     public static double hotspotTrackingRangeModifier;
+     public static int hotspotTrackedPairUpdateInterval;
+     public static int hotspotAdvancementFlushInterval;
++    public static boolean hotspotHideItems;
++    public static boolean hotspotHideExperienceOrbs;
+     public static boolean hotspotHideParticles;
+     public static boolean hotspotHideSounds;
+     private static void performance() {
+@@ -359,6 +361,8 @@ public class EntropyConfig {
+         hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.60D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
+         hotspotTrackedPairUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.tracker-pair-update-interval", 2, "How often to re-check already tracked entity/viewer pairs while a viewer is inside a hotspot."));
+         hotspotAdvancementFlushInterval = Math.max(1, getInt("starforge.performance.hotspot.advancement-flush-interval", 5, "How often hotspot players flush dirty advancement progress."));
++        hotspotHideItems = getBoolean("starforge.performance.hotspot.hide-items", true, "Stop tracking dropped items for viewers inside an active hotspot.");
++        hotspotHideExperienceOrbs = getBoolean("starforge.performance.hotspot.hide-xp-orbs", true, "Stop tracking XP orbs for viewers inside an active hotspot.");
+         hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+         hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+ 
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index f3f3284be2509ebaa6740f072b323e87fe165c31..9b6724318ccfdf4c8c912d7f2e544a074c6608b5 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -1,5 +1,8 @@
+ package dev.orhidea.starforge;
+ 
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.ExperienceOrb;
++import net.minecraft.world.entity.item.ItemEntity;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Player;
+ 
+@@ -29,6 +32,15 @@ public class EntropyUserManager {
+         return this.getFpsData(player).HotspotActive;
+     }
+ 
++    public boolean shouldHideHotspotEntity(Player player, Entity entity) {
++        FpsData data = this.getFpsData(player);
++        if (data.HotspotItemsHidden && entity instanceof ItemEntity) {
++            return true;
++        }
++
++        return data.HotspotExperienceOrbsHidden && entity instanceof ExperienceOrb;
++    }
++
+     public void updateHotspot(ServerPlayer player) {
+         FpsData data = this.getFpsData(player);
+         if (!EntropyConfig.hotspotEnabled) {
+@@ -56,6 +68,8 @@ public class EntropyUserManager {
+             : nearbyPlayers >= EntropyConfig.hotspotEnableThreshold;
+ 
+         data.HotspotActive = hotspotActive;
++        data.HotspotItemsHidden = hotspotActive && EntropyConfig.hotspotHideItems;
++        data.HotspotExperienceOrbsHidden = hotspotActive && EntropyConfig.hotspotHideExperienceOrbs;
+         data.HotspotParticlesHidden = hotspotActive && EntropyConfig.hotspotHideParticles;
+         data.HotspotSoundsHidden = hotspotActive && EntropyConfig.hotspotHideSounds;
+         player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
+@@ -70,11 +84,15 @@ public class EntropyUserManager {
+         public boolean FlashHidden;
+         public boolean PistonHidden;
+         public boolean HotspotActive;
++        public boolean HotspotItemsHidden;
++        public boolean HotspotExperienceOrbsHidden;
+         public boolean HotspotParticlesHidden;
+         public boolean HotspotSoundsHidden;
+ 
+         public void clearHotspotState() {
+             this.HotspotActive = false;
++            this.HotspotItemsHidden = false;
++            this.HotspotExperienceOrbsHidden = false;
+             this.HotspotParticlesHidden = false;
+             this.HotspotSoundsHidden = false;
+         }
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 345610c2e18ec5fbb034ff91999216b065d69e33..13364c90703dc4cc5aa5cb125b75cf5031bc91ba 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1441,6 +1441,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                     }
+                 }
+                 // Paper end - Configurable entity tracking range by Y
++                if (flag && dev.orhidea.starforge.EntropyUserManager.Instance.shouldHideHotspotEntity(player, this.entity)) {
++                    flag = false;
++                }
+ 
+                 // CraftBukkit start - respect vanish API
+                 if (flag && !player.getBukkitEntity().canSeeChunkMapUpdatePlayer(this.entity.getBukkitEntity())) { // Paper - only consider hits
