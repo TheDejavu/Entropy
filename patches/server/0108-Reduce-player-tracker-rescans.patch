@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 01:41:39 +0200
+Subject: [PATCH] Reduce player tracker rescans
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 33270c2707947872704a448b297aa6034e956543..f9ddf3dcbc7480de37a017a7b59f2d04d97988ab 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -287,6 +287,7 @@ public class EntropyConfig {
+     public static boolean asyncTrackerEnabled;
+     public static int asyncTrackerThreads;
+     public static double playerTrackingRangeMultiplier;
++    public static int playerTrackerSearchInterval;
+     public static boolean skipRedundantVelocityPackets;
+     public static boolean skipPlayerZeroDeltaMovePackets;
+     private static void performance() {
+@@ -355,6 +356,7 @@ public class EntropyConfig {
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
++        playerTrackerSearchInterval = Math.max(1, getInt("starforge.performance.tracker.player-search-interval", 2, "How often tracked player entities rescan nearby viewers for add/remove decisions.", "Higher values reduce tracker CPU at the cost of slightly delayed visibility updates near the tracking edge."));
+         skipRedundantVelocityPackets = getBoolean("starforge.performance.tracker.skip-redundant-velocity-packets", true, "Skip duplicate velocity packets when the same encoded velocity was already sent in the current tracker tick.");
+         skipPlayerZeroDeltaMovePackets = getBoolean("starforge.performance.tracker.skip-player-zero-delta-move-packets", true, "Avoid player delta-move packets when encoded position deltas are all zero, except for the periodic forced sync.");
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 3164b0c8846514ae031e59311b498663be8245a7..38656544a932da19ceda627a6a82f55521253336 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1360,6 +1360,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
+         private final ReferenceArrayList<ServerPlayerConnection> pendingRemovalChecks = new ReferenceArrayList<>();
+         private final int playerSearchInterval;
++        private final boolean alwaysSearchForPlayers;
+         private Vec3 entityPosition;
+ 
+         public TrackedEntity(Entity entity, int i, int j, boolean flag) {
+@@ -1367,12 +1368,13 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             this.entity = entity;
+             this.range = i;
+             this.lastSectionPos = SectionPos.of((EntityAccess) entity);
+-            this.playerSearchInterval = Math.max(1, Math.min(j, 20));
++            this.alwaysSearchForPlayers = entity instanceof EnderDragonPart;
++            this.playerSearchInterval = entity instanceof net.minecraft.world.entity.player.Player ? EntropyConfig.playerTrackerSearchInterval : Math.max(1, Math.min(j, 20));
+             this.entityPosition = entity.position();
+         }
+ 
+         final boolean shouldLookForPlayers() {
+-            if (this.entity instanceof net.minecraft.world.entity.player.Player || this.entity.tickCount % this.playerSearchInterval == 0) {
++            if (this.alwaysSearchForPlayers || this.entity.tickCount % this.playerSearchInterval == 0) {
+                 return true;
+             }
+ 
