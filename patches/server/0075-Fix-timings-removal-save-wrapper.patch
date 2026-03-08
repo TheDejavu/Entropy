@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 18:02:16 +0200
+Subject: [PATCH] Fix timings removal save wrapper
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/system/scheduling/NewChunkHolder.java b/src/main/java/io/papermc/paper/chunk/system/scheduling/NewChunkHolder.java
+index 658b765d920a5c70723a4d016d8c7d502381c08b..43ba9f74cfeb3780c2e3db32ba1363ac30bf8413 100644
+--- a/src/main/java/io/papermc/paper/chunk/system/scheduling/NewChunkHolder.java
++++ b/src/main/java/io/papermc/paper/chunk/system/scheduling/NewChunkHolder.java
+@@ -1787,14 +1787,13 @@ public final class NewChunkHolder {
+         }
+         if (canSaveEntities) {
+             // on shutdown, we need to force transient entity chunks to save
+-                canSaveEntities = this.saveEntities(entities, unloading || shutdown);
+-                if (unloading || shutdown) {
+-                    this.lastEntityUnload = null;
+-                }
++            canSaveEntities = this.saveEntities(entities, unloading || shutdown);
++            if (unloading || shutdown) {
++                this.lastEntityUnload = null;
+             }
+         }
+ 
+-        return executedUnloadTask | canSaveChunk | canSaveEntities | canSavePOI ? new SaveStat(executedUnloadTask || canSaveChunk, canSaveEntities, canSavePOI): null;
++        return executedUnloadTask | canSaveChunk | canSaveEntities | canSavePOI ? new SaveStat(executedUnloadTask || canSaveChunk, canSaveEntities, canSavePOI) : null;
+     }
+ 
+     static final class AsyncChunkSerializeTask implements Runnable {

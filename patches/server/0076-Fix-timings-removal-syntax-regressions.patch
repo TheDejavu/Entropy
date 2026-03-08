@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 18:03:33 +0200
+Subject: [PATCH] Fix timings removal syntax regressions
+
+
+diff --git a/src/main/java/net/minecraft/network/protocol/PacketUtils.java b/src/main/java/net/minecraft/network/protocol/PacketUtils.java
+index 14491c6fcbc164913799f842dc928ff4556838dd..070231080052ef3d0da179a8ed8b754ed6f8dd11 100644
+--- a/src/main/java/net/minecraft/network/protocol/PacketUtils.java
++++ b/src/main/java/net/minecraft/network/protocol/PacketUtils.java
+@@ -79,6 +79,7 @@ public class PacketUtils {
+ 
+                         listener.fillCrashReport(crashreport);
+                         throw new ReportedException(crashreport);
++                    }
+                 } else {
+                     PacketUtils.LOGGER.debug("Ignoring packet due to disconnection: {}", packet);
+                 }
+diff --git a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+index a213bc9eceddb18e842a91b54e158726f2d73ddd..a91fe025ddcc1b47c4550e2967b392792e80989a 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
++++ b/src/main/java/net/minecraft/world/level/chunk/LevelChunk.java
+@@ -818,7 +818,6 @@ public class LevelChunk extends ChunkAccess {
+                     }
+                 }
+                 server.getPluginManager().callEvent(new org.bukkit.event.world.ChunkPopulateEvent(bukkitChunk));
+-                } // Paper
+             }
+         }
+     }
