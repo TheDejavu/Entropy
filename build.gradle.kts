@@ -58,6 +58,12 @@ project(":starforge-server") {
         dependsOn(rootProject.tasks.named("applyServerPatches"))
     }
 
+    tasks.named<ProcessResources>("processResources") {
+        dependsOn(rootProject.tasks.named("applyApiPatches"))
+        dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
+        dependsOn(rootProject.tasks.named("applyServerPatches"))
+    }
+
     tasks.withType<JavaCompile>().matching { it.name == "compileLog4jPluginsJava" }.configureEach {
         dependsOn(rootProject.tasks.named("applyApiPatches"))
         dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
