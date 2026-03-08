@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Paul <paul@technove.co>
+Date: Fri, 2 Jul 2021 18:27:12 -0500
+Subject: [PATCH] Remove lambda from ticking guard
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index bf1262e00b5101630b636413b2e813d09c74cb1c..fbffe3dab1b7812b50df5d6bddf4fbdb2e583339 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -914,7 +914,20 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                             }
+ 
+                             gameprofilerfiller.push("tick");
+-                            this.guardEntityTick(this::tickNonPassenger, entity);
++                        // Pufferfish start - copied from this.guardEntityTick
++                        try {
++                            this.tickNonPassenger(entity); // Pufferfish - changed
++                            MinecraftServer.getServer().executeMidTickTasks(); // Tuinity - execute chunk tasks mid tick
++                        } catch (Throwable throwable) {
++                            if (throwable instanceof ThreadDeath) throw throwable; // Paper
++                            // Paper start - Prevent tile entity and entity crashes
++                            final String msg = String.format("Entity threw exception at %s:%s,%s,%s", entity.level().getWorld().getName(), entity.getX(), entity.getY(), entity.getZ());
++                            MinecraftServer.LOGGER.error(msg, throwable);
++                            getCraftServer().getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerInternalException(msg, throwable)));
++                            entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD);
++                            // Paper end
++                        }
++                        // Pufferfish end
+                             gameprofilerfiller.pop();
+                         }
+                     }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index b8d155a6455bc57c2d6cf89c5c51e772f613f027..a82de7111915b19cdc3f065910465a5e7e843aff 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -1319,13 +1319,13 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+         try {
+             tickConsumer.accept(entity);
+             MinecraftServer.getServer().executeMidTickTasks(); // Paper - execute chunk tasks mid tick
+-        } catch (Throwable throwable) {
++        } catch (Throwable throwable) { // Pufferfish - diff on change ServerLevel.tick
+             if (throwable instanceof ThreadDeath) throw throwable; // Paper
+             // Paper start - Prevent block entity and entity crashes
+             final String msg = String.format("Entity threw exception at %s:%s,%s,%s", entity.level().getWorld().getName(), entity.getX(), entity.getY(), entity.getZ());
+             MinecraftServer.LOGGER.error(msg, throwable);
+             getCraftServer().getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerInternalException(msg, throwable))); // Paper - ServerExceptionEvent
+-            entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD);
++            entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD); // Pufferfish - diff on change ServerLevel.tick
+             // Paper end - Prevent block entity and entity crashes
+         }
+     }

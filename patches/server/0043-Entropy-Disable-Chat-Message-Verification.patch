@@ -1,0 +1,234 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Thu, 6 Jul 2023 17:25:13 +0200
+Subject: [PATCH] Entropy Disable Chat Message Verification
+
+
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 2db1783985f67ce21277538c472827628d20a2fa..f409550d8907761a807b9b9bc59af08d9e350645 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -62,6 +62,7 @@ import co.aikar.timings.MinecraftTimings; // Paper
+ import org.bukkit.event.server.ServerCommandEvent;
+ import org.bukkit.craftbukkit.util.Waitable; // Paper
+ import org.bukkit.event.server.RemoteServerCommandEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class DedicatedServer extends MinecraftServer implements ServerInterface {
+@@ -643,6 +644,11 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+     @Override
+     public boolean enforceSecureProfile() {
++        // Entropy start
++        if(EntropyConfig.disableChatMessageVerification) {
++            return false;
++        }
++        // Entropy end
+         DedicatedServerProperties dedicatedserverproperties = this.getProperties();
+ 
+         // Paper start - Add setting for proxy online mode status
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index b3781efbd3edcf102fe1bda5d6149915dc1127c6..e39257cfbad6c3c1cc6952c5bcf5c806bec97074 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -186,6 +186,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+ import org.bukkit.event.player.PlayerToggleSneakEvent;
+ import org.bukkit.inventory.MainHand;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class ServerPlayer extends Player {
+@@ -2194,7 +2195,7 @@ public class ServerPlayer extends Player {
+     }
+ 
+     public void sendServerStatus(ServerStatus metadata) {
+-        this.connection.send(new ClientboundServerDataPacket(metadata.description(), metadata.favicon().map(ServerStatus.Favicon::iconBytes), metadata.enforcesSecureChat()));
++        this.connection.send(new ClientboundServerDataPacket(metadata.description(), metadata.favicon().map(ServerStatus.Favicon::iconBytes), EntropyConfig.disableChatMessageVerification ? true : metadata.enforcesSecureChat())); // Entropy
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index e725c1c0496383007ffb94c46fc18340666b5e29..a6afe66fc29efd29fc60ee447730a60533b2ef65 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -241,6 +241,7 @@ import org.bukkit.inventory.CraftingInventory;
+ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.InventoryView;
+ import org.bukkit.inventory.SmithingInventory;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl implements ServerGamePacketListener, ServerPlayerConnection, TickablePacketListener {
+@@ -2109,6 +2110,45 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+         }
+     }
+ 
++    @Override
++    public void send(Packet<?> packet) {
++        // Entropy start
++        if(EntropyConfig.disableChatMessageVerification && packet instanceof  ClientboundPlayerChatPacket chat) {
++            packet = new ClientboundSystemChatPacket(chat.chatType().resolve(this.player.level.registryAccess()).get().decorate(chat.unsignedContent() != null ? chat.unsignedContent() : Component.literal(chat.body().unpack(messageSignatureCache).get().content())), false);
++        }
++        // Entropy end
++        this.send(packet, (PacketSendListener) null);
++    }
++
++    public void send(Packet<?> packet, @Nullable PacketSendListener callbacks) {
++        // Entropy start
++        if(EntropyConfig.disableChatMessageVerification && packet instanceof  ClientboundPlayerChatPacket chat && callbacks != null) {
++            this.send(chat);
++            return;
++        }
++        // Entropy end
++        // CraftBukkit start
++        if (packet == null || this.processedDisconnect) { // Spigot
++            return;
++        } else if (packet instanceof ClientboundSetDefaultSpawnPositionPacket) {
++            ClientboundSetDefaultSpawnPositionPacket packet6 = (ClientboundSetDefaultSpawnPositionPacket) packet;
++            this.player.compassTarget = CraftLocation.toBukkit(packet6.pos, this.getCraftPlayer().getWorld());
++        }
++        // CraftBukkit end
++
++        try {
++            this.connection.send(packet, callbacks);
++        } catch (Throwable throwable) {
++            CrashReport crashreport = CrashReport.forThrowable(throwable, "Sending packet");
++            CrashReportCategory crashreportsystemdetails = crashreport.addCategory("Packet being sent");
++
++            crashreportsystemdetails.setDetail("Packet class", () -> {
++                return packet.getClass().getCanonicalName();
++            });
++            throw new ReportedException(crashreport);
++        }
++    }
++
+     @Override
+     public void handleSetCarriedItem(ServerboundSetCarriedItemPacket packet) {
+         PacketUtils.ensureRunningOnSameThread(packet, this, this.player.serverLevel());
+@@ -2150,14 +2190,20 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+ 
+             if (optional.isPresent()) {
+                 // this.server.submit(() -> { // CraftBukkit - async chat
+-                    PlayerChatMessage playerchatmessage;
+ 
+-                    try {
+-                        playerchatmessage = this.getSignedMessage(packet, (LastSeenMessages) optional.get());
+-                    } catch (SignedMessageChain.DecodeException signedmessagechain_a) {
+-                        this.handleMessageDecodeFailure(signedmessagechain_a);
+-                        return;
++                    // Entropy start
++                    PlayerChatMessage playerchatmessage;
++                    if(EntropyConfig.disableChatMessageVerification) {
++                        playerchatmessage = PlayerChatMessage.unsigned(player.getUUID(), packet.message());
++                    } else {
++                        try {
++                            playerchatmessage = this.getSignedMessage(packet, (LastSeenMessages) optional.get());
++                        } catch (SignedMessageChain.DecodeException signedmessagechain_a) {
++                            this.handleMessageDecodeFailure(signedmessagechain_a);
++                            return;
++                        }
+                     }
++                    // Entropy end
+ 
+                     CompletableFuture<FilteredText> completablefuture = this.filterTextPacket(playerchatmessage.signedContent()).thenApplyAsync(Function.identity(), this.server.chatExecutor); // CraftBukkit - async chat
+                     CompletableFuture<Component> componentFuture = this.server.getChatDecorator().decorate(this.player, null, playerchatmessage.decoratedContent()); // Paper - Adventure
+@@ -2281,8 +2327,12 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+             Optional<LastSeenMessages> optional = this.lastSeenMessages.applyUpdate(acknowledgment);
+ 
+             if (optional.isEmpty()) {
+-                ServerGamePacketListenerImpl.LOGGER.warn("Failed to validate message acknowledgements from {}", this.player.getName().getString());
+-                this.disconnect(ServerGamePacketListenerImpl.CHAT_VALIDATION_FAILED, org.bukkit.event.player.PlayerKickEvent.Cause.CHAT_VALIDATION_FAILED); // Paper - kick event causes
++                // Entropy start
++                if(!EntropyConfig.disableChatMessageVerification) {
++                    ServerGamePacketListenerImpl.LOGGER.warn("Failed to validate message acknowledgements from {}", this.player.getName().getString());
++                    this.disconnect(ServerGamePacketListenerImpl.CHAT_VALIDATION_FAILED, org.bukkit.event.player.PlayerKickEvent.Cause.CHAT_VALIDATION_FAILED); // Paper - kick event causes
++                }
++                // Entropy end
+             }
+ 
+             return optional;
+@@ -2479,8 +2529,12 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+ 
+         synchronized (this.lastSeenMessages) {
+             if (!this.lastSeenMessages.applyOffset(packet.offset())) {
+-                ServerGamePacketListenerImpl.LOGGER.warn("Failed to validate message acknowledgements from {}", this.player.getName().getString());
+-                this.disconnect(ServerGamePacketListenerImpl.CHAT_VALIDATION_FAILED, org.bukkit.event.player.PlayerKickEvent.Cause.CHAT_VALIDATION_FAILED); // Paper - kick event causes
++                // Entropy start
++                if(!EntropyConfig.disableChatMessageVerification) {
++                    ServerGamePacketListenerImpl.LOGGER.warn("Failed to validate message acknowledgements from {}", this.player.getName().getString());
++                    this.disconnect(ServerGamePacketListenerImpl.CHAT_VALIDATION_FAILED, org.bukkit.event.player.PlayerKickEvent.Cause.CHAT_VALIDATION_FAILED); // Paper - kick event causes
++                }
++                // Entropy end
+             }
+ 
+         }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 1e5f709115007ff19901c0a6c3cf884d9e4d3a6c..e8d540b4784329281210248443733411ff2ab5a4 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -120,6 +120,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
+ import org.bukkit.event.player.PlayerRespawnEvent;
+ import org.bukkit.event.player.PlayerRespawnEvent.RespawnReason;
+ import org.bukkit.event.player.PlayerSpawnChangeEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public abstract class PlayerList {
+@@ -1460,7 +1461,7 @@ public abstract class PlayerList {
+     }
+ 
+     public boolean verifyChatTrusted(PlayerChatMessage message) { // Paper - private -> public
+-        return message.hasSignature() && !message.hasExpiredServer(Instant.now());
++        return (EntropyConfig.disableChatMessageVerification || message.hasSignature()) && !message.hasExpiredServer(Instant.now()); // Entropy
+     }
+ 
+     // CraftBukkit start
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 1aa45e64e49ea011c2ba5e943b4e72c4f3a47176..13088561a7331f50211635317b2381ab7fe0c0f7 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -304,7 +304,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     protected int boardingCooldown;
+     @Nullable
+     private Entity vehicle;
+-    private Level level;
++    public Level level; // Entropy
+     public double xo;
+     public double yo;
+     public double zo;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 163c2ffad6cd20170c0dfe3b59f91d64898e80ec..1c2141120ab71fcadf7155e6be97e5c333596700 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -47,14 +47,14 @@ public class EntropyConfig {
+                 throw new IOException(e);
+             }
+         }
+-        getString("info.version", "1.0");
++        getString("info.version", "1.3");
+         setComment("info",
+                 "====================================",
+                 "Entropy Cannoning Jar by FragmentMC",
+                 "Support: http://fragmentmc.xyz",
+                 "====================================");
+ 
+-		for (Method method : PufferfishConfig .class.getDeclaredMethods()) {
++		for (Method method : EntropyConfig.class.getDeclaredMethods()) {
+         if (Modifier.isStatic(method.getModifiers()) && Modifier.isPrivate(method.getModifiers()) && method.getParameterCount() == 0 &&
+                 method.getReturnType() == Void.TYPE && !method.getName().startsWith("lambda")) {
+             method.setAccessible(true);
+@@ -128,4 +128,12 @@ public class EntropyConfig {
+         ensureDefault(key, defaultValue, comment);
+         return config.getStringList(key);
+     }
++
++    // Config
++
++    public static boolean disableChatMessageVerification;
++    private static void disableChatMessageVerification() {
++        disableChatMessageVerification = getBoolean("entropy.disable-chat-message-verification", true, "Disable chat message verification, removing features such as chat reporting.",
++                "This setting also gets rid of any warnings that chat messages can not be verified.");
++    }
+ }

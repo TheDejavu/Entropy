@@ -1,0 +1,305 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 07:47:25 +0200
+Subject: [PATCH] Entropy Chunk Loading
+
+
+diff --git a/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java b/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
+index 6bc7c6f16a1649fc9e24e7cf90fca401e5bd4875..7568ae5106dd0a08f7ec624d408d33676b59f9c5 100644
+--- a/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
++++ b/src/main/java/io/papermc/paper/chunk/system/scheduling/ChunkHolderManager.java
+@@ -51,6 +51,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
+ import java.util.concurrent.atomic.AtomicLong;
+ import java.util.concurrent.atomic.AtomicReference;
+ import java.util.concurrent.locks.LockSupport;
++import java.util.function.BiConsumer;
++import java.util.function.Consumer;
+ import java.util.function.Predicate;
+ 
+ public final class ChunkHolderManager {
+diff --git a/src/main/java/io/papermc/paper/util/CollisionUtil.java b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+index 593152be4021fc0302c6726df638c9229546d6b1..eda5496974773094673f37442db3271061385221 100644
+--- a/src/main/java/io/papermc/paper/util/CollisionUtil.java
++++ b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+@@ -5,7 +5,10 @@ import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
+ import it.unimi.dsi.fastutil.doubles.DoubleList;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
++import net.minecraft.server.level.DistanceManager;
++import net.minecraft.server.level.FullChunkStatus;
+ import net.minecraft.server.level.ServerChunkCache;
++import net.minecraft.server.level.TicketType;
+ import net.minecraft.util.Mth;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.item.FallingBlockEntity;
+@@ -20,6 +23,7 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.border.WorldBorder;
+ import net.minecraft.world.level.chunk.ChunkAccess;
+ import net.minecraft.world.level.chunk.ChunkStatus;
++import net.minecraft.world.level.chunk.LevelChunk;
+ import net.minecraft.world.level.chunk.LevelChunkSection;
+ import net.minecraft.world.level.chunk.PalettedContainer;
+ import net.minecraft.world.level.material.FluidState;
+@@ -1628,6 +1632,10 @@ public final class CollisionUtil {
+         for (int currChunkZ = minChunkZ; currChunkZ <= maxChunkZ; ++currChunkZ) {
+             for (int currChunkX = minChunkX; currChunkX <= maxChunkX; ++currChunkX) {
+                 final ChunkAccess chunk = loadChunks ? chunkSource.getChunk(currChunkX, currChunkZ, ChunkStatus.FULL, true) : chunkSource.getChunkAtIfLoadedImmediately(currChunkX, currChunkZ);
++                if (loadChunks && chunk != null && ((LevelChunk) chunk).level.getChunkSource().isChunkLoaded(currChunkX, currChunkZ)) {
++                    DistanceManager dm = ((LevelChunk) chunk).level.getChunkSource().chunkMap.getDistanceManager();
++                    dm.addTicket(TicketType.ENTROPY_LOAD, chunk.getPos(), 32 - FullChunkStatus.ENTITY_TICKING.ordinal(), chunk.getPos().toLong());
++                }
+ 
+                 if (chunk == null) {
+                     if ((collisionFlags & COLLISION_FLAG_COLLIDE_WITH_UNLOADED_CHUNKS) != 0) {
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index fbffe3dab1b7812b50df5d6bddf4fbdb2e583339..76943db73dd07e6341a6be091af4cbbb15f8abbb 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -803,6 +803,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+     }
+ 
+     public void tick(BooleanSupplier shouldKeepTicking) {
++        chunkLoader.tick(this); // Entropy
+         ProfilerFiller gameprofilerfiller = this.getProfiler();
+ 
+         this.handlingTick = true;
+diff --git a/src/main/java/net/minecraft/server/level/TicketType.java b/src/main/java/net/minecraft/server/level/TicketType.java
+index 658e63ebde81dc14c8ab5850fb246dc0aab25dea..390236b6df059d9ff62cf761c1de978bd26daa3d 100644
+--- a/src/main/java/net/minecraft/server/level/TicketType.java
++++ b/src/main/java/net/minecraft/server/level/TicketType.java
+@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.util.Unit;
+ import net.minecraft.world.level.ChunkPos;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public class TicketType<T> {
+     public static final TicketType<Long> FUTURE_AWAIT = create("future_await", Long::compareTo); // Paper
+@@ -37,6 +38,7 @@ public class TicketType<T> {
+     public static final TicketType<Long> NON_FULL_SYNC_LOAD = create("non_full_sync_load", Long::compareTo);
+     public static final TicketType<ChunkPos> DELAY_UNLOAD = create("delay_unload", Comparator.comparingLong(ChunkPos::toLong), 1);
+     // Paper end - rewrite chunk system
++    public static final TicketType<Long> ENTROPY_LOAD = create("entropy_load", Long::compareTo); // Entropy
+ 
+     public static <T> TicketType<T> create(String name, Comparator<T> argumentComparator) {
+         return new TicketType<>(name, argumentComparator, 0L);
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 71f42155681eb16e0f05c0585df77ae55e4d9190..f8a25f0a7575ea9d0cf29b51a523c5c6f2f77b22 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1542,9 +1542,13 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+             }
+         }
+ 
++        int collisionFlags = io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_CHECK_BORDER;
++        if ((EntropyConfig.tntLoadsChunks && this instanceof PrimedTnt) || (EntropyConfig.fallingBlockLoadsChunks && this instanceof FallingBlockEntity)) {
++            collisionFlags |= io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_LOAD_CHUNKS;
++        }
+         io.papermc.paper.util.CollisionUtil.getCollisions(
+                 world, this, collisionBox, potentialCollisionsVoxel, potentialCollisionsBB,
+-                io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_CHECK_BORDER,
++                collisionFlags,
+                 null, null
+         );
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+index ab777952bda1651796ed41e8a7fc6621f27db9aa..3064e7b409e6368fe39d5b1e7ff70bedb8f5bf88 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+@@ -4,6 +4,7 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.particles.ParticleTypes;
+ import net.minecraft.world.entity.EntityType;
+ import net.minecraft.world.entity.LivingEntity;
++import net.minecraft.world.level.ChunkPos;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.entity.BlockEntity;
+@@ -12,6 +13,8 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import xyz.fragmentmc.entropy.ChunkLoader;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public abstract class ThrowableProjectile extends Projectile {
+ 
+@@ -97,6 +100,12 @@ public abstract class ThrowableProjectile extends Projectile {
+             this.setDeltaMovement(vec3d1.x, vec3d1.y - (double) this.getGravity(), vec3d1.z);
+         }
+ 
++        // Entropy Start
++        if (this instanceof ThrownEnderpearl && EntropyConfig.enderpearlLoadsChunks) {
++            level.chunkLoader.add(new ChunkPos(new BlockPos((int) d0, (int) d1,(int) d2)), level);
++        }
++        // Entropy End
++
+         this.setPos(d0, d1, d2);
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index a82de7111915b19cdc3f065910465a5e7e843aff..61d73248204e25822f3a09e807c55ec3a084cb1b 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -100,9 +100,17 @@ import org.bukkit.craftbukkit.util.CraftNamespacedKey;
+ import org.bukkit.entity.SpawnCategory;
+ import org.bukkit.event.block.BlockPhysicsEvent;
+ import org.bukkit.event.world.GenericGameEvent;
++import xyz.fragmentmc.entropy.ChunkLoader;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.explosion.BlockStateCache;
++import xyz.fragmentmc.entropy.explosion.BlockStateHandler;
++import xyz.fragmentmc.entropy.explosion.UnbreakableDurability;
+ // CraftBukkit end
+ 
+ public abstract class Level implements LevelAccessor, AutoCloseable {
++    public BlockStateHandler blockStateCache; // Entropy
++    public UnbreakableDurability unbreakableDurability; // Entropy
++    public ChunkLoader chunkLoader; // Entropy
+ 
+     public static final Codec<ResourceKey<Level>> RESOURCE_KEY_CODEC = ResourceKey.codec(Registries.DIMENSION);
+     public static final ResourceKey<Level> OVERWORLD = ResourceKey.create(Registries.DIMENSION, new ResourceLocation("overworld"));
+@@ -219,6 +227,9 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     protected final io.papermc.paper.util.math.ThreadUnsafeRandom randomTickRandom = new io.papermc.paper.util.math.ThreadUnsafeRandom(java.util.concurrent.ThreadLocalRandom.current().nextLong()); public net.minecraft.util.RandomSource getThreadUnsafeRandom() { return this.randomTickRandom; } // Pufferfish - move thread unsafe random initialization // Pufferfish - getter
+ 
+     protected Level(WritableLevelData worlddatamutable, ResourceKey<Level> resourcekey, RegistryAccess iregistrycustom, Holder<DimensionType> holder, Supplier<ProfilerFiller> supplier, boolean flag, boolean flag1, long i, int j, org.bukkit.generator.ChunkGenerator gen, org.bukkit.generator.BiomeProvider biomeProvider, org.bukkit.World.Environment env, java.util.function.Function<org.spigotmc.SpigotWorldConfig, io.papermc.paper.configuration.WorldConfiguration> paperWorldConfigCreator, java.util.concurrent.Executor executor) { // Paper - create paper world config; Async-Anti-Xray: Pass executor
++        blockStateCache = EntropyConfig.cacheBlockStates ? new BlockStateCache() : new BlockStateHandler(); // Entropy
++        unbreakableDurability = new UnbreakableDurability(); // Entropy
++        chunkLoader = new ChunkLoader(); // Entropy
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
+         this.generator = gen;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/ChunkLoader.java b/src/main/java/xyz/fragmentmc/entropy/ChunkLoader.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..bbc5dae3d4b2584a90b4f12a4e173bbcd193634b
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/ChunkLoader.java
+@@ -0,0 +1,21 @@
++package xyz.fragmentmc.entropy;
++
++import net.minecraft.server.level.FullChunkStatus;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.TicketType;
++import net.minecraft.world.level.ChunkPos;
++import net.minecraft.world.level.Level;
++
++public class ChunkLoader {
++    public void add(ChunkPos pos, Level level) {
++        loadChunk(pos, level);
++    }
++
++    private void loadChunk(ChunkPos pos, Level level) {
++        ((ServerLevel) level).getChunkSource().chunkMap.getDistanceManager().addTicket(TicketType.ENTROPY_LOAD, pos, 32 - FullChunkStatus.ENTITY_TICKING.ordinal(), level.getGameTime());
++    }
++
++    public void tick(Level level) {
++        ((ServerLevel) level).getChunkSource().chunkMap.getDistanceManager().removeAllTicketsFor(TicketType.ENTROPY_LOAD, 32 - FullChunkStatus.ENTITY_TICKING.ordinal(), level.getGameTime() - EntropyConfig.loadAliveTicks);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index eb8235ff69274efe8f9bd5d5c10ca72c5511a713..a3cd6653088d7b393c401ff180b0620e97dbab1d 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -1,19 +1,24 @@
+ package xyz.fragmentmc.entropy;
+ 
+-import gg.pufferfish.pufferfish.PufferfishConfig;
++import it.unimi.dsi.fastutil.ints.Int2IntMap;
+ import net.minecraft.server.MinecraftServer;
+-import org.bukkit.configuration.ConfigurationSection;
+-import org.bukkit.configuration.MemoryConfiguration;
++import org.simpleyaml.configuration.ConfigurationSection;
++import org.simpleyaml.configuration.MemoryConfiguration;
+ import org.jetbrains.annotations.Nullable;
+ import org.simpleyaml.configuration.comments.CommentType;
+ import org.simpleyaml.configuration.file.YamlFile;
+ import org.simpleyaml.exceptions.InvalidConfigurationException;
++import xyz.fragmentmc.entropy.explosion.ExplosionProofItems;
++import xyz.fragmentmc.entropy.explosion.UnbreakableDurability;
+ 
+ import java.io.File;
+ import java.io.IOException;
+ import java.lang.reflect.Method;
+ import java.lang.reflect.Modifier;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
++import java.util.Set;
+ 
+ public class EntropyConfig {
+     private static final YamlFile config = new YamlFile();
+@@ -129,6 +134,21 @@ public class EntropyConfig {
+         return config.getStringList(key);
+     }
+ 
++    private static Map<String, Integer> getStringIntMap(String key, Map<String, Integer> defaultValue, String... comment) {
++        return getStringIntMap(key, null, defaultValue, comment);
++    }
++
++    private static Map<String, Integer> getStringIntMap(String key, @Nullable String oldKey, Map<String, Integer> defaultValue, String... comment) {
++        ensureDefault(key, defaultValue, comment);
++        Map<String, Integer> map = new HashMap<>();
++        ConfigurationSection c = config.getConfigurationSection(key);
++        if(c != null) {
++            Set<String> s = c.getKeys(false);
++            for(String k : s) map.put(k, c.getInt(k));
++        }
++        return map;
++    }
++
+     // Config
+ 
+     public static boolean disableChatMessageVerification;
+@@ -172,7 +192,7 @@ public class EntropyConfig {
+     public static boolean reduceRays;
+     public static int rayProjectionSize;
+     public static boolean cacheBlockStates;
+-    public static void optimizations() {
++    private static void optimizations() {
+         skipRayOrigin = getBoolean("entropy.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
+         mergeEntities = getBoolean("entropy.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
+         skipSubmerged = getBoolean("entropy.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
+@@ -183,6 +203,35 @@ public class EntropyConfig {
+         reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
+         rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
+         cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++
++        setComment("entropy.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
++    }
++
++    public static boolean tntLoadsChunks;
++    public static boolean fallingBlockLoadsChunks;
++    public static boolean enderpearlLoadsChunks;
++    public static int loadAliveTicks;
++    private static void chunks() {
++        tntLoadsChunks = getBoolean("entropy.chunks.tnt-loads-chunks", true, "TNT load chunks they flies through.");
++        fallingBlockLoadsChunks = getBoolean("entropy.chunks.falling-block-loads-chunks", true, "FallingBlocks load chunks they fly through.");
++        enderpearlLoadsChunks = getBoolean("entropy.chunks.enderpearl-loads-chunks", false, "Enderpearls load chunks they fly through.");
++        loadAliveTicks = getInt("entropy.chunks.load-alive-ticks", 2, "How long a chunk stays loaded.",
++                "If there is performance issues with fast shooting cannons loading chunks this can be set to ~100 ticks.");
++
++        setComment("entropy.chunks", "Settings related to chunk loading.");
++    }
++
++    public static boolean unbreakableBreaker;
++    public static boolean unbreakableCreeper;
++    public static String durabilityCheckItem;
++    public static String durabilityCheckMessage;
++    public static Int2IntMap unbreakableMap;
++    private static void unbreakableBreaker() {
++        unbreakableBreaker = getBoolean("entropy.unbreakable-breaker.enabled", true, "Assigns unbreakable blocks like obsidian a durability so they can be broken by TNT.");
++        unbreakableCreeper = getBoolean("entropy.unbreakable-breaker.allow-creepers", false, "Should unbreakable blocks be able to be broken by creepers.");
++        durabilityCheckItem = getString("entropy.unbreakable-breaker.durability-check-item", "potato", "Item used to check an unbreakable blocks durability.");
++        durabilityCheckMessage = getString("entropy.unbreakable-breaker.durability-check-message", "&a[+] &7This block has %dura%/%max% durability.", "Message that shows when checking the durability of an unbreakable block.");
++        unbreakableMap = UnbreakableDurability.initMap(getStringIntMap("entropy.unbreakable-breaker.blocks", UnbreakableDurability.getDefaults(), "block: durability"));
+     }
+ 
+     public static boolean explosionProofItems;
+@@ -190,7 +239,7 @@ public class EntropyConfig {
+     private static void items() {
+         explosionProofItems = getBoolean("entropy.items.explosion-proof-items.enabled", true, "Make certain items explosion proof.");
+         explosionProofList = getStringList("entropy.items.explosion-proof-items.items", List.of("spawner"), "Items that should be explosion proof.");
+-
++        ExplosionProofItems.loadFromConfig();
+ 
+         setComment("entropy.items", "Features related to items.");
+     }

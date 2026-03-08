@@ -11,7 +11,7 @@ you to easily disable books, should you want to preemptively remove this
 functionality before additional exploits are found.
 
 diff --git a/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java b/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
-index 5b7fe3d6c2169d07b79a0937e889fc847962fdfe..ac56a5ba83184ee7b24b58cc25aa3d5aa953caee 100644
+index a38b96319fe39e5674b9d0009ac53cba84698e03..c84ef666a896dc0d154610e1e6360ca5def739fd 100644
 --- a/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
 +++ b/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
 @@ -163,4 +163,13 @@ public class PufferfishConfig {
@@ -29,14 +29,14 @@ index 5b7fe3d6c2169d07b79a0937e889fc847962fdfe..ac56a5ba83184ee7b24b58cc25aa3d5a
 +	
  }
 diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-index ab58827001b3b42e44d7f701c390480fed1fa1f1..04b509283bada12f1f0409dbd2df344de2095267 100644
+index fe2ef36ab5dc4b933abf24dbfd0e811c53239cf0..e725c1c0496383007ffb94c46fc18340666b5e29 100644
 --- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
 +++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
-@@ -1233,6 +1233,7 @@ public class ServerGamePacketListenerImpl implements ServerPlayerConnection, Tic
+@@ -1135,6 +1135,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
  
      @Override
      public void handleEditBook(ServerboundEditBookPacket packet) {
 +        if (!gg.pufferfish.pufferfish.PufferfishConfig.enableBooks && !this.player.getBukkitEntity().hasPermission("pufferfish.usebooks")) return; // Pufferfish
-         // Paper start
+         // Paper start - Book size limits
          if (!this.cserver.isPrimaryThread()) {
              List<String> pageList = packet.getPages();

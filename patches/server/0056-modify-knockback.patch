@@ -1,0 +1,151 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Wed, 3 Jul 2024 15:04:21 +0200
+Subject: [PATCH] modify knockback
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 5d5aedf3470b196a8f753d88bcc3bd6ad35480b3..14b5e055bf6d3adda4711421f6d3461315b50f0d 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -1556,7 +1556,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+                         d0 = (Math.random() - Math.random()) * 0.01D;
+                     }
+ 
+-                    this.knockback(0.4000000059604645D, d0, d1, entity1, entity1 == null ? EntityKnockbackEvent.KnockbackCause.DAMAGE : EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // CraftBukkit
++                    this.knockback(EntropyConfig.modifyKnockback ? EntropyConfig.baseKnockback : 0.4000000059604645D, d0, d1, entity1, entity1 == null ? EntityKnockbackEvent.KnockbackCause.DAMAGE : EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // Entropy - modify knockback
+                     if (!flag) {
+                         this.indicateDamage(d0, d1);
+                     }
+@@ -1925,15 +1925,23 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         // CraftBukkit start - EntityKnockbackEvent
+         this.knockback(strength, x, z, null, EntityKnockbackEvent.KnockbackCause.UNKNOWN);
+     }
+-
+     public void knockback(double d0, double d1, double d2, @Nullable Entity attacker, EntityKnockbackEvent.KnockbackCause cause) { // Paper - add nullable to attacker param
+-        d0 *= 1.0D - this.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE);
++        if (!(EntropyConfig.modifyKnockback && !EntropyConfig.knockbackResistance)) d0 *= 1.0D - this.getAttributeValue(Attributes.KNOCKBACK_RESISTANCE);
+         if (true || d0 > 0.0D) { // CraftBukkit - Call event even when force is 0
+             //this.hasImpulse = true; // CraftBukkit - Move down
+             Vec3 vec3d = this.getDeltaMovement();
+             Vec3 vec3d1 = (new Vec3(d1, 0.0D, d2)).normalize().scale(d0);
+ 
+-            EntityKnockbackEvent event = CraftEventFactory.callEntityKnockbackEvent((org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(), attacker, cause, d0, vec3d1, vec3d.x / 2.0D - vec3d1.x, this.onGround() ? Math.min(0.4D, vec3d.y / 2.0D + d0) : vec3d.y, vec3d.z / 2.0D - vec3d1.z);
++            double knockbackY;
++            if (EntropyConfig.modifyKnockback) {
++                knockbackY = vec3d.y / 2.0D + EntropyConfig.verticalKnockback;
++                if (!EntropyConfig.verticalKnockbackGround || this.onGround()) knockbackY = Math.min(EntropyConfig.verticalKnockbackMax, knockbackY);
++                else knockbackY = vec3d.y;
++            } else {
++                knockbackY = this.onGround() ? Math.min(0.4D, vec3d.y / 2.0D + d0) : vec3d.y;
++            }
++
++            EntityKnockbackEvent event = CraftEventFactory.callEntityKnockbackEvent((org.bukkit.craftbukkit.entity.CraftLivingEntity) this.getBukkitEntity(), attacker, cause, d0, vec3d1, vec3d.x / 2.0D - vec3d1.x, knockbackY, vec3d.z / 2.0D - vec3d1.z);
+             if (event.isCancelled()) {
+                 return;
+             }
+diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index 567704f61034363e48ef2a5b5566ebdc91682297..a0e4e06210e71bd5d25fee44c471ab885115f60d 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Player.java
++++ b/src/main/java/net/minecraft/world/entity/player/Player.java
+@@ -123,6 +123,7 @@ import org.bukkit.event.entity.EntityKnockbackEvent;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerDropItemEvent;
+ import org.bukkit.event.player.PlayerVelocityEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public abstract class Player extends LivingEntity {
+@@ -149,6 +150,7 @@ public abstract class Player extends LivingEntity {
+     protected static final EntityDataAccessor<CompoundTag> DATA_SHOULDER_LEFT = SynchedEntityData.defineId(Player.class, EntityDataSerializers.COMPOUND_TAG);
+     protected static final EntityDataAccessor<CompoundTag> DATA_SHOULDER_RIGHT = SynchedEntityData.defineId(Player.class, EntityDataSerializers.COMPOUND_TAG);
+     private long timeEntitySatOnShoulder;
++    private long lastSprintKnockback = 0;
+     private final Inventory inventory = new Inventory(this);
+     protected PlayerEnderChestContainer enderChestInventory = new PlayerEnderChestContainer(this); // CraftBukkit - add "this" to constructor
+     public final InventoryMenu inventoryMenu;
+@@ -1324,11 +1326,28 @@ public abstract class Player extends LivingEntity {
+ 
+                     if (flag5) {
+                         if (i > 0) {
++                            // Entropy start - sprinting knockback
++                            float addKnockback = i * .5f;
++                            if (EntropyConfig.modifyKnockback && EntropyConfig.sprintingKnockback > 0) {
++                                long currentMillis = System.currentTimeMillis();
++                                long delay = currentMillis - lastSprintKnockback;
++                                if (flag1) {
++                                    float knockback = 0.0f;
++                                    if (delay >= EntropyConfig.knockbackDelay) {
++                                        knockback = (float)EntropyConfig.sprintingKnockback;
++                                        this.lastSprintKnockback = currentMillis;
++                                    }
++                                    addKnockback += -.5f + knockback;
++                                }
++
++                            }
++
+                             if (target instanceof LivingEntity) {
+-                                ((LivingEntity) target).knockback((double) ((float) i * 0.5F), (double) Mth.sin(this.getYRot() * 0.017453292F), (double) (-Mth.cos(this.getYRot() * 0.017453292F)), this, EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // CraftBukkit
++                                ((LivingEntity) target).knockback((double) addKnockback, (double) Mth.sin(this.getYRot() * 0.017453292F), (double) (-Mth.cos(this.getYRot() * 0.017453292F)), this, EntityKnockbackEvent.KnockbackCause.ENTITY_ATTACK); // Entropy
+                             } else {
+                                 target.push((double) (-Mth.sin(this.getYRot() * 0.017453292F) * (float) i * 0.5F), 0.1D, (double) (Mth.cos(this.getYRot() * 0.017453292F) * (float) i * 0.5F), this); // Paper - Add EntityKnockbackByEntityEvent and EntityPushedByEntityAttackEvent
+                             }
++                            // Entropy end
+ 
+                             this.setDeltaMovement(this.getDeltaMovement().multiply(0.6D, 1.0D, 0.6D));
+                             // Paper start - Configurable sprint interruption on attack
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+index 91497f5e6c07fcf1b05eca6846c51e1a15ed3bc0..4b91a749c93f2230f1f1355cbfdf2189fdf5e7ed 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+@@ -50,6 +50,7 @@ import org.bukkit.entity.Player;
+ import org.bukkit.entity.FishHook;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerFishEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class FishingHook extends Projectile {
+@@ -298,6 +299,12 @@ public class FishingHook extends Projectile {
+             this.setHookedEntity(entityHitResult.getEntity());
+         }
+ 
++        // Entropy start - hook knockback
++        if (EntropyConfig.modifyKnockback && EntropyConfig.rodKnockback) {
++            Entity entity = entityHitResult.getEntity();
++            entity.hurt(this.damageSources().thrown(this, this.getOwner()), 0.0f);
++        }
++        // Entropy end
+     }
+ 
+     @Override
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 9a0098e745757a9b981d699114a74cde5dbc5858..1981f93f5578007ee14588e42b5434549cee717f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -282,4 +282,25 @@ public class EntropyConfig {
+         setComment("entropy.factions", "Patches and options not related to cannoning but specifically designed for factions servers.",
+                 "NOTE: Plugins related to spawners or mob stacking are likely to break some of this.");
+     }
++
++    public static boolean modifyKnockback;
++    public static double baseKnockback;
++    public static double verticalKnockback;
++    public static double verticalKnockbackMax;
++    public static boolean verticalKnockbackGround;
++    public static boolean rodKnockback;
++    public static boolean knockbackResistance;
++    public static double sprintingKnockback;
++    public static int sprintingKnockbackDelay;
++    private static void combat() {
++        modifyKnockback = getBoolean("entropy.combat.modify-knockback", false, "Enable changes to knockback.");
++        baseKnockback = getDouble("entropy.combat.base-knockback", 0.4, "Change base knockback.");
++        verticalKnockback = getDouble("entropy.combat.vertical-knockback", 0.4, "Change vertical knockback.");
++        verticalKnockbackMax = getDouble("entropy.combat.vertical-knockback-max", 0.4, "Maximum vertical knockback.");
++        verticalKnockbackGround = getBoolean("entropy.combat.vertical-knockback-ground", true, "Vertical knockback requires player to be on ground.");
++        rodKnockback = getBoolean("entropy.combat.rod-knockback", false, "Enable knockback from rods.");
++        knockbackResistance = getBoolean("entropy.combat.knockback-resistance", true, "Toggle knockback resistance.");
++        sprintingKnockback = getDouble("entropy.combat.sprinting-knockback", 0.5, "Add extra sprinting knockback.");
++        sprintingKnockbackDelay = getInt("entropy.combat.sprinting-knockback-delay", 0, "Delay for sprinting knockback.");
++    }
+ }

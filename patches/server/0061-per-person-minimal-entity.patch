@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Tue, 30 Jul 2024 09:32:39 +0200
+Subject: [PATCH] per person minimal entity
+
+
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index a5d2bcdb03b8dcfb9fbf32cfa14c92fdb7a2f7db..836ff7de03d2e2c376b9d4e46c42d59f3adb7c0c 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -435,11 +435,11 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundSetEntityDataPacket p) {
+-                Entity entity = player.level().getEntity(p.id());
+                 EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+-                if (entity instanceof PrimedTnt t && (data.FlashHidden || t.minimal)) {
++                Entity entity = player.level().getEntity(p.id());
++                if (entity instanceof PrimedTnt t && (data.FlashHidden || t.minimal.contains(player.getUUID()))) {
+                     this.sendPacket(new ClientboundRemoveEntitiesPacket(t.getId()), null, flush);
+-                    t.minimal = true;
++                    t.minimal.add(player.getUUID());
+                     if (t.getFuse() > 2) {
+                         ClientboundAddEntityPacket ep = new ClientboundAddEntityPacket(
+                             t.getId(), UUID.randomUUID(), t.getX(), t.getY(), t.getZ(),
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index c9eda97aa2b5fb358159caef63f26188ccd26209..cdf1e93160d9c5bce53ae2800d1ce22b943a97ad 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -28,6 +28,9 @@ import xyz.fragmentmc.entropy.entity.CraftEntropyTntPrimed;
+ import xyz.fragmentmc.entropy.event.TntFlowEvent;
+ import xyz.fragmentmc.entropy.event.TntSpreadEvent;
+ import xyz.fragmentmc.entropy.util.EventUtil;
++
++import java.util.HashSet;
++import java.util.UUID;
+ // CraftBukkit end
+ 
+ public class PrimedTnt extends Entity implements TraceableEntity {
+@@ -36,7 +39,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+     public boolean canCombine = false;
+     public boolean blockDamageSkipped;
+     public boolean destroyedBlock;
+-    public boolean minimal = false;
++    public HashSet<UUID> minimal = new HashSet<>();
+     // Entropy end
+ 
+     private static final EntityDataAccessor<Integer> DATA_FUSE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.INT);

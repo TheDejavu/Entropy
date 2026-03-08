@@ -1,0 +1,64 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Wed, 3 Jul 2024 15:10:01 +0200
+Subject: [PATCH] fix origin location
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index 724653af803ddfb7d049c578db21512429d44b99..7543a5e096d83e839c3509d48ac88d0b4a1bee43 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -47,6 +47,8 @@ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.bukkit.Location;
++import org.bukkit.util.Vector;
+ import org.slf4j.Logger;
+ 
+ // CraftBukkit start;
+@@ -91,6 +93,9 @@ public class FallingBlockEntity extends Entity {
+         this.yo = y;
+         this.zo = z;
+         this.setStartPos(this.blockPosition());
++
++        // Entropy Start - entity origin fixes
++        this.setOrigin(new Location(world.getWorld(), x, y, z));
+     }
+ 
+     public static FallingBlockEntity fall(Level world, BlockPos pos, BlockState state) {
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index c79ac7b352db2d0d80320b39087196782d7b8328..1842b99b60e26b6807cc77b0762787b6becf6edb 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -19,6 +19,7 @@ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.level.block.state.BlockState;
+ // CraftBukkit start;
++import org.bukkit.Location;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.entity.ExplosionPrimeEvent;
+@@ -58,6 +59,9 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         this.yo = y;
+         this.zo = z;
+         this.owner = igniter;
++
++        // Entropy Start - entity origin fixes
++        this.setOrigin(new Location(world.getWorld(), x, y, z));
+     }
+ 
+     @Override
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 1981f93f5578007ee14588e42b5434549cee717f..f94e55fe469ebbcf2302f69267fc5c9510fb566f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -199,7 +199,7 @@ public class EntropyConfig {
+         cacheExplosionDamage = getBoolean("entropy.optimizations.cache-explosion-damage", true, "Cache explosion damage values.");
+         combinedExplosions = getBoolean("entropy.optimizations.combined-explosions", true, "Do one powerful explosion instead of unmerging TNT, when possible.");
+         staticRayStrength = getBoolean("entropy.optimizations.static-ray-strength", true, "* Remove the random component in explosion damage.");
+-        cacheBlockDensity = getBoolean("entropy.optimizations.cache-block-density", true, "Cache block density for explosions.");
++        cacheBlockDensity = getBoolean("entropy.optimizations.cache-block-density", true, "* Cache block density for explosions.");
+         reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
+         rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
+         cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");

@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 11 Dec 2023 15:53:18 +0100
+Subject: [PATCH] tnt flow packet limiter
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 8876b1eaebb69534222d3fc1bca1fba5b257f084..c79ac7b352db2d0d80320b39087196782d7b8328 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -114,7 +114,8 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+         }
+ 
+         // Paper start - Option to prevent TNT from moving in water
+-        if (!this.isRemoved() && this.wasTouchingWater && EventUtil.sendCancellable(this.level, new TntFlowEvent(EntropyConfig.disableTNTFlow, new CraftEntropyTntPrimed(this.level.getCraftServer(), this))).isCancelled()) {
++        boolean doUpdate = !EntropyConfig.packetLimiterTntFlow || this.getFuse() % 5 == 0; // Entropy
++        if (!this.isRemoved() && this.wasTouchingWater && doUpdate && EventUtil.sendCancellable(this.level(), new TntFlowEvent(EntropyConfig.disableTNTFlow, new CraftEntropyTntPrimed(this.level().getCraftServer(), this))).isCancelled()) { // Entropy
+             /*
+              * Author: Jedediah Smith <jedediah@silencegreys.com>
+              */
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index a3cd6653088d7b393c401ff180b0620e97dbab1d..9a0098e745757a9b981d699114a74cde5dbc5858 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -52,7 +52,7 @@ public class EntropyConfig {
+                 throw new IOException(e);
+             }
+         }
+-        getString("info.version", "1.3");
++        getString("info.version", "1.4");
+         setComment("info",
+                 "====================================",
+                 "Entropy Cannoning Jar by FragmentMC",
+@@ -207,6 +207,13 @@ public class EntropyConfig {
+         setComment("entropy.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
+     }
+ 
++    public static boolean packetLimiterTntFlow;
++    private static void packetLimiter() {
++        packetLimiterTntFlow = getBoolean("entropy.packet-limiter.tnt-flow", true, "Update tnt flowing in water less frequently.");
++
++        setComment("entropy.packet-limiter", "Limit packets being sent to the client for performance reasons.");
++    }
++
+     public static boolean tntLoadsChunks;
+     public static boolean fallingBlockLoadsChunks;
+     public static boolean enderpearlLoadsChunks;

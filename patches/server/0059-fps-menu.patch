@@ -1,0 +1,498 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 29 Jul 2024 12:37:26 +0200
+Subject: [PATCH] fps menu
+
+
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 0deb7e0a91fd9ea2218cdcd9ff4818e1e0ace35e..6e1208b6832c1b372b6c60070b2f4b5fae5de5d0 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -33,6 +33,7 @@ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
+ import java.util.Objects;
+ import java.util.Queue;
++import java.util.UUID;
+ import java.util.concurrent.RejectedExecutionException;
+ import java.util.function.Consumer;
+ import java.util.function.Supplier;
+@@ -45,6 +46,12 @@ import net.minecraft.network.chat.MutableComponent;
+ import net.minecraft.network.protocol.Packet;
+ import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
++import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
++import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
++import net.minecraft.network.protocol.game.ClientboundExplodePacket;
++import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
++import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
++import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+ import net.minecraft.network.protocol.login.ClientLoginPacketListener;
+@@ -53,10 +60,15 @@ import net.minecraft.network.protocol.status.ClientStatusPacketListener;
+ import net.minecraft.server.RunningOnDifferentThreadException;
+ import net.minecraft.util.Mth;
+ import net.minecraft.util.SampleLogger;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.EntityType;
++import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.level.block.Blocks;
+ import org.apache.commons.lang3.Validate;
+ import org.slf4j.Logger;
+ import org.slf4j.Marker;
+ import org.slf4j.MarkerFactory;
++import xyz.fragmentmc.entropy.EntropyUserManager;
+ import xyz.fragmentmc.entropy.connection.IPMap;
+ 
+ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+@@ -381,6 +393,56 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     public void send(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
++        // Entropy start - fps
++        if (this.getPlayer() != null) {
++            if (packet instanceof ClientboundMoveEntityPacket p) {
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                Entity entity = p.getEntity(this.getPlayer().level());
++                boolean delete = false;
++
++                if (entity instanceof PrimedTnt && (data.TntHidden || data.FlashHidden)) {
++                    if (entity.tickCount > 1) {
++                        return;
++                    }
++                    delete = true;
++                } else if (entity != null && entity.tickCount < 1) {
++                    String name = entity.getName().getString();
++                    if (name.contains("Sand") && data.SandHidden) {
++                        delete = true;
++                    } else if (name.contains("Anvil") && data.AnvilHidden) {
++                        delete = true;
++                    } else if (name.contains("Concrete Powder") && data.ConcreteHidden) {
++                        delete = true;
++                    }
++                }
++
++                if (delete && entity != null) {
++                    this.send(new ClientboundRemoveEntitiesPacket(entity.getId()));
++                    return;
++                }
++            } else if (packet instanceof ClientboundExplodePacket) {
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                if (data.ExplosionHidden) {
++                    return;
++                }
++            } else if (packet instanceof ClientboundBlockEventPacket p) {
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                if ((p.getBlock() == Blocks.PISTON || p.getBlock() == Blocks.STICKY_PISTON) && data.PistonHidden) {
++                    return;
++                }
++            } else if (packet instanceof ClientboundSetEntityDataPacket p) {
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                if (this.getPlayer().level().getEntity(p.id()) instanceof PrimedTnt t && data.FlashHidden) {
++                    ClientboundAddEntityPacket ep = new ClientboundAddEntityPacket(
++                        t.getId(), UUID.randomUUID(), t.getX(), t.getY(), t.getZ(),
++                        0, 0, EntityType.FALLING_BLOCK, 2094, t.getDeltaMovement(), 0
++                    );
++                    this.send(ep);
++                }
++            }
++        }
++        // Entropy end
++
+         // Paper start - Optimize network: Handle oversized packets better
+         final boolean connected = this.isConnected();
+         if (!connected && !this.preparing) {
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index a6afe66fc29efd29fc60ee447730a60533b2ef65..4d42d81b4632bd338228a553ec7c61a273a233b5 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -186,6 +186,7 @@ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.BooleanOp;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
++import org.bukkit.Bukkit;
+ import org.slf4j.Logger;
+ 
+ // CraftBukkit start
+@@ -242,6 +243,7 @@ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.InventoryView;
+ import org.bukkit.inventory.SmithingInventory;
+ import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl implements ServerGamePacketListener, ServerPlayerConnection, TickablePacketListener {
+@@ -3171,7 +3173,19 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+ 
+                         event.setCancelled(cancelled);
+                         AbstractContainerMenu oldContainer = this.player.containerMenu; // SPIGOT-1224
+-                        this.cserver.getPluginManager().callEvent(event);
++                        // Entropy Start - gui
++                        boolean found = false;
++                        for (EntropyGuiBase.InventoryWrapper value : EntropyGuiBase.Inventories.values()) {
++                            if (inventory.getPlayer().getUniqueId() == value.gui().getPlayer().getUUID() && inventory.getTitle() == value.gui().getPlayer().getBukkitEntity().getOpenInventory().getTitle()) {
++                                value.gui().handleClick(player, event.getCurrentItem(), event.getSlot());
++                                event.setCancelled(true);
++                                event.setResult(Event.Result.DENY);
++                                found = true;
++                                break;
++                            }
++                        }
++                        if (!found) this.cserver.getPluginManager().callEvent(event);
++                        // Entropy End
+                         if (this.player.containerMenu != oldContainer) {
+                             return;
+                         }
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 8d626fadcd4743b6472a2954d2b1b2ec89669814..de19f4b952bb4fe005a5a14f364e39e78d22c93f 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -300,8 +300,8 @@ public class Main {
+                     deadline.add(Calendar.DAY_OF_YEAR, -28);
+                     if (buildDate.before(deadline.getTime())) {
+                         // Paper start - This is some stupid bullshit
+-                        System.err.println("*** Warning, you've not updated in a while! ***");
+-                        System.err.println("*** Please download a new build as per instructions from https://papermc.io/downloads/paper ***"); // Paper
++                        // System.err.println("*** Warning, you've not updated in a while! ***");
++                        // System.err.println("*** Please download a new build as per instructions from https://papermc.io/downloads/paper ***"); // Paper
+                         //System.err.println("*** Server will start in 20 seconds ***");
+                         //Thread.sleep(TimeUnit.SECONDS.toMillis(20));
+                         // Paper end
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index e0be98f729a24ea2756714687daa0dbe29956828..74e3d418414441e974d58d01850c415c24dcb6aa 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -52,7 +52,7 @@ public class EntropyConfig {
+                 throw new IOException(e);
+             }
+         }
+-        getString("info.version", "1.4");
++        getString("info.version", "1.5");
+         setComment("info",
+                 "====================================",
+                 "Entropy Cannoning Jar by FragmentMC",
+@@ -314,4 +314,18 @@ public class EntropyConfig {
+ 
+         setComment("entropy.networking", "Changes to the network stack.");
+     }
++
++    public static String guiBackgroundItem;
++    public static String fpsTitle;
++    public static boolean sendFpsMessage;
++    public static String fpsMessage;
++    private static void gui() {
++        guiBackgroundItem = getString("entropy.gui.background-item", "yellow_stained_glass_pane", "Item to fill the background of menus with.");
++
++        fpsTitle = getString("entropy.gui.fps.title", "&6&lFPS Settings: &r&f%player%", "Title for the fps menu.");
++        sendFpsMessage = getBoolean("entropy.gui.fps.send-message", true, "Send messages when changing fps settings");
++        fpsMessage = getString("entropy.gui.fps.message", "%status_color%[%status_icon%] &7%setting%");
++
++        setComment("entropy.gui", "Settings for entropy menus");
++    }
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyUserManager.java b/src/main/java/xyz/fragmentmc/entropy/EntropyUserManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1d89ff6b76b15dc715c0f41a77079eba73892cc
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyUserManager.java
+@@ -0,0 +1,49 @@
++package xyz.fragmentmc.entropy;
++
++import net.minecraft.world.entity.player.Player;
++
++import java.util.HashMap;
++import java.util.UUID;
++
++public class EntropyUserManager {
++    public static final EntropyUserManager Instance = new EntropyUserManager();
++
++    private final HashMap<UUID, FpsData> PlayerFpsData;
++
++    private EntropyUserManager() {
++        PlayerFpsData = new HashMap<>();
++    }
++
++    public FpsData getFpsData(Player player) {
++        FpsData data = PlayerFpsData.get(player.getUUID());
++        if (data == null) {
++            FpsData nd = new FpsData(false, false, false, false, false, false, false);
++            PlayerFpsData.put(player.getUUID(), nd);
++            return nd;
++        }
++        return data;
++    }
++
++    public static final class FpsData {
++        public boolean TntHidden;
++        public boolean SandHidden;
++        public boolean AnvilHidden;
++        public boolean ConcreteHidden;
++        public boolean ExplosionHidden;
++        public boolean FlashHidden;
++        public boolean PistonHidden;
++
++        public FpsData(
++                boolean TntHidden, boolean SandHidden, boolean AnvilHidden, boolean ConcreteHidden,
++                boolean ExplosionHidden, boolean FlashHidden, boolean PistonHidden
++        ) {
++            this.TntHidden = TntHidden;
++            this.SandHidden = SandHidden;
++            this.AnvilHidden = AnvilHidden;
++            this.ConcreteHidden = ConcreteHidden;
++            this.ExplosionHidden = ExplosionHidden;
++            this.FlashHidden = FlashHidden;
++            this.PistonHidden = PistonHidden;
++        }
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+index b39639008a1ca80bfb6d571444601e9f8247809c..f984cb17a362bc0732dda9bc80bf9e70b8207bab 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+@@ -26,7 +26,7 @@ public abstract class EntropyCommandBase extends Command {
+     @Override
+     public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
+         if (!testPermission(sender)) return true;
+-        if (args.length != 1) {
++        if (args.length != 1 && commandData.hasArgs()) {
+             sender.sendMessage(prefix.toBuilder().append(Component.text("Usage: " + usageMessage)).build());
+             return true;
+             }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+index 7f1936d2e2365db28a52558531b8ce02bcfb444e..e35710e99b1f1218c0893856f606f847b2436b48 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+@@ -10,4 +10,5 @@ public @interface EntropyCommandData {
+     String usageMessage() default "/default";
+     String[] aliases() default {};
+     String permission() default "entropy.command.default";
++    boolean hasArgs() default true;
+ }
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
+index 559ce60ddedddf81ad9700fa8996ede29b353cfd..575874ac28b5462f9ba311391a0744efc5c447c5 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandLoader.java
+@@ -3,10 +3,12 @@ package xyz.fragmentmc.entropy.command;
+ import net.minecraft.server.MinecraftServer;
+ import org.bukkit.command.Command;
+ import xyz.fragmentmc.entropy.command.commands.EntropyCommand;
++import xyz.fragmentmc.entropy.command.commands.FpsCommand;
+ 
+ public class EntropyCommandLoader {
+     public static void loadCommands() {
+         load(new EntropyCommand());
++        load(new FpsCommand());
+     }
+ 
+     private static void load(Command command) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..99a9b7af4365d60523655ea715132c8d2dc08ba4
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+@@ -0,0 +1,22 @@
++package xyz.fragmentmc.entropy.command.commands;
++
++import org.bukkit.Bukkit;
++import org.bukkit.command.CommandSender;
++import org.bukkit.craftbukkit.entity.CraftPlayer;
++import org.bukkit.entity.Player;
++import org.jetbrains.annotations.NotNull;
++import xyz.fragmentmc.entropy.command.EntropyCommandBase;
++import xyz.fragmentmc.entropy.command.EntropyCommandData;
++import xyz.fragmentmc.entropy.gui.guis.FpsGui;
++
++@EntropyCommandData(name = "fps", description = "FPS Command", usageMessage = "/fps", permission = "entropy.command.fps", hasArgs = false)
++public class FpsCommand extends EntropyCommandBase {
++    @Override
++    protected boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
++        if (sender instanceof Player p) {
++            FpsGui gui = new FpsGui(((CraftPlayer) p).getHandle());
++            gui.Show();
++        }
++        return true;
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java b/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ff372dfa492a27a7c3c9de4247f325a16482b568
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java
+@@ -0,0 +1,64 @@
++package xyz.fragmentmc.entropy.gui;
++
++import net.minecraft.world.entity.player.Player;
++import org.bukkit.Bukkit;
++import org.bukkit.ChatColor;
++import org.bukkit.Material;
++import org.bukkit.inventory.Inventory;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.meta.ItemMeta;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
++import java.util.HashMap;
++
++public abstract class EntropyGuiBase {
++    public static HashMap<String, InventoryWrapper> Inventories = new HashMap<>();
++
++    public EntropyGuiBase(Player player, int size) {
++        this.player = player;
++        this.size = size;
++    }
++
++    public static ItemStack getFiller() {
++        ItemStack filler = new ItemStack(Material.valueOf(EntropyConfig.guiBackgroundItem.toUpperCase()));
++        ItemMeta fillerMeta = filler.getItemMeta();
++        fillerMeta.setDisplayName(ChatColor.RESET + "");
++        filler.setItemMeta(fillerMeta);
++        return filler;
++    }
++    private final Player player;
++    public Player getPlayer() {
++        return player;
++    }
++    private final int size;
++    protected abstract HashMap<Integer, ItemStack> getInventoryItems(Player player);
++    public abstract String getInventoryTitle(Player player);
++    protected abstract String getInventoryKey(Player player);
++    public abstract void handleClick(Player player, ItemStack itemStack, int slot);
++
++    private Inventory getInventory() {
++        // TODO: Adventure API
++        Inventory inventory = Bukkit.createInventory(player.getBukkitEntity(), size, getInventoryTitle(player).replaceAll("&", "§"));
++        ItemStack filler = getFiller();
++        for (int i = 0; i < size; i++) {
++            inventory.setItem(i, filler);
++        }
++        getInventoryItems(player).forEach(inventory::setItem);
++
++        return inventory;
++    }
++
++    public void Show() {
++        Inventory inventory = getInventory();
++        Inventories.put(getInventoryKey(player), new InventoryWrapper(this, inventory));
++        player.getBukkitEntity().openInventory(inventory);
++    }
++
++    public void Update() {
++        Inventory inventory = getInventory();
++        Inventories.put(getInventoryKey(player), new InventoryWrapper(this, inventory));
++        player.getBukkitEntity().openInventory(inventory);
++    }
++
++    public record InventoryWrapper(EntropyGuiBase gui, Inventory inventory) {}
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/gui/guis/FpsGui.java b/src/main/java/xyz/fragmentmc/entropy/gui/guis/FpsGui.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4905f18a5d107ce5cc3bd4621980d911a33750b1
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/gui/guis/FpsGui.java
+@@ -0,0 +1,107 @@
++package xyz.fragmentmc.entropy.gui.guis;
++
++import net.minecraft.world.entity.player.Player;
++import org.bukkit.ChatColor;
++import org.bukkit.Material;
++import org.bukkit.enchantments.Enchantment;
++import org.bukkit.inventory.ItemFlag;
++import org.bukkit.inventory.ItemStack;
++import org.bukkit.inventory.meta.ItemMeta;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.EntropyUserManager;
++import xyz.fragmentmc.entropy.gui.EntropyGuiBase;
++
++import java.util.HashMap;
++
++public class FpsGui extends EntropyGuiBase {
++    public FpsGui(Player player) {
++        super(player, 36);
++    }
++
++    private ItemStack createItem(Material material, String setting, boolean enabled) {
++        ItemStack item = new ItemStack(material);
++        ItemMeta meta = item.getItemMeta();
++        meta.setDisplayName(ChatColor.WHITE + setting + ": " + (enabled ? "§aEnabled" : "§cDisabled"));
++        meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
++        if (enabled) meta.addEnchant(Enchantment.ARROW_INFINITE, 1984, true);
++        item.setItemMeta(meta);
++        return item;
++    }
++
++    private void sendMessage(Player player, String setting, boolean enabled) {
++        if (!EntropyConfig.sendFpsMessage) return;
++        String message = EntropyConfig.fpsMessage
++                .replaceAll("%status%", enabled ? "enabled" : "disabled")
++                .replaceAll("%status_icon%", enabled ? "+" : "-")
++                .replaceAll("%status_color%", enabled ? "&a" : "&c")
++                .replaceAll("%setting%", setting)
++                .replaceAll("&", "§");
++        player.getBukkitEntity().sendMessage(message);
++    }
++
++    @Override
++    protected HashMap<Integer, ItemStack> getInventoryItems(Player player) {
++        HashMap<Integer, ItemStack> items = new HashMap<>();
++        EntropyUserManager.FpsData fpsData = EntropyUserManager.Instance.getFpsData(player);
++
++        items.put(10, createItem(Material.TNT, "Hide TNT", fpsData.TntHidden));
++        items.put(20, createItem(Material.SAND, "Hide Sand", fpsData.SandHidden));
++        items.put(12, createItem(Material.ANVIL, "Hide Anvils", fpsData.AnvilHidden));
++        items.put(22, createItem(Material.BLUE_CONCRETE_POWDER, "Hide Concrete", fpsData.ConcreteHidden));
++        items.put(14, createItem(Material.COBWEB, "Hide Explosions", fpsData.ExplosionHidden));
++        items.put(24, createItem(Material.REDSTONE_LAMP, "TNT Flash", !fpsData.FlashHidden));
++        items.put(16, createItem(Material.PISTON, "Hide Piston Movement", fpsData.PistonHidden));
++
++        return items;
++    }
++
++    @Override
++    public String getInventoryTitle(Player player) {
++        return EntropyConfig.fpsTitle.replaceAll("%player%", player.getName().getString());
++    }
++
++    @Override
++    protected String getInventoryKey(Player player) {
++        return "Fps_" + player.getUUID();
++    }
++
++    @Override
++    public void handleClick(Player player, ItemStack itemStack, int slot) {
++        EntropyUserManager.FpsData fpsData = EntropyUserManager.Instance.getFpsData(player);
++        boolean interact = true;
++        switch (slot) {
++            case 10:
++                fpsData.TntHidden = !fpsData.TntHidden;
++                sendMessage(player, "Hide TNT", fpsData.TntHidden);
++                break;
++            case 20:
++                fpsData.SandHidden = !fpsData.SandHidden;
++                sendMessage(player, "Hide Sand", fpsData.SandHidden);
++                break;
++            case 12:
++                fpsData.AnvilHidden = !fpsData.AnvilHidden;
++                sendMessage(player, "Hide Anvils", fpsData.AnvilHidden);
++                break;
++            case 22:
++                fpsData.ConcreteHidden = !fpsData.ConcreteHidden;
++                sendMessage(player, "Hide Concrete", fpsData.ConcreteHidden);
++                break;
++            case 14:
++                fpsData.ExplosionHidden = !fpsData.ExplosionHidden;
++                sendMessage(player, "Hide Explosions", fpsData.ExplosionHidden);
++                break;
++            case 24:
++                fpsData.FlashHidden = !fpsData.FlashHidden;
++                sendMessage(player, "TNT Flash", !fpsData.FlashHidden);
++                break;
++            case 16:
++                fpsData.PistonHidden = !fpsData.PistonHidden;
++                sendMessage(player, "Hide Piston Movement", fpsData.PistonHidden);
++                break;
++            default:
++                interact = false;
++                break;
++        }
++        if (interact) Update();
++    }
++}

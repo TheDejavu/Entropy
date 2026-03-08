@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 19 Feb 2024 17:38:12 +0100
+Subject: [PATCH] let breakable blocks have durability and optimise block
+ lookups
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 7ec4a2948dc77aec8e7cacb9ea30cc0ac675b2a5..37ab99a377ba5eb3e5777ba6912ed68bda0b6319 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -45,6 +45,7 @@ import net.minecraft.world.level.material.FluidState;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
++import org.bukkit.Bukkit;
+ import org.bukkit.craftbukkit.entity.CraftEntity;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityExplodeEvent;

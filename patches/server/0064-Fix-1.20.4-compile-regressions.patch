@@ -1,0 +1,337 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 14:33:23 +0200
+Subject: [PATCH] Fix 1.20.4 compile regressions
+
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 4d42d81b4632bd338228a553ec7c61a273a233b5..49150f0d3e4f2ec2eb9194a1d4b4ee0e8a221197 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -29,6 +29,9 @@ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ import javax.annotation.Nullable;
+ import net.minecraft.ChatFormatting;
++import net.minecraft.CrashReport;
++import net.minecraft.CrashReportCategory;
++import net.minecraft.ReportedException;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.Util;
+ import net.minecraft.advancements.AdvancementHolder;
+@@ -43,6 +46,7 @@ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.nbt.ListTag;
+ import net.minecraft.nbt.StringTag;
+ import net.minecraft.network.Connection;
++import net.minecraft.network.PacketSendListener;
+ import net.minecraft.network.TickablePacketListener;
+ import net.minecraft.network.chat.ChatDecorator;
+ import net.minecraft.network.chat.ChatType;
+@@ -71,6 +75,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerChatPacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+ import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetCarriedItemPacket;
++import net.minecraft.network.protocol.game.ClientboundSetDefaultSpawnPositionPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityLinkPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+ import net.minecraft.network.protocol.game.ClientboundStartConfigurationPacket;
+@@ -210,6 +215,7 @@ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.craftbukkit.inventory.CraftItemStack;
+ import org.bukkit.craftbukkit.inventory.CraftItemType;
+ import org.bukkit.craftbukkit.util.CraftChatMessage;
++import org.bukkit.craftbukkit.util.CraftLocation;
+ import org.bukkit.craftbukkit.util.CraftNamespacedKey;
+ import org.bukkit.craftbukkit.util.LazyPlayerSet;
+ import org.bukkit.craftbukkit.util.Waitable;
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 4bca4938f17ba6e27fa0a19ddca3074a160600dc..fdf93da0b42b7fc8cc4d080448adce7bf744fbef 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -159,6 +159,7 @@ import org.bukkit.event.entity.EntityPoseChangeEvent;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.plugin.PluginManager;
++import org.bukkit.util.Vector;
+ import xyz.fragmentmc.entropy.EntropyConfig;
+ import xyz.fragmentmc.entropy.event.BubbleColumnEvent;
+ import xyz.fragmentmc.entropy.event.NonFullBlockCollideEvent;
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 37ab99a377ba5eb3e5777ba6912ed68bda0b6319..d6578f4a016c3654290d33e7ecc2d18c75f93728 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -5,6 +5,7 @@ import com.google.common.collect.Sets;
+ import com.mojang.datafixers.util.Pair;
+ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+ import it.unimi.dsi.fastutil.objects.ObjectListIterator;
++import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import java.util.ArrayList;
+ import java.util.Iterator;
+ import java.util.List;
+@@ -52,6 +53,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
+ import org.bukkit.Location;
+ import org.bukkit.event.block.BlockExplodeEvent;
+ import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.event.CombinedExplosionEvent;
+ import xyz.fragmentmc.entropy.event.DetermineFallingBlockExposureEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeLavaEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeWaterloggedEvent;
+@@ -584,6 +586,8 @@ public class Explosion {
+         int k1 = Mth.floor(this.z + (double) f2 + 1.0D);
+         List<Entity> list = this.level.getEntities(this.source, new AABB((double) i, (double) l, (double) j1, (double) j, (double) i1, (double) k1), (com.google.common.base.Predicate<Entity>) entity -> entity.isAlive() && !entity.isSpectator()); // Paper - Fix lag from explosions processing dead entities
+         Vec3 vec3d = new Vec3(this.x, this.y, this.z);
++        final ExplosionBlockCache[] entityBlockCache = new ExplosionBlockCache[BLOCK_EXPLOSION_CACHE_WIDTH * BLOCK_EXPLOSION_CACHE_WIDTH * BLOCK_EXPLOSION_CACHE_WIDTH];
++        final BlockPos.MutableBlockPos blockPos = new BlockPos.MutableBlockPos();
+ 
+         for (int l1 = 0; l1 < list.size(); ++l1) {
+             Entity entity = (Entity) list.get(l1);
+@@ -591,7 +595,7 @@ public class Explosion {
+             // Entropy start
+             boolean explodeEntity = true;
+             if (entity instanceof  ItemEntity item) explodeEntity = ExplosionProofItems.shouldExplodeItem(item);
+-            if (!entity.ignoreExplosion() && explodeEntity) { // Entropy end
++            if (!entity.ignoreExplosion(this) && explodeEntity) { // Entropy end
+                 double d7 = Math.sqrt(entity.distanceToSqr(vec3d)) / (double) f2;
+ 
+                 if (d7 <= 1.0D) {
+@@ -604,7 +608,7 @@ public class Explosion {
+                         d8 /= d11;
+                         d9 /= d11;
+                         d10 /= d11;
+-                        double d12 = this.getBlockDensity(vec3d, entity); // Paper - Optimize explosions
++                        double d12 = this.getBlockDensity(vec3d, entity, entityBlockCache, blockPos); // Paper - Optimize explosions
+                         double d13 = (1.0D - d7) * d12;
+ 
+                         // CraftBukkit start
+@@ -619,7 +623,6 @@ public class Explosion {
+                             continue;
+                         }
+ 
+-                        CraftEventFactory.entityDamage = this.source;
+                         entity.lastDamageCancelled = false;
+ 
+                         if (entity instanceof EnderDragon) {
+@@ -628,14 +631,13 @@ public class Explosion {
+                                 double d7part;
+                                 if (list.contains(entityComplexPart) && (d7part = Math.sqrt(entityComplexPart.distanceToSqr(vec3d)) / f2) <= 1.0D) {
+                                     double d13part = (1.0D - d7part) * this.getSeenPercent(vec3d, entityComplexPart); // Entropy
+-                                    entityComplexPart.hurt(this.getDamageSource(), (float) ((int) ((d13part * d13part + d13part) / 2.0D * 7.0D * (double) f2 + 1.0D)));
++                                    entityComplexPart.hurt(this.damageSource, (float) ((int) ((d13part * d13part + d13part) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                                 }
+                             }
+                         } else if(!(EntropyConfig.playerIgnoreTNTDamage && this.source instanceof PrimedTnt)) {
+-                            entity.hurt(this.getDamageSource(), (float) ((int) ((d13 * d13 + d13) / 2.0D * 7.0D * (double) f2 + 1.0D)));
++                            entity.hurt(this.damageSource, (float) ((int) ((d13 * d13 + d13) / 2.0D * 7.0D * (double) f2 + 1.0D)));
+                         }
+ 
+-                        CraftEventFactory.entityDamage = null;
+                         if (entity.lastDamageCancelled) { // SPIGOT-5339, SPIGOT-6252, SPIGOT-6777: Skip entity if damage event was cancelled
+                             continue;
+                         }
+diff --git a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+index 4ee468e1529e00fe0f0c399a35e35bba3d5acc85..9a1fbe4759dbac0ef24a225494eb2e1f4c0c6b03 100644
+--- a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
++++ b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+@@ -64,7 +64,7 @@ public abstract class VoxelShape implements OffsetVoxelShapeCache {
+     }
+ 
+     public boolean intersects(AABB shape) {
+-        return Shapes.joinIsNotEmpty(this, new io.papermc.paper.voxel.AABBVoxelShape(shape), BooleanOp.AND);
++        return Shapes.joinIsNotEmpty(this, Shapes.create(shape), BooleanOp.AND);
+     }
+     // Entropy end
+ 
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ca78dbcf3b9e2450dcfbaf15e5f5cfbf261203b
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockDensity.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import net.minecraft.world.phys.AABB;
++
++public class BlockDensity {
++    public AABB aabb;
++    public float density;
++
++    public BlockDensity(AABB aabb, float density) {
++        this.aabb = aabb;
++        this.density = density;
++    }
++
++    public boolean intersectsWith(AABB aabb2) {
++        return (aabb.minX <= aabb2.minX && aabb.maxX >= aabb2.minX || aabb.minX <= aabb2.maxX && aabb.maxX >= aabb2.maxX)
++                && (aabb.minY <= aabb2.minY && aabb.maxY >= aabb2.minY || aabb.minY <= aabb2.maxY && aabb.maxY >= aabb2.maxY)
++                && (aabb.minZ <= aabb2.minZ && aabb.maxZ >= aabb2.minZ || aabb.minZ <= aabb2.maxZ && aabb.maxZ >= aabb2.maxZ);
++    }
++
++    public void minmaxWith(AABB aabb2) {
++        aabb = aabb.minmax(aabb2);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..311a9166e7ae1eb3b12f1878b75fb92fbb48b0a3
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateCache.java
+@@ -0,0 +1,47 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
++
++public class BlockStateCache extends BlockStateHandler
++{
++    private long tick;
++    private boolean hasReset;
++    private final Long2ObjectOpenHashMap<BlockState> states;
++
++    public BlockStateCache() {
++        this.tick = 0;
++        hasReset = false;
++        this.states = new Long2ObjectOpenHashMap<>();
++    }
++
++    @Override
++    public BlockState getCached(Level level, BlockPos blockPos) {
++        if (tick == level.getGameTime()) {
++            BlockState state = states.get(blockPos.asLong());
++            if (state != null) return state;
++        }
++        else if (hasReset) {
++            hasReset = false;
++        } else {
++            hasReset = true;
++            tick = level.getGameTime();
++            states.clear();
++        }
++        BlockState state = defaultGet(level, blockPos);
++        states.put(blockPos.asLong(), state);
++        return state;
++    }
++
++    @Override
++    public void invalidate() {
++        states.clear();
++    }
++
++    @Override
++    public void clearValue(BlockPos blockPos) {
++        states.remove(blockPos.asLong());
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..5cab96c0852ca75bef6507a81fecc9d545ed5af0
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/BlockStateHandler.java
+@@ -0,0 +1,23 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.level.Level;
++import net.minecraft.world.level.block.state.BlockState;
++
++public class BlockStateHandler {
++    public BlockState getCached(Level level, BlockPos blockPos) {
++        return defaultGet(level, blockPos);
++    }
++
++    public void invalidate() {
++
++    }
++
++    public void clearValue(BlockPos blockPos) {
++
++    }
++
++    protected BlockState defaultGet(Level level, BlockPos blockPos) {
++        return level.getBlockState(blockPos);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java b/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..70f94b5959aee135b0e744640df38b178886d7f6
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/CachedEntityExplosionDamageCalculator.java
+@@ -0,0 +1,46 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
++import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
++import net.minecraft.core.BlockPos;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.level.BlockGetter;
++import net.minecraft.world.level.Explosion;
++import net.minecraft.world.level.ExplosionDamageCalculator;
++import net.minecraft.world.level.block.state.BlockState;
++import net.minecraft.world.level.material.FluidState;
++
++import java.util.Optional;
++
++public class CachedEntityExplosionDamageCalculator extends ExplosionDamageCalculator {
++    private final Entity source;
++    private final boolean isTnt;
++    private static final Int2ObjectMap<Optional<Float>> cache = new Int2ObjectOpenHashMap<>();
++
++    public CachedEntityExplosionDamageCalculator(Entity entity) {
++        this.source = entity;
++        this.isTnt = entity instanceof PrimedTnt;
++    }
++
++    @Override
++    public Optional<Float> getBlockExplosionResistance(Explosion explosion, BlockGetter world, BlockPos pos, BlockState blockState, FluidState fluidState) {
++        if(isTnt) {
++            if(blockState.isAir() && fluidState.isEmpty()) return Optional.empty();
++            final int key = blockState.getBlock().hashCode() ^ blockState.getFluidState().hashCode();
++            Optional<Float> resistance = cache.get(key);
++            if(resistance == null) {
++                resistance = super.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState);
++                cache.put(key, resistance);
++            }
++            return resistance;
++        }
++        return super.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState).map((max) -> this.source.getBlockExplosionResistance(explosion, world, pos, blockState, fluidState, max));
++    }
++
++    @Override
++    public boolean shouldBlockExplode(Explosion explosion, BlockGetter world, BlockPos pos, BlockState state, float power) {
++        if(isTnt) return true;
++        return this.source.shouldBlockExplode(explosion, world, pos, state, power);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java b/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3f39011eb0344fb4d5f11605661dd03ed0f60ac
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/DensityCache.java
+@@ -0,0 +1,27 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
++import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
++import net.minecraft.world.phys.AABB;
++import xyz.fragmentmc.entropy.EntropyConfig;
++
++public class DensityCache {
++    public final Long2ObjectMap<BlockDensity> cache = new Long2ObjectOpenHashMap<>();
++
++    public BlockDensity getDensity(long key) {
++        return cache.get(key);
++    }
++
++    public float checkDensity(float i, float j, BlockDensity densityData, AABB aabb, long key) {
++        final float density = i/j;
++        if(EntropyConfig.cacheBlockDensity) {
++            if(densityData != null && density == densityData.density && densityData.intersectsWith(aabb)) {
++                densityData.minmaxWith(aabb);
++            }
++            else if (density == 0.0f || density == 1.0f) {
++                cache.put(key, new BlockDensity(aabb, density));
++            }
++        }
++        return density;
++    }
++}

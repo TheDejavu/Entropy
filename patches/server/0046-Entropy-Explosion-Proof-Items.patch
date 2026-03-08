@@ -1,0 +1,109 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 04:55:16 +0200
+Subject: [PATCH] Entropy Explosion Proof Items
+
+
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 680e21c1693a84cf197ff20bb757cc0d138bad48..b2ea65451d1dfd1f7cfee19c697ee309133d54dd 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -53,6 +53,10 @@ import xyz.fragmentmc.entropy.EntropyConfig;
+ import xyz.fragmentmc.entropy.event.DetermineFallingBlockExposureEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeLavaEvent;
+ import xyz.fragmentmc.entropy.event.ExplodeWaterloggedEvent;
++import xyz.fragmentmc.entropy.explosion.BlockDensity;
++import xyz.fragmentmc.entropy.explosion.CachedEntityExplosionDamageCalculator;
++import xyz.fragmentmc.entropy.explosion.DensityCache;
++import xyz.fragmentmc.entropy.explosion.ExplosionProofItems;
+ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+@@ -580,7 +584,9 @@ public class Explosion {
+         while (iterator.hasNext()) {
+             Entity entity = (Entity) iterator.next();
+ 
+-            if (!entity.ignoreExplosion(this)) {
++            boolean explodeEntity = true;
++            if (entity instanceof  ItemEntity item) explodeEntity = ExplosionProofItems.shouldExplodeItem(item);
++            if (!entity.ignoreExplosion(this) && explodeEntity) { // Entropy
+                 double d7 = Math.sqrt(entity.distanceToSqr(vec3d)) / (double) f2;
+ 
+                 if (d7 <= 1.0D) {
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 06686ca4ccad72554f240c40d994085afcaaa18a..eb8235ff69274efe8f9bd5d5c10ca72c5511a713 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -185,6 +185,16 @@ public class EntropyConfig {
+         cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
+     }
+ 
++    public static boolean explosionProofItems;
++    public static List<String> explosionProofList;
++    private static void items() {
++        explosionProofItems = getBoolean("entropy.items.explosion-proof-items.enabled", true, "Make certain items explosion proof.");
++        explosionProofList = getStringList("entropy.items.explosion-proof-items.items", List.of("spawner"), "Items that should be explosion proof.");
++
++
++        setComment("entropy.items", "Features related to items.");
++    }
++
+     public static boolean cannonRangeLimit;
+     public static int cannonRangeLimitChunks;
+     public static boolean pearlRangeLimit;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/explosion/ExplosionProofItems.java b/src/main/java/xyz/fragmentmc/entropy/explosion/ExplosionProofItems.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d2cfdf4ba70390f127c74c32ee1e0f434fc8b6c5
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/explosion/ExplosionProofItems.java
+@@ -0,0 +1,25 @@
++package xyz.fragmentmc.entropy.explosion;
++
++import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
++import net.minecraft.world.entity.item.ItemEntity;
++import org.bukkit.Material;
++import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.util.ConfigUtil;
++
++public class ExplosionProofItems {
++    private static ObjectOpenHashSet<Material> explosionProofItems = new ObjectOpenHashSet<>();
++    private static boolean explodeNone = false;
++    public static boolean explodeAll = true;
++
++    public static boolean shouldExplodeItem(ItemEntity item) {
++        if (explodeAll) return true;
++        if (explodeNone) return true;
++        return !explosionProofItems.contains(item.getItem().getBukkitStack().getType());
++    }
++
++    public static void loadFromConfig() {
++        explodeAll = !EntropyConfig.explosionProofItems || EntropyConfig.explosionProofList.size() == 0;
++        explodeNone = EntropyConfig.explosionProofList.contains("*");
++        explosionProofItems = ConfigUtil.materialsFromNames(EntropyConfig.explosionProofList);
++    }
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/util/ConfigUtil.java b/src/main/java/xyz/fragmentmc/entropy/util/ConfigUtil.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c2557231e83c505080342693cd937abab03aeb8
+--- /dev/null
++++ b/src/main/java/xyz/fragmentmc/entropy/util/ConfigUtil.java
+@@ -0,0 +1,19 @@
++package xyz.fragmentmc.entropy.util;
++
++import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
++import org.bukkit.Material;
++
++import java.util.List;
++import java.util.Objects;
++
++public class ConfigUtil {
++    public static ObjectOpenHashSet<Material> materialsFromNames(List<String> names) {
++        ObjectOpenHashSet<Material> set = new ObjectOpenHashSet<>();
++        for (String s : names) {
++            if(!Objects.equals(s, "*")) {
++                set.add(Material.valueOf(s.toUpperCase()));
++            }
++        }
++        return set;
++    }
++}

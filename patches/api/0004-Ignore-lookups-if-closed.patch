@@ -5,10 +5,10 @@ Subject: [PATCH] Ignore lookups if closed
 
 
 diff --git a/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java b/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
-index 136631a7c8fd71b324450926c5bcf3021bf894fe..7572a0bf6614b02be3cbccc7b86e52ee1b8df621 100644
+index 8b2ef1ce429320d69000a706a304c84bcb8d1862..12449e18180d604e9cbbc744da74a8b222a18e1f 100644
 --- a/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
 +++ b/src/main/java/org/bukkit/plugin/java/PluginClassLoader.java
-@@ -48,6 +48,8 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
+@@ -50,6 +50,8 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
      private io.papermc.paper.plugin.provider.classloader.PluginClassLoaderGroup classLoaderGroup; // Paper
      public io.papermc.paper.plugin.provider.entrypoint.DependencyContext dependencyContext; // Paper
  
@@ -17,7 +17,7 @@ index 136631a7c8fd71b324450926c5bcf3021bf894fe..7572a0bf6614b02be3cbccc7b86e52ee
      static {
          ClassLoader.registerAsParallelCapable();
      }
-@@ -191,7 +193,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
+@@ -205,7 +207,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
          }
          Class<?> result = classes.get(name);
  
@@ -26,7 +26,7 @@ index 136631a7c8fd71b324450926c5bcf3021bf894fe..7572a0bf6614b02be3cbccc7b86e52ee
              String path = name.replace('.', '/').concat(".class");
              JarEntry entry = jar.getJarEntry(path);
  
-@@ -238,6 +240,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
+@@ -252,6 +254,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
              this.setClass(name, result); // Paper
          }
  
@@ -34,7 +34,7 @@ index 136631a7c8fd71b324450926c5bcf3021bf894fe..7572a0bf6614b02be3cbccc7b86e52ee
          return result;
      }
  
-@@ -252,6 +255,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
+@@ -266,6 +269,7 @@ public final class PluginClassLoader extends URLClassLoader implements io.paperm
              // Paper end
              super.close();
          } finally {

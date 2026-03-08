@@ -1,5 +1,6 @@
 entropy-api
 entropy-server
+paper-api-generator
 
 build/
 .gradle/

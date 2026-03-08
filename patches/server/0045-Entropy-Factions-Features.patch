@@ -1,0 +1,191 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Fri, 7 Jul 2023 04:41:36 +0200
+Subject: [PATCH] Entropy Factions Features
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 366121188c5abb550ed0a5f99d25c001628685bb..5d5aedf3470b196a8f753d88bcc3bd6ad35480b3 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -34,13 +34,7 @@ import net.minecraft.nbt.IntTag;
+ import net.minecraft.nbt.ListTag;
+ import net.minecraft.nbt.NbtOps;
+ import net.minecraft.nbt.Tag;
+-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+-import net.minecraft.network.protocol.game.ClientboundEntityEventPacket;
+-import net.minecraft.network.protocol.game.ClientboundRemoveMobEffectPacket;
+-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+-import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
+-import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
++import net.minecraft.network.protocol.game.*;
+ import net.minecraft.network.syncher.EntityDataAccessor;
+ import net.minecraft.network.syncher.EntityDataSerializers;
+ import net.minecraft.network.syncher.SynchedEntityData;
+@@ -141,6 +135,7 @@ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.entity.EntityResurrectEvent;
+ import org.bukkit.event.entity.EntityTeleportEvent;
+ import org.bukkit.event.player.PlayerItemConsumeEvent;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ // CraftBukkit end
+ 
+ 
+@@ -1788,8 +1783,14 @@ public abstract class LivingEntity extends Entity implements Attackable {
+ 
+             // Paper start
+             if (this.dead) { // Paper
+-                this.level().broadcastEntityEvent(this, (byte) 3);
+-            this.setPose(Pose.DYING);
++                // Entropy start
++                if(EntropyConfig.disableDeathAnimation && this.level instanceof ServerLevel server) {
++                    server.getChunkSource().broadcastAndSend(this, new ClientboundRemoveEntitiesPacket(this.getId()));
++                } else {
++                    this.level().broadcastEntityEvent(this, (byte) 3);
++                }
++                this.setPose(Pose.DYING);
++                // Entropy end
+             }
+             // Paper end
+         }
+@@ -1969,7 +1970,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+         return SoundEvents.GENERIC_DEATH;
+     }
+ 
+-    private SoundEvent getFallDamageSound(int distance) {
++    protected SoundEvent getFallDamageSound(int distance) { // Entropy
+         return distance > 4 ? this.getFallSounds().big() : this.getFallSounds().small();
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+index 6cfe0d6c46caa122db107c607d27a2bdcd82f7a8..c595810fa18b2e5094986e0c5da61970615adc99 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
++++ b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+@@ -49,9 +49,27 @@ import net.minecraft.world.level.NaturalSpawner;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.phys.Vec3;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public class IronGolem extends AbstractGolem implements NeutralMob {
+ 
++    // Entropy start
++    @Override
++    public boolean causeFallDamage(float fallDistance, float damageMultiplier, DamageSource damageSource) {
++        if(EntropyConfig.golemFallDamage) {
++            int i = this.calculateFallDamage(fallDistance, damageMultiplier);
++
++            if (i > 0) {
++                if (!this.hurt(damageSource, (float) i)) return true;
++                this.playSound(this.getFallDamageSound(i), 1.0f, 1.0f);
++                this.playBlockFallSound();
++                return true;
++            }
++        }
++        return false;
++    }
++    // Entropy end
++
+     protected static final EntityDataAccessor<Byte> DATA_FLAGS_ID = SynchedEntityData.defineId(IronGolem.class, EntityDataSerializers.BYTE);
+     private static final int IRON_INGOT_HEAL_AMOUNT = 25;
+     private int attackAnimationTick;
+diff --git a/src/main/java/net/minecraft/world/level/BaseSpawner.java b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+index 65c3e91ac4541c0150057dc9f012eb1ee566516e..14bcc80a9b739319e1ba9d00c8172789a79b4485 100644
+--- a/src/main/java/net/minecraft/world/level/BaseSpawner.java
++++ b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+@@ -27,6 +27,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.phys.AABB;
+ import org.slf4j.Logger;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ 
+ public abstract class BaseSpawner {
+ 
+@@ -196,6 +197,11 @@ public abstract class BaseSpawner {
+                             return;
+                         }
+ 
++                        // Entropy start
++                        entity.setDeltaMovement(0, EntropyConfig.spawnerEntityUpwardsVelocity, 0);
++                        if(EntropyConfig.spawnerOverrideEntityHealth && entity instanceof Mob mob) mob.setHealth(EntropyConfig.spawnerEntityHealth);
++                        // Entropy end
++
+                         world.levelEvent(2004, pos, 0);
+                         world.gameEvent(entity, GameEvent.ENTITY_PLACE, blockposition1);
+                         if (entity instanceof Mob) {
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 6c23c1b1627539dc2c8a1f0b4cab905af3649e03..680e21c1693a84cf197ff20bb757cc0d138bad48 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -615,7 +615,7 @@ public class Explosion {
+                                         entityComplexPart.hurt(this.damageSource, this.damageCalculator.getEntityDamageAmount(this, entityComplexPart, getSeenFraction(vec3d, entityComplexPart, blockCache, blockPos))); // Paper - actually optimise explosions and use the right entity to calculate the damage
+                                     }
+                                 }
+-                            } else {
++                            } else if (!(EntropyConfig.playerIgnoreTNTDamage && this.source instanceof PrimedTnt)) {
+                                 entity.hurt(this.damageSource, this.damageCalculator.getEntityDamageAmount(this, entity, getSeenFraction(vec3d, entity, blockCache, blockPos))); // Paper - actually optimise explosions
+                             }
+ 
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index f7eca267faa3bc88020bfd890064953c911994b9..06686ca4ccad72554f240c40d994085afcaaa18a 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -162,4 +162,58 @@ public class EntropyConfig {
+ 
+         setComment("Changes to game mechanics related to cannoning.");
+     }
++    public static boolean skipRayOrigin;
++    public static boolean mergeEntities;
++    public static boolean skipSubmerged;
++    public static boolean cacheExplosionDamage;
++    public static boolean combinedExplosions;
++    public static boolean staticRayStrength;
++    public static boolean cacheBlockDensity;
++    public static boolean reduceRays;
++    public static int rayProjectionSize;
++    public static boolean cacheBlockStates;
++    public static void optimizations() {
++        skipRayOrigin = getBoolean("entropy.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
++        mergeEntities = getBoolean("entropy.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
++        skipSubmerged = getBoolean("entropy.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
++        cacheExplosionDamage = getBoolean("entropy.optimizations.cache-explosion-damage", true, "Cache explosion damage values.");
++        combinedExplosions = getBoolean("entropy.optimizations.combined-explosions", true, "Do one powerful explosion instead of unmerging TNT, when possible.");
++        staticRayStrength = getBoolean("entropy.optimizations.static-ray-strength", true, "* Remove the random component in explosion damage.");
++        cacheBlockDensity = getBoolean("entropy.optimizations.cache-block-density", true, "Cache block density for explosions.");
++        reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
++        rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
++        cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++    }
++
++    public static boolean cannonRangeLimit;
++    public static int cannonRangeLimitChunks;
++    public static boolean pearlRangeLimit;
++    public static int pearlRangeLimitChunks;
++    private static void limits() {
++        cannonRangeLimit = getBoolean("entropy.limits.cannon-range-limit", false, "Delete cannon entities if they are shot past a certain range.", "X and Z axis are separate so the allowed area has a square shape.");
++        cannonRangeLimitChunks = getInt("entropy.limits.cannon-range-limit-chunks", 40, "How many chunks cannons are allowed to shoot.");
++        pearlRangeLimit = getBoolean("entropy.limits.pearl-range-limit", false, "Remove a pearls x and z velocity if it travels a certain distance.", "Checking Radius is circular.");
++        pearlRangeLimitChunks = getInt("entropy.limits.pearl-range-limit-chunks", 10, "How many chunks are pearls allowed to travel.");
++
++        setComment("entropy.limits", "Enforces different cannoning and non cannoning related parameters.");
++    }
++
++    public static boolean playerIgnoreTNTDamage;
++    public static double spawnerEntityUpwardsVelocity;
++    public static boolean spawnerOverrideEntityHealth;
++    public static float spawnerEntityHealth;
++    public static boolean golemFallDamage;
++    public static boolean disableDeathAnimation;
++    private static void factions() {
++        playerIgnoreTNTDamage = getBoolean("entropy.factions.player-ignore-explosion-damage", true,
++                "Players will not take damage from explosions caused by tnt.");
++        spawnerEntityUpwardsVelocity = getDouble("entropy.factions.spawner.entity-upwards-velocity", 0, "Initial Y velocity for entities spawned from spawners.");
++        spawnerOverrideEntityHealth = getBoolean("entropy.factions.spawner.entity-override-health", false, "Entities from spawners will spawn with a specific health.");
++        spawnerEntityHealth = (float) getDouble("entropy.factions.spawner.entity-health", 1, "Health for entities spawned from spawners.");
++        golemFallDamage = getBoolean("entropy.factions.golem-fall-damage", false, "Enable fall damage for Iron Golems.");
++        disableDeathAnimation = getBoolean("entropy.factions.disable-death-animation", false, "Disable the mob death animation.");
++
++        setComment("entropy.factions", "Patches and options not related to cannoning but specifically designed for factions servers.",
++                "NOTE: Plugins related to spawners or mob stacking are likely to break some of this.");
++    }
+ }

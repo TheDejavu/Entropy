@@ -1,0 +1,268 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Mon, 29 Jul 2024 15:18:08 +0200
+Subject: [PATCH] packet limiter
+
+
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 6e1208b6832c1b372b6c60070b2f4b5fae5de5d0..a5d2bcdb03b8dcfb9fbf32cfa14c92fdb7a2f7db 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -52,6 +52,7 @@ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
++import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+ import net.minecraft.network.protocol.login.ClientLoginPacketListener;
+@@ -63,11 +64,13 @@ import net.minecraft.util.SampleLogger;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.EntityType;
+ import net.minecraft.world.entity.item.PrimedTnt;
++import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.level.block.Blocks;
+ import org.apache.commons.lang3.Validate;
+ import org.slf4j.Logger;
+ import org.slf4j.Marker;
+ import org.slf4j.MarkerFactory;
++import xyz.fragmentmc.entropy.EntropyConfig;
+ import xyz.fragmentmc.entropy.EntropyUserManager;
+ import xyz.fragmentmc.entropy.connection.IPMap;
+ 
+@@ -393,56 +396,99 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     public void send(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
+-        // Entropy start - fps
+-        if (this.getPlayer() != null) {
++        Player player = this.getPlayer();
++        if (player != null) {
++            // Entropy start - fps
+             if (packet instanceof ClientboundMoveEntityPacket p) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
+-                Entity entity = p.getEntity(this.getPlayer().level());
++                Entity entity = p.getEntity(player.level());
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 boolean delete = false;
+ 
+-                if (entity instanceof PrimedTnt && (data.TntHidden || data.FlashHidden)) {
++                if (entity != null && entity.isTnt && (data.TntHidden || data.FlashHidden)) {
+                     if (entity.tickCount > 1) {
+                         return;
+                     }
+                     delete = true;
+-                } else if (entity != null && entity.tickCount < 1) {
++                } else if (entity != null && entity.tickCount < 1 && entity.isFallingBlock) {
+                     String name = entity.getName().getString();
+-                    if (name.contains("Sand") && data.SandHidden) {
++                    if (data.SandHidden && name.contains("Sand")) {
+                         delete = true;
+-                    } else if (name.contains("Anvil") && data.AnvilHidden) {
++                    } else if (data.AnvilHidden && name.contains("Anvil")) {
+                         delete = true;
+-                    } else if (name.contains("Concrete Powder") && data.ConcreteHidden) {
++                    } else if (data.ConcreteHidden && name.contains("Concrete Powder")) {
+                         delete = true;
+                     }
+                 }
+ 
+                 if (delete && entity != null) {
+-                    this.send(new ClientboundRemoveEntitiesPacket(entity.getId()));
++                    this.sendPacket(new ClientboundRemoveEntitiesPacket(entity.getId()), null, flush);
+                     return;
+                 }
+             } else if (packet instanceof ClientboundExplodePacket) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 if (data.ExplosionHidden) {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundBlockEventPacket p) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 if ((p.getBlock() == Blocks.PISTON || p.getBlock() == Blocks.STICKY_PISTON) && data.PistonHidden) {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundSetEntityDataPacket p) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(this.getPlayer());
+-                if (this.getPlayer().level().getEntity(p.id()) instanceof PrimedTnt t && data.FlashHidden) {
+-                    ClientboundAddEntityPacket ep = new ClientboundAddEntityPacket(
+-                        t.getId(), UUID.randomUUID(), t.getX(), t.getY(), t.getZ(),
+-                        0, 0, EntityType.FALLING_BLOCK, 2094, t.getDeltaMovement(), 0
+-                    );
+-                    this.send(ep);
++                Entity entity = player.level().getEntity(p.id());
++                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
++                if (entity instanceof PrimedTnt t && (data.FlashHidden || t.minimal)) {
++                    this.sendPacket(new ClientboundRemoveEntitiesPacket(t.getId()), null, flush);
++                    t.minimal = true;
++                    if (t.getFuse() > 2) {
++                        ClientboundAddEntityPacket ep = new ClientboundAddEntityPacket(
++                            t.getId(), UUID.randomUUID(), t.getX(), t.getY(), t.getZ(),
++                            0, 0, EntityType.FALLING_BLOCK, 2094, t.getDeltaMovement(), 0
++                        );
++                        this.sendPacket(ep, null, flush);
++                    }
++                    return;
+                 }
+             }
+-        }
+-        // Entropy end
++            // Entropy end
+ 
++            // Entropy start - packet limiter
++            if (player.tickCount % 5 != 0) {
++                if (packet instanceof ClientboundMoveEntityPacket p) {
++                    Entity entity = p.getEntity(player.level());
++                    if (entity == null) {
++                        return;
++                    } else if (entity.isTnt && EntropyConfig.packetLimiterTntMove) {
++                        return;
++                    } else if (entity.isFallingBlock && EntropyConfig.packetLimiterFallingBlockMove) {
++                        return;
++                    }
++                } else if (packet instanceof ClientboundSetEntityMotionPacket p) {
++                    Entity entity = player.level().getEntity(p.getId());
++                    if (entity == null) {
++                        return;
++                    } else if (entity.isTnt && EntropyConfig.packetLimiterTntVelocity) {
++                        return;
++                    } else if (entity.isFallingBlock && EntropyConfig.packetLimiterFallingBlockVelocity) {
++                        return;
++                    }
++                } else if (packet instanceof ClientboundSetEntityDataPacket p) {
++                    Entity entity = player.level().getEntity(p.id());
++                    if (entity == null) {
++                        return;
++                    } else if (entity.isTnt && EntropyConfig.packetLimiterTntData) {
++                        return;
++                    } else if (entity.isFallingBlock && EntropyConfig.packetLimiterFallingBlockData) {
++                        return;
++                    }
++                } else if (packet instanceof ClientboundBlockEventPacket p) {
++                    if ((p.getBlock() == Blocks.PISTON || p.getBlock() == Blocks.STICKY_PISTON) && EntropyConfig.packetLimiterPistonUpdates) {
++                        return;
++                    }
++                }
++            }
++            // Entropy end
++        }
+         // Paper start - Optimize network: Handle oversized packets better
+         final boolean connected = this.isConnected();
+         if (!connected && !this.preparing) {
+@@ -1027,3 +1073,4 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+     // Paper end - Optimize network
+ }
++
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 0392eaf8a61b9982320153ee075f5af5f4495d01..4bca4938f17ba6e27fa0a19ddca3074a160600dc 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -167,7 +167,20 @@ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public abstract class Entity implements Nameable, EntityAccess, CommandSource, ScoreHolder {
++    // Entropy start
++    public void setOriginVector(Vector v) {
++        this.origin = v.clone();
++    }
++
++    public void setOriginWorld(UUID u) {
++        this.originWorld = u;
++    }
++    // Entropy end
+ 
++    // Entropy start - tick limiter
++    public boolean isTnt = false;
++    public boolean isFallingBlock = false;
++    // Entropy end
+     // CraftBukkit start
+     private static final int CURRENT_LEVEL = 2;
+     public boolean preserveMotion = true; // Paper - Fix Entity Teleportation and cancel velocity if teleported; keep initial motion on first setPositionRotation
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index 7543a5e096d83e839c3509d48ac88d0b4a1bee43..af02699285273b8c17d98d266915b0ebf9627068 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -78,6 +78,7 @@ public class FallingBlockEntity extends Entity {
+ 
+     public FallingBlockEntity(EntityType<? extends FallingBlockEntity> type, Level world) {
+         super(type, world);
++        isFallingBlock = true;
+         this.blockState = Blocks.SAND.defaultBlockState();
+         this.dropItem = true;
+         this.fallDamageMax = 40;
+@@ -93,6 +94,7 @@ public class FallingBlockEntity extends Entity {
+         this.yo = y;
+         this.zo = z;
+         this.setStartPos(this.blockPosition());
++        isFallingBlock = true;
+ 
+         // Entropy Start - entity origin fixes
+         this.setOrigin(new Location(world.getWorld(), x, y, z));
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 1842b99b60e26b6807cc77b0762787b6becf6edb..c9eda97aa2b5fb358159caef63f26188ccd26209 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -31,6 +31,13 @@ import xyz.fragmentmc.entropy.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class PrimedTnt extends Entity implements TraceableEntity {
++    // Entropy start
++    public int count = 1;
++    public boolean canCombine = false;
++    public boolean blockDamageSkipped;
++    public boolean destroyedBlock;
++    public boolean minimal = false;
++    // Entropy end
+ 
+     private static final EntityDataAccessor<Integer> DATA_FUSE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.INT);
+     private static final EntityDataAccessor<BlockState> DATA_BLOCK_STATE_ID = SynchedEntityData.defineId(PrimedTnt.class, EntityDataSerializers.BLOCK_STATE);
+@@ -44,6 +51,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+ 
+     public PrimedTnt(EntityType<? extends PrimedTnt> type, Level world) {
+         super(type, world);
++        isTnt = true;
+         this.blocksBuilding = true;
+     }
+ 
+@@ -62,6 +70,7 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+ 
+         // Entropy Start - entity origin fixes
+         this.setOrigin(new Location(world.getWorld(), x, y, z));
++        isTnt = true;
+     }
+ 
+     @Override
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 74e3d418414441e974d58d01850c415c24dcb6aa..5e4c876cc2ee4f9e85e61b323edbbe8319938a73 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -208,10 +208,24 @@ public class EntropyConfig {
+     }
+ 
+     public static boolean packetLimiterTntFlow;
++    public static boolean packetLimiterTntMove;
++    public static boolean packetLimiterTntVelocity;
++    public static boolean packetLimiterTntData;
++    public static boolean packetLimiterFallingBlockMove;
++    public static boolean packetLimiterFallingBlockVelocity;
++    public static boolean packetLimiterFallingBlockData;
++    public static boolean packetLimiterPistonUpdates;
+     private static void packetLimiter() {
+         packetLimiterTntFlow = getBoolean("entropy.packet-limiter.tnt-flow", true, "Update tnt flowing in water less frequently.");
+-
+-        setComment("entropy.packet-limiter", "Limit packets being sent to the client for performance reasons.");
++        packetLimiterTntMove = getBoolean("entropy.packet-limiter.tnt-move", false, "Update tnt moving less frequently.");
++        packetLimiterTntVelocity = getBoolean("entropy.packet-limiter.tnt-velocity", false, "Update tnt velocity less frequently.");
++        packetLimiterTntData = getBoolean("entropy.packet-limiter.tnt-data", true, "Update tnt data less frequently.");
++        packetLimiterFallingBlockMove = getBoolean("entropy.packet-limiter.falling-block-move", false, "Update falling block movement less frequently.");
++        packetLimiterFallingBlockVelocity = getBoolean("entropy.packet-limiter.falling-block-velocity", false, "Update falling block velocity less frequently.");
++        packetLimiterFallingBlockData = getBoolean("entropy.packet-limiter.falling-block-data", true, "Update falling block data less frequently.");
++        packetLimiterPistonUpdates = getBoolean("entropy.packet-limiter.piston-updates", false, "Update pistons less frequently.");
++
++        setComment("entropy.packet-limiter", "Limit packets being sent to the client for performance reasons. Can cause weird looking behaviour on the client. Not recommended for cannoning servers.");
+     }
+ 
+     public static boolean tntLoadsChunks;

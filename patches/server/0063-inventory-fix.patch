@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: stan <77831846+stanuwu@users.noreply.github.com>
+Date: Thu, 15 Aug 2024 11:52:22 +0200
+Subject: [PATCH] inventory fix
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index e39257cfbad6c3c1cc6952c5bcf5c806bec97074..7e5fef5468c88eed752d23698ed023849b10d1cf 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -187,6 +187,7 @@ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+ import org.bukkit.event.player.PlayerToggleSneakEvent;
+ import org.bukkit.inventory.MainHand;
+ import xyz.fragmentmc.entropy.EntropyConfig;
++import xyz.fragmentmc.entropy.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+ public class ServerPlayer extends Player {
+@@ -1687,6 +1688,12 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public void doCloseContainer() {
++        // Entropy Start
++        for (EntropyGuiBase.InventoryWrapper inv : EntropyGuiBase.Inventories.values()) {
++            if (inv.gui().getPlayer().getUUID().equals(uuid)) inv.gui().Close();
++        }
++        // Entropy End
++
+         this.containerMenu.removed(this);
+         this.inventoryMenu.transferState(this.containerMenu);
+         this.containerMenu = this.inventoryMenu;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+index 99a9b7af4365d60523655ea715132c8d2dc08ba4..ecb2f40db2528a37c56cfcb4d58a47661d03c1e4 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
+ import org.jetbrains.annotations.NotNull;
+ import xyz.fragmentmc.entropy.command.EntropyCommandBase;
+ import xyz.fragmentmc.entropy.command.EntropyCommandData;
++import xyz.fragmentmc.entropy.gui.EntropyGuiBase;
+ import xyz.fragmentmc.entropy.gui.guis.FpsGui;
+ 
+ @EntropyCommandData(name = "fps", description = "FPS Command", usageMessage = "/fps", permission = "entropy.command.fps", hasArgs = false)
+@@ -14,7 +15,8 @@ public class FpsCommand extends EntropyCommandBase {
+     @Override
+     protected boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
+         if (sender instanceof Player p) {
+-            FpsGui gui = new FpsGui(((CraftPlayer) p).getHandle());
++            EntropyGuiBase.InventoryWrapper wrapper = EntropyGuiBase.Inventories.getOrDefault("Fps_" + p.getUniqueId(), null);
++            FpsGui gui = wrapper == null ? new FpsGui(((CraftPlayer) p).getHandle()) : (FpsGui) wrapper.gui();
+             gui.Show();
+         }
+         return true;
+diff --git a/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java b/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java
+index ff372dfa492a27a7c3c9de4247f325a16482b568..c9c5c0689b624d5249b9f1727005fe10555b8525 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java
++++ b/src/main/java/xyz/fragmentmc/entropy/gui/EntropyGuiBase.java
+@@ -56,8 +56,12 @@ public abstract class EntropyGuiBase {
+ 
+     public void Update() {
+         Inventory inventory = getInventory();
+-        Inventories.put(getInventoryKey(player), new InventoryWrapper(this, inventory));
+         player.getBukkitEntity().openInventory(inventory);
++        Inventories.put(getInventoryKey(player), new InventoryWrapper(this, inventory));
++    }
++
++    public void Close() {
++        Inventories.remove(getInventoryKey(player));
+     }
+ 
+     public record InventoryWrapper(EntropyGuiBase gui, Inventory inventory) {}

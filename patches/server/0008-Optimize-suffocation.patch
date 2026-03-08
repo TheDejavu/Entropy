@@ -17,7 +17,7 @@ but is so much cheaper than the suffocation check that it's worth
 keeping it.
 
 diff --git a/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java b/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
-index ac56a5ba83184ee7b24b58cc25aa3d5aa953caee..9a8896f51be5028724563cd5054782477868edef 100644
+index c84ef666a896dc0d154610e1e6360ca5def739fd..a047bcbb9aa47d094f3daeed6708b1918b4904de 100644
 --- a/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
 +++ b/src/main/java/gg/pufferfish/pufferfish/PufferfishConfig.java
 @@ -172,4 +172,13 @@ public class PufferfishConfig {
@@ -35,7 +35,7 @@ index ac56a5ba83184ee7b24b58cc25aa3d5aa953caee..9a8896f51be5028724563cd505478247
 +	
  }
 diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
-index 78c98f38bc263664ea4cd344670243a7d372885c..0d6f4f3a619cb40c56082b53b6ef136ad9e9c55c 100644
+index e9bb7feb591032904516d1b9374f486d8a7d066c..7d1bac1dcd03a64a9c3317b424fa248e5be471da 100644
 --- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
 +++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
 @@ -414,7 +414,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
@@ -47,7 +47,7 @@ index 78c98f38bc263664ea4cd344670243a7d372885c..0d6f4f3a619cb40c56082b53b6ef136a
                      this.hurt(this.damageSources().inWall(), 1.0F);
                  } else if (flag && !this.level().getWorldBorder().isWithinBounds(this.getBoundingBox())) {
                      double d0 = this.level().getWorldBorder().getDistanceToBorder(this) + this.level().getWorldBorder().getDamageSafeZone();
-@@ -1369,6 +1369,19 @@ public abstract class LivingEntity extends Entity implements Attackable {
+@@ -1418,6 +1418,19 @@ public abstract class LivingEntity extends Entity implements Attackable {
          return this.getHealth() <= 0.0F;
      }
  
@@ -68,10 +68,10 @@ index 78c98f38bc263664ea4cd344670243a7d372885c..0d6f4f3a619cb40c56082b53b6ef136a
      public boolean hurt(DamageSource source, float amount) {
          if (this.isInvulnerableTo(source)) {
 diff --git a/src/main/java/net/minecraft/world/entity/boss/wither/WitherBoss.java b/src/main/java/net/minecraft/world/entity/boss/wither/WitherBoss.java
-index 1e07febcf7a3dfb281728cc5e3e4f15dd776d7e0..c65ab566c6241dd6a44bd11a449ef0c4b2f6dc65 100644
+index 12440ee2dccc0a697fb403765f2e1b987ccc0283..de2471cfa96a23944f229f33ffdff88b6b7756e4 100644
 --- a/src/main/java/net/minecraft/world/entity/boss/wither/WitherBoss.java
 +++ b/src/main/java/net/minecraft/world/entity/boss/wither/WitherBoss.java
-@@ -150,6 +150,13 @@ public class WitherBoss extends Monster implements PowerableMob, RangedAttackMob
+@@ -151,6 +151,13 @@ public class WitherBoss extends Monster implements PowerableMob, RangedAttackMob
          this.bossEvent.setName(this.getDisplayName());
      }
  
