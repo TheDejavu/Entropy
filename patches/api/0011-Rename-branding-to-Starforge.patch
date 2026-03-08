@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 15:21:42 +0200
+Subject: [PATCH] Rename branding to Starforge
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
+index 207f715afc3e225721f59bd75178fe2e87e45098..56171546a79bb3668e7c5383b99653bb71f5f1ae 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
++++ b/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
+@@ -3,7 +3,7 @@ package xyz.fragmentmc.entropy.entity;
+ import org.bukkit.entity.TNTPrimed;
+ 
+ /**
+- * Represents a Primed Tnt in the Entropy Jar
++ * Represents a Primed Tnt in the Starforge Jar
+  */
+ public interface EntropyTntPrimed extends TNTPrimed {
+     /**
+@@ -13,3 +13,4 @@ public interface EntropyTntPrimed extends TNTPrimed {
+      */
+     public int getCount();
+ }
++

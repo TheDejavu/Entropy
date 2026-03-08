@@ -1,4 +1,4 @@
-# Entropy
+# Starforge
 1.20.4 Cannoning/Factions Jar based on [Pufferfish](https://github.com/pufferfish-gg/Pufferfish).
 
  - [FragmentMC Discord](http://fragmentmc.xyz)
@@ -80,8 +80,8 @@
 ## Permissions
 | Command  | Node                    |
 |----------|-------------------------|
-| /entropy | entropy.command.entropy |
-| /fps     | entropy.command.fps     |
+| /starforge | starforge.command.starforge |
+| /fps     | starforge.command.fps     |
 
 ## Building
 
@@ -98,3 +98,4 @@ Or building a Paperclip JAR for distribution:
 ## License
 Patches are licensed under GPL-3.0.
 All other files are licensed under MIT.
+

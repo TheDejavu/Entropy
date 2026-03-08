@@ -1,0 +1,521 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 15:21:30 +0200
+Subject: [PATCH] Rename branding to Starforge
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index 22287f05b0b85fa45d629ea01a0bd35ff0f62d1b..63bf7f3c54d29f93cdd73eca7ed14dc18e495924 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -91,7 +91,7 @@ tasks.jar {
+         attributes(
+             "Main-Class" to "org.bukkit.craftbukkit.Main",
+             "Implementation-Title" to "CraftBukkit",
+-            "Implementation-Version" to "git-Entropy-$implementationVersion",
++            "Implementation-Version" to "git-Starforge-$implementationVersion",
+             "Implementation-Vendor" to date, // Paper
+             "Specification-Title" to "Bukkit",
+             "Specification-Version" to project.version,
+@@ -224,3 +224,4 @@ tasks.registerRunTask("runDev") {
+     classpath(sourceSets.main.map { it.runtimeClasspath })
+     jvmArgs("-DPaper.pushPaperAssetsRoot=true")
+ }
++
+diff --git a/src/main/java/com/destroystokyo/paper/Metrics.java b/src/main/java/com/destroystokyo/paper/Metrics.java
+index e91f397b3e0d14575ee49fde32bfd0ed4204a682..27bdaf766c259cf1dbc8097f39d3cd55fe5fbef9 100644
+--- a/src/main/java/com/destroystokyo/paper/Metrics.java
++++ b/src/main/java/com/destroystokyo/paper/Metrics.java
+@@ -593,7 +593,7 @@ public class Metrics {
+             boolean logFailedRequests = config.getBoolean("logFailedRequests", false);
+             // Only start Metrics, if it's enabled in the config
+             if (config.getBoolean("enabled", true)) {
+-                Metrics metrics = new Metrics("Entropy", serverUUID, logFailedRequests, Bukkit.getLogger()); // Entropy
++                Metrics metrics = new Metrics("Starforge", serverUUID, logFailedRequests, Bukkit.getLogger()); // Entropy
+ 
+                 metrics.addCustomChart(new Metrics.SimplePie("minecraft_version", () -> {
+                     String minecraftVersion = Bukkit.getVersion();
+@@ -611,7 +611,7 @@ public class Metrics {
+                 } else {
+                     paperVersion = "unknown";
+                 }
+-                metrics.addCustomChart(new Metrics.SimplePie("entropy_version", () -> paperVersion)); // Entropy
++                metrics.addCustomChart(new Metrics.SimplePie("starforge_version", () -> paperVersion)); // Entropy
+ 
+                 metrics.addCustomChart(new Metrics.DrilldownPie("java_version", () -> {
+                     Map<String, Map<String, Integer>> map = new HashMap<>();
+@@ -681,3 +681,4 @@ public class Metrics {
+         }
+     }
+ }
++
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 0739662beb8d32a42a31e3cf76753f967e3bf8de..ac64e8c0ba77a883d8cb0aa45a6c742a8d235e1d 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -266,7 +266,7 @@ import javax.annotation.Nullable; // Paper
+ import javax.annotation.Nonnull; // Paper
+ 
+ public final class CraftServer implements Server {
+-    private final String serverName = "Entropy"; // Paper // Pufferfish // Entropy
++    private final String serverName = "Starforge"; // Paper // Pufferfish // Entropy
+     private final String serverVersion;
+     private final String bukkitVersion = Versioning.getBukkitVersion();
+     private final Logger logger = Logger.getLogger("Minecraft");
+@@ -3265,3 +3265,4 @@ public final class CraftServer implements Server {
+ 
+     // Paper end
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+index 5e4c876cc2ee4f9e85e61b323edbbe8319938a73..29c87b2c55ea46e3ea0edd2249fe2fc0e4738f0f 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyConfig.java
+@@ -44,10 +44,12 @@ public class EntropyConfig {
+         return updates;
+     }
+     public static void load() throws IOException {
+-        File configFile = new File("entropy.yml");
+-        if (configFile.exists()) {
++        File configFile = new File("starforge.yml");
++        File legacyConfigFile = new File("entropy.yml");
++        File loadFile = configFile.exists() ? configFile : legacyConfigFile;
++        if (loadFile.exists()) {
+             try {
+-                config.load(configFile);
++                config.load(loadFile);
+             } catch (InvalidConfigurationException e) {
+                 throw new IOException(e);
+             }
+@@ -55,7 +57,7 @@ public class EntropyConfig {
+         getString("info.version", "1.5");
+         setComment("info",
+                 "====================================",
+-                "Entropy Cannoning Jar by FragmentMC",
++                "Starforge Cannoning Jar by FragmentMC",
+                 "Support: http://fragmentmc.xyz",
+                 "====================================");
+ 
+@@ -82,64 +84,75 @@ public class EntropyConfig {
+         }
+     }
+ 
+-    private static void ensureDefault(String key, Object defaultValue, String... comment) {
++    private static @Nullable String legacyKey(String key) {
++        if (key.startsWith("starforge.")) {
++            return "entropy." + key.substring("starforge.".length());
++        }
++        return null;
++    }
++
++    private static void ensureDefault(String key, @Nullable String oldKey, Object defaultValue, String... comment) {
+         if (!config.contains(key)) {
+-            config.set(key, defaultValue);
++            if (oldKey != null && config.contains(oldKey)) {
++                config.set(key, config.get(oldKey));
++            } else {
++                config.set(key, defaultValue);
++            }
+             config.setComment(key, String.join("\n", comment), CommentType.BLOCK);
+         }
+     }
+ 
+     private static boolean getBoolean(String key, boolean defaultValue, String... comment) {
+-        return getBoolean(key, null, defaultValue, comment);
++        return getBoolean(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static boolean getBoolean(String key, @Nullable String oldKey, boolean defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         return config.getBoolean(key, defaultValue);
+     }
+ 
+     private static int getInt(String key, int defaultValue, String... comment) {
+-        return getInt(key, null, defaultValue, comment);
++        return getInt(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static int getInt(String key, @Nullable String oldKey, int defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         return config.getInt(key, defaultValue);
+     }
+ 
+     private static double getDouble(String key, double defaultValue, String... comment) {
+-        return getDouble(key, null, defaultValue, comment);
++        return getDouble(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static double getDouble(String key, @Nullable String oldKey, double defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         return config.getDouble(key, defaultValue);
+     }
+ 
+     private static String getString(String key, String defaultValue, String... comment) {
+-        return getOldString(key, null, defaultValue, comment);
++        return getOldString(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static String getOldString(String key, @Nullable String oldKey, String defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         return config.getString(key, defaultValue);
+     }
+ 
+     private static List<String> getStringList(String key, List<String> defaultValue, String... comment) {
+-        return getStringList(key, null, defaultValue, comment);
++        return getStringList(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static List<String> getStringList(String key, @Nullable String oldKey, List<String> defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         return config.getStringList(key);
+     }
+ 
+     private static Map<String, Integer> getStringIntMap(String key, Map<String, Integer> defaultValue, String... comment) {
+-        return getStringIntMap(key, null, defaultValue, comment);
++        return getStringIntMap(key, legacyKey(key), defaultValue, comment);
+     }
+ 
+     private static Map<String, Integer> getStringIntMap(String key, @Nullable String oldKey, Map<String, Integer> defaultValue, String... comment) {
+-        ensureDefault(key, defaultValue, comment);
++        ensureDefault(key, oldKey, defaultValue, comment);
+         Map<String, Integer> map = new HashMap<>();
+         ConfigurationSection c = config.getConfigurationSection(key);
+         if(c != null) {
+@@ -153,7 +166,7 @@ public class EntropyConfig {
+ 
+     public static boolean disableChatMessageVerification;
+     private static void disableChatMessageVerification() {
+-        disableChatMessageVerification = getBoolean("entropy.disable-chat-message-verification", true, "Disable chat message verification, removing features such as chat reporting.",
++        disableChatMessageVerification = getBoolean("starforge.disable-chat-message-verification", true, "Disable chat message verification, removing features such as chat reporting.",
+                 "This setting also gets rid of any warnings that chat messages can not be verified.");
+     }
+ 
+@@ -168,16 +181,16 @@ public class EntropyConfig {
+     public static boolean disableHoneySlow;
+     public static boolean disableNonFullBlockHitbox;
+     private static void patches() {
+-        disableTNTFlow = getBoolean("entropy.patches.disable-tnt-flow", true, "Disable TNT getting pushed by flowing water.");
+-        disableTNTSpread = getBoolean("entropy.patches.disable-tnt-spread", true, "Disable the random velocity TNT gets when it is spawned.");
+-        fallingBlockParity = getBoolean("entropy.patches.falling-block-parity", false, "Change FallingBlocks to be affected by explosions the same way that TNT does.");
+-        explodeWaterloggedBlocks = getBoolean("entropy.patches.explode-waterlogged-blocks", true, "Allow explosions to break waterlogged blocks, to prevent unraidable base defenses.");
+-        explodeLava = getBoolean("entropy.patches.explode-lava", false, "Allow explosions to break lava. Enable this for non regen servers. If you enable this option, also consider disabling concrete.");
+-        disableBoatCollisions = getBoolean("entropy.patches.disable-boat-collisions", false, "Stop TNT and FallingBlocks from colliding with boats.");
+-        disableConcreteHarden = getBoolean("entropy.patches.disable-concrete-harden", false, "Stop concrete powder from hardening in water. It will still harden if placed next to water.");
+-        disableBubbleColumns = getBoolean("entropy.patches.disable-bubble-columns", false, "TNT and FallingBlocks will not be affected by bubble columns.");
+-        disableHoneySlow = getBoolean("entropy.patches.disable-honey-slow", false, "TNT and FallingBlocks will not be slowed by hones blocks.");
+-        disableNonFullBlockHitbox = getBoolean("entropy.patches.disable-non-full-block-hitbox", false, "TNT and FallingBlocks outside of a cannon will collide with every block as if it was a full block on the x and z axis.");
++        disableTNTFlow = getBoolean("starforge.patches.disable-tnt-flow", true, "Disable TNT getting pushed by flowing water.");
++        disableTNTSpread = getBoolean("starforge.patches.disable-tnt-spread", true, "Disable the random velocity TNT gets when it is spawned.");
++        fallingBlockParity = getBoolean("starforge.patches.falling-block-parity", false, "Change FallingBlocks to be affected by explosions the same way that TNT does.");
++        explodeWaterloggedBlocks = getBoolean("starforge.patches.explode-waterlogged-blocks", true, "Allow explosions to break waterlogged blocks, to prevent unraidable base defenses.");
++        explodeLava = getBoolean("starforge.patches.explode-lava", false, "Allow explosions to break lava. Enable this for non regen servers. If you enable this option, also consider disabling concrete.");
++        disableBoatCollisions = getBoolean("starforge.patches.disable-boat-collisions", false, "Stop TNT and FallingBlocks from colliding with boats.");
++        disableConcreteHarden = getBoolean("starforge.patches.disable-concrete-harden", false, "Stop concrete powder from hardening in water. It will still harden if placed next to water.");
++        disableBubbleColumns = getBoolean("starforge.patches.disable-bubble-columns", false, "TNT and FallingBlocks will not be affected by bubble columns.");
++        disableHoneySlow = getBoolean("starforge.patches.disable-honey-slow", false, "TNT and FallingBlocks will not be slowed by hones blocks.");
++        disableNonFullBlockHitbox = getBoolean("starforge.patches.disable-non-full-block-hitbox", false, "TNT and FallingBlocks outside of a cannon will collide with every block as if it was a full block on the x and z axis.");
+ 
+ 
+         setComment("Changes to game mechanics related to cannoning.");
+@@ -193,18 +206,18 @@ public class EntropyConfig {
+     public static int rayProjectionSize;
+     public static boolean cacheBlockStates;
+     private static void optimizations() {
+-        skipRayOrigin = getBoolean("entropy.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
+-        mergeEntities = getBoolean("entropy.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
+-        skipSubmerged = getBoolean("entropy.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
+-        cacheExplosionDamage = getBoolean("entropy.optimizations.cache-explosion-damage", true, "Cache explosion damage values.");
+-        combinedExplosions = getBoolean("entropy.optimizations.combined-explosions", true, "Do one powerful explosion instead of unmerging TNT, when possible.");
+-        staticRayStrength = getBoolean("entropy.optimizations.static-ray-strength", true, "* Remove the random component in explosion damage.");
+-        cacheBlockDensity = getBoolean("entropy.optimizations.cache-block-density", true, "* Cache block density for explosions.");
+-        reduceRays = getBoolean("entropy.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
+-        rayProjectionSize = getInt("entropy.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
+-        cacheBlockStates = getBoolean("entropy.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
+-
+-        setComment("entropy.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
++        skipRayOrigin = getBoolean("starforge.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
++        mergeEntities = getBoolean("starforge.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
++        skipSubmerged = getBoolean("starforge.optimizations.skip-submerged", true, "Skip block damage checks for submerged explosions.");
++        cacheExplosionDamage = getBoolean("starforge.optimizations.cache-explosion-damage", true, "Cache explosion damage values.");
++        combinedExplosions = getBoolean("starforge.optimizations.combined-explosions", true, "Do one powerful explosion instead of unmerging TNT, when possible.");
++        staticRayStrength = getBoolean("starforge.optimizations.static-ray-strength", true, "* Remove the random component in explosion damage.");
++        cacheBlockDensity = getBoolean("starforge.optimizations.cache-block-density", true, "* Cache block density for explosions.");
++        reduceRays = getBoolean("starforge.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
++        rayProjectionSize = getInt("starforge.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
++        cacheBlockStates = getBoolean("starforge.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++
++        setComment("starforge.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
+     }
+ 
+     public static boolean packetLimiterTntFlow;
+@@ -216,16 +229,16 @@ public class EntropyConfig {
+     public static boolean packetLimiterFallingBlockData;
+     public static boolean packetLimiterPistonUpdates;
+     private static void packetLimiter() {
+-        packetLimiterTntFlow = getBoolean("entropy.packet-limiter.tnt-flow", true, "Update tnt flowing in water less frequently.");
+-        packetLimiterTntMove = getBoolean("entropy.packet-limiter.tnt-move", false, "Update tnt moving less frequently.");
+-        packetLimiterTntVelocity = getBoolean("entropy.packet-limiter.tnt-velocity", false, "Update tnt velocity less frequently.");
+-        packetLimiterTntData = getBoolean("entropy.packet-limiter.tnt-data", true, "Update tnt data less frequently.");
+-        packetLimiterFallingBlockMove = getBoolean("entropy.packet-limiter.falling-block-move", false, "Update falling block movement less frequently.");
+-        packetLimiterFallingBlockVelocity = getBoolean("entropy.packet-limiter.falling-block-velocity", false, "Update falling block velocity less frequently.");
+-        packetLimiterFallingBlockData = getBoolean("entropy.packet-limiter.falling-block-data", true, "Update falling block data less frequently.");
+-        packetLimiterPistonUpdates = getBoolean("entropy.packet-limiter.piston-updates", false, "Update pistons less frequently.");
+-
+-        setComment("entropy.packet-limiter", "Limit packets being sent to the client for performance reasons. Can cause weird looking behaviour on the client. Not recommended for cannoning servers.");
++        packetLimiterTntFlow = getBoolean("starforge.packet-limiter.tnt-flow", true, "Update tnt flowing in water less frequently.");
++        packetLimiterTntMove = getBoolean("starforge.packet-limiter.tnt-move", false, "Update tnt moving less frequently.");
++        packetLimiterTntVelocity = getBoolean("starforge.packet-limiter.tnt-velocity", false, "Update tnt velocity less frequently.");
++        packetLimiterTntData = getBoolean("starforge.packet-limiter.tnt-data", true, "Update tnt data less frequently.");
++        packetLimiterFallingBlockMove = getBoolean("starforge.packet-limiter.falling-block-move", false, "Update falling block movement less frequently.");
++        packetLimiterFallingBlockVelocity = getBoolean("starforge.packet-limiter.falling-block-velocity", false, "Update falling block velocity less frequently.");
++        packetLimiterFallingBlockData = getBoolean("starforge.packet-limiter.falling-block-data", true, "Update falling block data less frequently.");
++        packetLimiterPistonUpdates = getBoolean("starforge.packet-limiter.piston-updates", false, "Update pistons less frequently.");
++
++        setComment("starforge.packet-limiter", "Limit packets being sent to the client for performance reasons. Can cause weird looking behaviour on the client. Not recommended for cannoning servers.");
+     }
+ 
+     public static boolean tntLoadsChunks;
+@@ -233,13 +246,13 @@ public class EntropyConfig {
+     public static boolean enderpearlLoadsChunks;
+     public static int loadAliveTicks;
+     private static void chunks() {
+-        tntLoadsChunks = getBoolean("entropy.chunks.tnt-loads-chunks", true, "TNT load chunks they flies through.");
+-        fallingBlockLoadsChunks = getBoolean("entropy.chunks.falling-block-loads-chunks", true, "FallingBlocks load chunks they fly through.");
+-        enderpearlLoadsChunks = getBoolean("entropy.chunks.enderpearl-loads-chunks", false, "Enderpearls load chunks they fly through.");
+-        loadAliveTicks = getInt("entropy.chunks.load-alive-ticks", 2, "How long a chunk stays loaded.",
++        tntLoadsChunks = getBoolean("starforge.chunks.tnt-loads-chunks", true, "TNT load chunks they flies through.");
++        fallingBlockLoadsChunks = getBoolean("starforge.chunks.falling-block-loads-chunks", true, "FallingBlocks load chunks they fly through.");
++        enderpearlLoadsChunks = getBoolean("starforge.chunks.enderpearl-loads-chunks", false, "Enderpearls load chunks they fly through.");
++        loadAliveTicks = getInt("starforge.chunks.load-alive-ticks", 2, "How long a chunk stays loaded.",
+                 "If there is performance issues with fast shooting cannons loading chunks this can be set to ~100 ticks.");
+ 
+-        setComment("entropy.chunks", "Settings related to chunk loading.");
++        setComment("starforge.chunks", "Settings related to chunk loading.");
+     }
+ 
+     public static boolean unbreakableBreaker;
+@@ -248,21 +261,21 @@ public class EntropyConfig {
+     public static String durabilityCheckMessage;
+     public static Int2IntMap unbreakableMap;
+     private static void unbreakableBreaker() {
+-        unbreakableBreaker = getBoolean("entropy.unbreakable-breaker.enabled", true, "Assigns unbreakable blocks like obsidian a durability so they can be broken by TNT.");
+-        unbreakableCreeper = getBoolean("entropy.unbreakable-breaker.allow-creepers", false, "Should unbreakable blocks be able to be broken by creepers.");
+-        durabilityCheckItem = getString("entropy.unbreakable-breaker.durability-check-item", "potato", "Item used to check an unbreakable blocks durability.");
+-        durabilityCheckMessage = getString("entropy.unbreakable-breaker.durability-check-message", "&a[+] &7This block has %dura%/%max% durability.", "Message that shows when checking the durability of an unbreakable block.");
+-        unbreakableMap = UnbreakableDurability.initMap(getStringIntMap("entropy.unbreakable-breaker.blocks", UnbreakableDurability.getDefaults(), "block: durability"));
++        unbreakableBreaker = getBoolean("starforge.unbreakable-breaker.enabled", true, "Assigns unbreakable blocks like obsidian a durability so they can be broken by TNT.");
++        unbreakableCreeper = getBoolean("starforge.unbreakable-breaker.allow-creepers", false, "Should unbreakable blocks be able to be broken by creepers.");
++        durabilityCheckItem = getString("starforge.unbreakable-breaker.durability-check-item", "potato", "Item used to check an unbreakable blocks durability.");
++        durabilityCheckMessage = getString("starforge.unbreakable-breaker.durability-check-message", "&a[+] &7This block has %dura%/%max% durability.", "Message that shows when checking the durability of an unbreakable block.");
++        unbreakableMap = UnbreakableDurability.initMap(getStringIntMap("starforge.unbreakable-breaker.blocks", UnbreakableDurability.getDefaults(), "block: durability"));
+     }
+ 
+     public static boolean explosionProofItems;
+     public static List<String> explosionProofList;
+     private static void items() {
+-        explosionProofItems = getBoolean("entropy.items.explosion-proof-items.enabled", true, "Make certain items explosion proof.");
+-        explosionProofList = getStringList("entropy.items.explosion-proof-items.items", List.of("spawner"), "Items that should be explosion proof.");
++        explosionProofItems = getBoolean("starforge.items.explosion-proof-items.enabled", true, "Make certain items explosion proof.");
++        explosionProofList = getStringList("starforge.items.explosion-proof-items.items", List.of("spawner"), "Items that should be explosion proof.");
+         ExplosionProofItems.loadFromConfig();
+ 
+-        setComment("entropy.items", "Features related to items.");
++        setComment("starforge.items", "Features related to items.");
+     }
+ 
+     public static boolean cannonRangeLimit;
+@@ -270,12 +283,12 @@ public class EntropyConfig {
+     public static boolean pearlRangeLimit;
+     public static int pearlRangeLimitChunks;
+     private static void limits() {
+-        cannonRangeLimit = getBoolean("entropy.limits.cannon-range-limit", false, "Delete cannon entities if they are shot past a certain range.", "X and Z axis are separate so the allowed area has a square shape.");
+-        cannonRangeLimitChunks = getInt("entropy.limits.cannon-range-limit-chunks", 40, "How many chunks cannons are allowed to shoot.");
+-        pearlRangeLimit = getBoolean("entropy.limits.pearl-range-limit", false, "Remove a pearls x and z velocity if it travels a certain distance.", "Checking Radius is circular.");
+-        pearlRangeLimitChunks = getInt("entropy.limits.pearl-range-limit-chunks", 10, "How many chunks are pearls allowed to travel.");
++        cannonRangeLimit = getBoolean("starforge.limits.cannon-range-limit", false, "Delete cannon entities if they are shot past a certain range.", "X and Z axis are separate so the allowed area has a square shape.");
++        cannonRangeLimitChunks = getInt("starforge.limits.cannon-range-limit-chunks", 40, "How many chunks cannons are allowed to shoot.");
++        pearlRangeLimit = getBoolean("starforge.limits.pearl-range-limit", false, "Remove a pearls x and z velocity if it travels a certain distance.", "Checking Radius is circular.");
++        pearlRangeLimitChunks = getInt("starforge.limits.pearl-range-limit-chunks", 10, "How many chunks are pearls allowed to travel.");
+ 
+-        setComment("entropy.limits", "Enforces different cannoning and non cannoning related parameters.");
++        setComment("starforge.limits", "Enforces different cannoning and non cannoning related parameters.");
+     }
+ 
+     public static boolean playerIgnoreTNTDamage;
+@@ -285,15 +298,15 @@ public class EntropyConfig {
+     public static boolean golemFallDamage;
+     public static boolean disableDeathAnimation;
+     private static void factions() {
+-        playerIgnoreTNTDamage = getBoolean("entropy.factions.player-ignore-explosion-damage", true,
++        playerIgnoreTNTDamage = getBoolean("starforge.factions.player-ignore-explosion-damage", true,
+                 "Players will not take damage from explosions caused by tnt.");
+-        spawnerEntityUpwardsVelocity = getDouble("entropy.factions.spawner.entity-upwards-velocity", 0, "Initial Y velocity for entities spawned from spawners.");
+-        spawnerOverrideEntityHealth = getBoolean("entropy.factions.spawner.entity-override-health", false, "Entities from spawners will spawn with a specific health.");
+-        spawnerEntityHealth = (float) getDouble("entropy.factions.spawner.entity-health", 1, "Health for entities spawned from spawners.");
+-        golemFallDamage = getBoolean("entropy.factions.golem-fall-damage", false, "Enable fall damage for Iron Golems.");
+-        disableDeathAnimation = getBoolean("entropy.factions.disable-death-animation", false, "Disable the mob death animation.");
++        spawnerEntityUpwardsVelocity = getDouble("starforge.factions.spawner.entity-upwards-velocity", 0, "Initial Y velocity for entities spawned from spawners.");
++        spawnerOverrideEntityHealth = getBoolean("starforge.factions.spawner.entity-override-health", false, "Entities from spawners will spawn with a specific health.");
++        spawnerEntityHealth = (float) getDouble("starforge.factions.spawner.entity-health", 1, "Health for entities spawned from spawners.");
++        golemFallDamage = getBoolean("starforge.factions.golem-fall-damage", false, "Enable fall damage for Iron Golems.");
++        disableDeathAnimation = getBoolean("starforge.factions.disable-death-animation", false, "Disable the mob death animation.");
+ 
+-        setComment("entropy.factions", "Patches and options not related to cannoning but specifically designed for factions servers.",
++        setComment("starforge.factions", "Patches and options not related to cannoning but specifically designed for factions servers.",
+                 "NOTE: Plugins related to spawners or mob stacking are likely to break some of this.");
+     }
+ 
+@@ -307,26 +320,26 @@ public class EntropyConfig {
+     public static double sprintingKnockback;
+     public static int sprintingKnockbackDelay;
+     private static void combat() {
+-        modifyKnockback = getBoolean("entropy.combat.modify-knockback", false, "Enable changes to knockback.");
+-        baseKnockback = getDouble("entropy.combat.base-knockback", 0.4, "Change base knockback.");
+-        verticalKnockback = getDouble("entropy.combat.vertical-knockback", 0.4, "Change vertical knockback.");
+-        verticalKnockbackMax = getDouble("entropy.combat.vertical-knockback-max", 0.4, "Maximum vertical knockback.");
+-        verticalKnockbackGround = getBoolean("entropy.combat.vertical-knockback-ground", true, "Vertical knockback requires player to be on ground.");
+-        rodKnockback = getBoolean("entropy.combat.rod-knockback", false, "Enable knockback from rods.");
+-        knockbackResistance = getBoolean("entropy.combat.knockback-resistance", true, "Toggle knockback resistance.");
+-        sprintingKnockback = getDouble("entropy.combat.sprinting-knockback", 0.5, "Add extra sprinting knockback.");
+-        sprintingKnockbackDelay = getInt("entropy.combat.sprinting-knockback-delay", 0, "Delay for sprinting knockback.");
+-
+-        setComment("entropy.combat", "Changes to pvp and pve combat.");
++        modifyKnockback = getBoolean("starforge.combat.modify-knockback", false, "Enable changes to knockback.");
++        baseKnockback = getDouble("starforge.combat.base-knockback", 0.4, "Change base knockback.");
++        verticalKnockback = getDouble("starforge.combat.vertical-knockback", 0.4, "Change vertical knockback.");
++        verticalKnockbackMax = getDouble("starforge.combat.vertical-knockback-max", 0.4, "Maximum vertical knockback.");
++        verticalKnockbackGround = getBoolean("starforge.combat.vertical-knockback-ground", true, "Vertical knockback requires player to be on ground.");
++        rodKnockback = getBoolean("starforge.combat.rod-knockback", false, "Enable knockback from rods.");
++        knockbackResistance = getBoolean("starforge.combat.knockback-resistance", true, "Toggle knockback resistance.");
++        sprintingKnockback = getDouble("starforge.combat.sprinting-knockback", 0.5, "Add extra sprinting knockback.");
++        sprintingKnockbackDelay = getInt("starforge.combat.sprinting-knockback-delay", 0, "Delay for sprinting knockback.");
++
++        setComment("starforge.combat", "Changes to pvp and pve combat.");
+     }
+ 
+     public static boolean ipHashing;
+     public static String ipHashingSalt;
+     private static void networking() {
+-        ipHashing = getBoolean("entropy.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
+-        ipHashingSalt = getString("entropy.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
++        ipHashing = getBoolean("starforge.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
++        ipHashingSalt = getString("starforge.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
+ 
+-        setComment("entropy.networking", "Changes to the network stack.");
++        setComment("starforge.networking", "Changes to the network stack.");
+     }
+ 
+     public static String guiBackgroundItem;
+@@ -334,12 +347,13 @@ public class EntropyConfig {
+     public static boolean sendFpsMessage;
+     public static String fpsMessage;
+     private static void gui() {
+-        guiBackgroundItem = getString("entropy.gui.background-item", "yellow_stained_glass_pane", "Item to fill the background of menus with.");
++        guiBackgroundItem = getString("starforge.gui.background-item", "yellow_stained_glass_pane", "Item to fill the background of menus with.");
+ 
+-        fpsTitle = getString("entropy.gui.fps.title", "&6&lFPS Settings: &r&f%player%", "Title for the fps menu.");
+-        sendFpsMessage = getBoolean("entropy.gui.fps.send-message", true, "Send messages when changing fps settings");
+-        fpsMessage = getString("entropy.gui.fps.message", "%status_color%[%status_icon%] &7%setting%");
++        fpsTitle = getString("starforge.gui.fps.title", "&6&lFPS Settings: &r&f%player%", "Title for the fps menu.");
++        sendFpsMessage = getBoolean("starforge.gui.fps.send-message", true, "Send messages when changing fps settings");
++        fpsMessage = getString("starforge.gui.fps.message", "%status_color%[%status_icon%] &7%setting%");
+ 
+-        setComment("entropy.gui", "Settings for entropy menus");
++        setComment("starforge.gui", "Settings for Starforge menus");
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/EntropyVersionFetcher.java b/src/main/java/xyz/fragmentmc/entropy/EntropyVersionFetcher.java
+index bcc4831e76a05a8354ba29b2e5dca61785849bb6..fb6f5348f2fbcc050aa4e6416697fa6e252bf0d8 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/EntropyVersionFetcher.java
++++ b/src/main/java/xyz/fragmentmc/entropy/EntropyVersionFetcher.java
+@@ -15,6 +15,7 @@ public class EntropyVersionFetcher implements VersionFetcher {
+ 
+     @Override
+     public @NotNull Component getVersionMessage(@NotNull String serverVersion) {
+-        return Component.text("> Entropy Cannoning Jar by FragmentMC <\nGet this jar at \"http://discord.fragmentmc.xyz\"!");
++        return Component.text("> Starforge Cannoning Jar by FragmentMC <\nGet this jar at \"http://discord.fragmentmc.xyz\"!");
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+index f984cb17a362bc0732dda9bc80bf9e70b8207bab..1cbebbe81b8db70a88f82dd113efb82f774f23cf 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandBase.java
+@@ -17,7 +17,7 @@ public abstract class EntropyCommandBase extends Command {
+ 
+     protected final TextComponent prefix = (TextComponent) Component.join(
+             JoinConfiguration.noSeparators(),
+-            Component.text("Entropy >", NamedTextColor.GOLD, TextDecoration.BOLD),
++            Component.text("Starforge >", NamedTextColor.GOLD, TextDecoration.BOLD),
+             Component.text(" ", NamedTextColor.WHITE));
+     public EntropyCommandData getCommandData() {
+         return commandData;
+@@ -45,3 +45,4 @@ public abstract class EntropyCommandBase extends Command {
+ 
+     protected abstract boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args);
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+index e35710e99b1f1218c0893856f606f847b2436b48..70460f8ec2a559cce14abc578f342484370b9c30 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/EntropyCommandData.java
+@@ -9,6 +9,7 @@ public @interface EntropyCommandData {
+     String description() default "This is the default command description";
+     String usageMessage() default "/default";
+     String[] aliases() default {};
+-    String permission() default "entropy.command.default";
++    String permission() default "starforge.command.default";
+     boolean hasArgs() default true;
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java b/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
+index 9da56a9f01361e616b51063613bf41b49607c324..82d149c179b00eff4bebeedae22015a3e0f6ca2a 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/EntropyCommand.java
+@@ -18,7 +18,7 @@ import java.util.List;
+ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ 
+-@EntropyCommandData(name = "entropy", description = "Entropy related commands", usageMessage = "/entropy [reload | version]", permission = "entropy.command.entropy")
++@EntropyCommandData(name = "starforge", description = "Starforge related commands", usageMessage = "/starforge [reload | version]", permission = "starforge.command.starforge", aliases = {"entropy"})
+ public class EntropyCommand extends EntropyCommandBase {
+     @Override
+     public @NotNull List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, String[] args, Location location) throws IllegalArgumentException {
+@@ -42,7 +42,7 @@ public class EntropyCommand extends EntropyCommandBase {
+             }
+             console.server.reloadCount++;
+ 
+-            Command.broadcastCommandMessage(sender, prefix.toBuilder().append(Component.text("Entropy configuration has been reloaded.")).build());
++            Command.broadcastCommandMessage(sender, prefix.toBuilder().append(Component.text("Starforge configuration has been reloaded.")).build());
+         } else if (args[0].equalsIgnoreCase("version")) {
+             Command.broadcastCommandMessage(sender, prefix.toBuilder().append(Component.text("This server is running " + Bukkit.getName() + " version " + Bukkit.getVersion() + " (Implementing API version " + Bukkit.getBukkitVersion() + ")")).build());
+         }
+@@ -50,3 +50,4 @@ public class EntropyCommand extends EntropyCommandBase {
+         return true;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+index ecb2f40db2528a37c56cfcb4d58a47661d03c1e4..a340b1c62a5a9c8beb994c46506b7cfd3f56a201 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
++++ b/src/main/java/xyz/fragmentmc/entropy/command/commands/FpsCommand.java
+@@ -10,7 +10,7 @@ import xyz.fragmentmc.entropy.command.EntropyCommandData;
+ import xyz.fragmentmc.entropy.gui.EntropyGuiBase;
+ import xyz.fragmentmc.entropy.gui.guis.FpsGui;
+ 
+-@EntropyCommandData(name = "fps", description = "FPS Command", usageMessage = "/fps", permission = "entropy.command.fps", hasArgs = false)
++@EntropyCommandData(name = "fps", description = "FPS Command", usageMessage = "/fps", permission = "starforge.command.fps", hasArgs = false)
+ public class FpsCommand extends EntropyCommandBase {
+     @Override
+     protected boolean run(@NotNull CommandSender sender, @NotNull String commandLabel, @NotNull String[] args) {
+@@ -22,3 +22,4 @@ public class FpsCommand extends EntropyCommandBase {
+         return true;
+     }
+ }
++
