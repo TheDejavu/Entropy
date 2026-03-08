@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 00:19:30 +0200
+Subject: [PATCH] Tune player tracker resync periods
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 890ae7b8cad2a7f13b546f633f569c390ba8cc2a..8a539d77bda2806b0b8487433829fd491e566797 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -287,6 +287,8 @@ public class EntropyConfig {
+     public static double playerTrackingRangeMultiplier;
+     public static boolean skipRedundantVelocityPackets;
+     public static boolean skipPlayerZeroDeltaMovePackets;
++    public static int playerForcedPositionSyncPeriod;
++    public static int playerForcedTeleportSyncPeriod;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -353,6 +355,8 @@ public class EntropyConfig {
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+         skipRedundantVelocityPackets = getBoolean("starforge.performance.tracker.skip-redundant-velocity-packets", true, "Skip duplicate velocity packets when the same encoded velocity was already sent in the current tracker tick.");
+         skipPlayerZeroDeltaMovePackets = getBoolean("starforge.performance.tracker.skip-player-zero-delta-move-packets", true, "Avoid player delta-move packets when encoded position deltas are all zero, except for the periodic forced sync.");
++        playerForcedPositionSyncPeriod = Math.max(20, getInt("starforge.performance.tracker.player-forced-position-sync-period", 120, "How often player trackers force a position resync packet while moving."));
++        playerForcedTeleportSyncPeriod = Math.max(400, getInt("starforge.performance.tracker.player-forced-teleport-sync-period", 1200, "How often player trackers force a full teleport sync packet."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index c51314a73783693216d9d0724938674b2e608785..e106604dffd2759f0aba84fe80f06bf850ae7fc2 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -201,7 +201,9 @@ public class ServerEntity {
+                 boolean flag1 = (vec3d_dx * vec3d_dx + vec3d_dy * vec3d_dy + vec3d_dz * vec3d_dz) >= 7.62939453125E-6D;
+                 // Paper end - reduce allocation of Vec3D here
+                 Packet<?> packet1 = null;
+-                boolean flag2 = flag1 || this.tickCount % 60 == 0;
++                final int forcedPositionSyncPeriod = this.entity instanceof ServerPlayer ? EntropyConfig.playerForcedPositionSyncPeriod : ServerEntity.FORCED_POS_UPDATE_PERIOD;
++                final int forcedTeleportSyncPeriod = this.entity instanceof ServerPlayer ? EntropyConfig.playerForcedTeleportSyncPeriod : ServerEntity.FORCED_TELEPORT_PERIOD;
++                boolean flag2 = flag1 || this.tickCount % forcedPositionSyncPeriod == 0;
+                 boolean flag3 = Math.abs(i - this.yRotp) >= 1 || Math.abs(j - this.xRotp) >= 1;
+                 boolean flag4 = false;
+                 boolean flag5 = false;
+@@ -212,8 +214,8 @@ public class ServerEntity {
+                     long i1 = this.positionCodec.encodeZ(vec3d);
+                     boolean flag6 = k < -32768L || k > 32767L || l < -32768L || l > 32767L || i1 < -32768L || i1 > 32767L;
+ 
+-                    if (!flag6 && this.teleportDelay <= 400 && !this.wasRiding && this.wasOnGround == this.entity.onGround() && !(io.papermc.paper.configuration.GlobalConfiguration.get().collisions.sendFullPosForHardCollidingEntities && this.entity.hardCollides())) { // Paper - send full pos for hard colliding entities to prevent collision problems due to desync
+-                        final boolean sendPositionPacket = flag2 && (!EntropyConfig.skipPlayerZeroDeltaMovePackets || !(this.entity instanceof ServerPlayer) || k != 0L || l != 0L || i1 != 0L || this.tickCount % ServerEntity.FORCED_POS_UPDATE_PERIOD == 0);
++                    if (!flag6 && this.teleportDelay <= forcedTeleportSyncPeriod && !this.wasRiding && this.wasOnGround == this.entity.onGround() && !(io.papermc.paper.configuration.GlobalConfiguration.get().collisions.sendFullPosForHardCollidingEntities && this.entity.hardCollides())) { // Paper - send full pos for hard colliding entities to prevent collision problems due to desync
++                        final boolean sendPositionPacket = flag2 && (!EntropyConfig.skipPlayerZeroDeltaMovePackets || !(this.entity instanceof ServerPlayer) || k != 0L || l != 0L || i1 != 0L || this.tickCount % forcedPositionSyncPeriod == 0);
+                         if (sendPositionPacket || flag3 || this.entity instanceof AbstractArrow) { // Pufferfish
+                         if ((!sendPositionPacket || !flag3) && !(this.entity instanceof AbstractArrow)) {
+                             if (sendPositionPacket) {
