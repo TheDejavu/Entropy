@@ -1,0 +1,318 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 22:33:32 +0200
+Subject: [PATCH] Add async tracker and TNT packet suppression
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index d0821e62ba245dd47ae99f7b59701f17cdf09bb6..bdc07d4c586617d1680b34867a8c9ffcee9136b0 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -282,6 +282,8 @@ public class EntropyConfig {
+     public static boolean dontSavePrimedTnt;
+     public static boolean dontSaveFallingBlocks;
+     public static int maxFootstepPacketsPerBroadcast;
++    public static boolean asyncTrackerEnabled;
++    public static int asyncTrackerThreads;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -343,6 +345,8 @@ public class EntropyConfig {
+         dontSavePrimedTnt = getBoolean("starforge.performance.persistence.dont-save-primed-tnt", false, "Do not save primed TNT entities when chunks unload.");
+         dontSaveFallingBlocks = getBoolean("starforge.performance.persistence.dont-save-falling-blocks", false, "Do not save falling block entities when chunks unload.");
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
++        asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
++        asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 4fdd41c99c0bb9b20b1ba51a7d39b3405f51b6fe..2a3c6fdaab387c9ef320d7dfbe434760799b61ea 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1006,6 +1006,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+             MinecraftServer.LOGGER.error("Failed to unlock level {}", this.storageSource.getLevelId(), ioexception1);
+         }
+         // Spigot start
++        net.minecraft.server.level.AsyncTracker.shutdown();
+         io.papermc.paper.util.MCUtil.asyncExecutor.shutdown(); // Paper
+         try { io.papermc.paper.util.MCUtil.asyncExecutor.awaitTermination(30, java.util.concurrent.TimeUnit.SECONDS); // Paper
+         } catch (java.lang.InterruptedException ignored) {} // Paper
+diff --git a/src/main/java/net/minecraft/server/level/AsyncTracker.java b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e9598a6c4426667fbc041a2306b4250bcfc5bf4
+--- /dev/null
++++ b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+@@ -0,0 +1,130 @@
++package net.minecraft.server.level;
++
++import com.google.common.util.concurrent.ThreadFactoryBuilder;
++import dev.orhidea.starforge.EntropyConfig;
++import net.minecraft.server.MinecraftServer;
++
++import java.util.concurrent.CountDownLatch;
++import java.util.concurrent.LinkedBlockingQueue;
++import java.util.concurrent.ThreadPoolExecutor;
++import java.util.concurrent.TimeUnit;
++
++public final class AsyncTracker {
++
++    private static final Object EXECUTOR_LOCK = new Object();
++    private static final ThreadLocal<Boolean> TRACKER_THREAD = ThreadLocal.withInitial(() -> Boolean.FALSE);
++    private static volatile ThreadPoolExecutor executor;
++    private static volatile int configuredThreads = -1;
++
++    private AsyncTracker() {
++    }
++
++    static boolean isTrackerThread() {
++        return TRACKER_THREAD.get();
++    }
++
++    static void process(final ChunkMap chunkMap, final ChunkMap.TrackedEntity[] trackers) {
++        final int threadCount = Math.min(Math.max(1, EntropyConfig.asyncTrackerThreads), trackers.length);
++        if (threadCount <= 1) {
++            for (final ChunkMap.TrackedEntity tracker : trackers) {
++                processTracker(chunkMap, tracker);
++            }
++            chunkMap.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
++            return;
++        }
++
++        final ThreadPoolExecutor executor = AsyncTracker.getExecutor(threadCount);
++        final CountDownLatch latch = new CountDownLatch(threadCount);
++        final int batchSize = Math.max(1, (trackers.length + threadCount - 1) / threadCount);
++
++        for (int worker = 0; worker < threadCount; ++worker) {
++            final int start = worker * batchSize;
++            final int end = Math.min(trackers.length, start + batchSize);
++            if (start >= end) {
++                latch.countDown();
++                continue;
++            }
++
++            executor.execute(() -> {
++                TRACKER_THREAD.set(Boolean.TRUE);
++                try {
++                    for (int index = start; index < end; ++index) {
++                        processTracker(chunkMap, trackers[index]);
++                    }
++                } catch (final Throwable throwable) {
++                    MinecraftServer.LOGGER.error("Failed to process async tracker slice", throwable);
++                } finally {
++                    TRACKER_THREAD.remove();
++                    latch.countDown();
++                }
++            });
++        }
++
++        boolean interrupted = false;
++        while (latch.getCount() > 0L) {
++            chunkMap.drainTrackerMainThreadTasks(256);
++            try {
++                latch.await(250L, TimeUnit.MICROSECONDS);
++            } catch (final InterruptedException ex) {
++                interrupted = true;
++                break;
++            }
++        }
++
++        chunkMap.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
++        if (interrupted) {
++            Thread.currentThread().interrupt();
++        }
++    }
++
++    public static void shutdown() {
++        synchronized (EXECUTOR_LOCK) {
++            if (executor != null) {
++                executor.shutdown();
++                executor = null;
++                configuredThreads = -1;
++            }
++        }
++    }
++
++    private static void processTracker(final ChunkMap chunkMap, final ChunkMap.TrackedEntity tracker) {
++        if (!tracker.shouldLookForPlayers()) {
++            return;
++        }
++
++        if (chunkMap.hasTrackerEventListeners()) {
++            chunkMap.runOnTrackerMainThread(() -> tracker.updatePlayers(tracker.entity.getPlayersInTrackRange()));
++            return;
++        }
++
++        tracker.updatePlayers(tracker.entity.getPlayersInTrackRange());
++    }
++
++    private static ThreadPoolExecutor getExecutor(final int threadCount) {
++        synchronized (EXECUTOR_LOCK) {
++            if (executor == null || configuredThreads != threadCount) {
++                final ThreadPoolExecutor oldExecutor = executor;
++                final ThreadPoolExecutor newExecutor = new ThreadPoolExecutor(
++                    threadCount,
++                    threadCount,
++                    60L,
++                    TimeUnit.SECONDS,
++                    new LinkedBlockingQueue<>(),
++                    new ThreadFactoryBuilder()
++                        .setNameFormat("Starforge Async Tracker - %d")
++                        .setDaemon(true)
++                        .setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(MinecraftServer.LOGGER))
++                        .build()
++                );
++                newExecutor.allowCoreThreadTimeOut(true);
++                executor = newExecutor;
++                configuredThreads = threadCount;
++                if (oldExecutor != null) {
++                    oldExecutor.shutdown();
++                }
++            }
++
++            return executor;
++        }
++    }
++}
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 7f915cf8467f5b0bab4bcec07895a1673b1d9ee8..ee2d5fe332a17b8290320eae5214544a88c62d08 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -43,6 +43,7 @@ import java.util.concurrent.CancellationException;
+ import java.util.concurrent.CompletableFuture;
+ import java.util.concurrent.CompletionException;
+ import java.util.concurrent.CompletionStage;
++import java.util.concurrent.ConcurrentLinkedQueue;
+ import java.util.concurrent.Executor;
+ import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.function.BooleanSupplier;
+@@ -101,6 +102,7 @@ import net.minecraft.world.level.storage.LevelStorageSource;
+ import net.minecraft.world.phys.Vec3;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
+ import org.slf4j.Logger;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ // CraftBukkit start
+ import org.bukkit.craftbukkit.generator.CustomChunkGenerator;
+@@ -120,6 +122,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+     public static final int FORCED_TICKET_LEVEL = ChunkLevel.byStatus(FullChunkStatus.ENTITY_TICKING);
+     // Paper - rewrite chunk system
+     public final ServerLevel level;
++    private final ConcurrentLinkedQueue<Runnable> trackerMainThreadTasks = new ConcurrentLinkedQueue<>();
+     private final ThreadedLevelLightEngine lightEngine;
+     public final BlockableEventLoop<Runnable> mainThreadExecutor; // Paper - public
+     public ChunkGenerator generator;
+@@ -1135,7 +1138,41 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+     }
+ 
+     // Paper start - optimised tracker
++    public void runOnTrackerMainThread(final Runnable runnable) {
++        if (AsyncTracker.isTrackerThread()) {
++            this.trackerMainThreadTasks.add(runnable);
++        } else {
++            runnable.run();
++        }
++    }
++
++    void drainTrackerMainThreadTasks(final int maxTasks) {
++        int processed = 0;
++        while (processed < maxTasks) {
++            final Runnable task = this.trackerMainThreadTasks.poll();
++            if (task == null) {
++                break;
++            }
++            task.run();
++            ++processed;
++        }
++    }
++
++    boolean hasTrackerEventListeners() {
++        return io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length != 0;
++    }
++
+     private final void processTrackQueue() {
++        if (EntropyConfig.asyncTrackerEnabled && !this.entityMap.isEmpty()) {
++            final TrackedEntity[] trackers = this.entityMap.values().toArray(new TrackedEntity[0]);
++            AsyncTracker.process(this, trackers);
++            this.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
++            for (final TrackedEntity tracker : trackers) {
++                tracker.serverEntity.sendChanges();
++            }
++            return;
++        }
++
+         try {
+             for (TrackedEntity tracker : this.entityMap.values()) {
+                 // update tracker entry
+@@ -1418,7 +1455,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         }
+ 
+         public void updatePlayer(ServerPlayer player) {
+-            org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
++            if (!AsyncTracker.isTrackerThread()) {
++                org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
++            }
+             if (player != this.entity) {
+                 // Paper start - remove allocation of Vec3D here
+                 // Vec3 vec3d = player.position().subtract(this.entity.position());
+@@ -1447,14 +1486,22 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 // CraftBukkit end
+                 if (flag) {
+                     if (this.seenBy.add(player.connection)) {
+-                        // Paper start - entity tracking events
+-                        if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
+-                        this.serverEntity.addPairing(player);
++                        if (AsyncTracker.isTrackerThread()) {
++                            ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.addPairing(player));
++                        } else {
++                            // Paper start - entity tracking events
++                            if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
++                            this.serverEntity.addPairing(player);
++                            }
++                            // Paper end - entity tracking events
+                         }
+-                        // Paper end - entity tracking events
+                     }
+                 } else if (this.seenBy.remove(player.connection)) {
+-                    this.serverEntity.removePairing(player);
++                    if (AsyncTracker.isTrackerThread()) {
++                        ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.removePairing(player));
++                    } else {
++                        this.serverEntity.removePairing(player);
++                    }
+                 }
+ 
+             }
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index 80cd696b5a2e3f80ed34f1f05892e894f91e60d0..233eb345c29f1d10d79c0c2f9d7b28a468bc8ec2 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -340,7 +340,7 @@ public class ServerEntity {
+                 }
+             }
+         }
+-        if (this.trackedDataValues != null) {
++        if (this.trackedDataValues != null && !this.entity.isTnt && !this.entity.isFallingBlock) {
+             sender.accept(new ClientboundSetEntityDataPacket(this.entity.getId(), this.trackedDataValues));
+         }
+ 
+@@ -413,12 +413,14 @@ public class ServerEntity {
+     }
+ 
+     private void sendDirtyEntityData() {
+-        SynchedEntityData datawatcher = this.entity.getEntityData();
+-        List<SynchedEntityData.DataValue<?>> list = datawatcher.packDirty();
++        if (!this.entity.isTnt && !this.entity.isFallingBlock) {
++            SynchedEntityData datawatcher = this.entity.getEntityData();
++            List<SynchedEntityData.DataValue<?>> list = datawatcher.packDirty();
+ 
+-        if (list != null) {
+-            this.trackedDataValues = datawatcher.getNonDefaultValues();
+-            this.broadcastAndSend(new ClientboundSetEntityDataPacket(this.entity.getId(), list));
++            if (list != null) {
++                this.trackedDataValues = datawatcher.getNonDefaultValues();
++                this.broadcastAndSend(new ClientboundSetEntityDataPacket(this.entity.getId(), list));
++            }
+         }
+ 
+         if (this.entity instanceof LivingEntity) {
