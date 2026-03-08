@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 00:33:18 +0200
+Subject: [PATCH] Replace risky tracker resync tuning
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 8a539d77bda2806b0b8487433829fd491e566797..c8850b7e4c7460cc48920ac115afe1272fd5a80d 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -287,8 +287,6 @@ public class EntropyConfig {
+     public static double playerTrackingRangeMultiplier;
+     public static boolean skipRedundantVelocityPackets;
+     public static boolean skipPlayerZeroDeltaMovePackets;
+-    public static int playerForcedPositionSyncPeriod;
+-    public static int playerForcedTeleportSyncPeriod;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -355,9 +353,6 @@ public class EntropyConfig {
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+         skipRedundantVelocityPackets = getBoolean("starforge.performance.tracker.skip-redundant-velocity-packets", true, "Skip duplicate velocity packets when the same encoded velocity was already sent in the current tracker tick.");
+         skipPlayerZeroDeltaMovePackets = getBoolean("starforge.performance.tracker.skip-player-zero-delta-move-packets", true, "Avoid player delta-move packets when encoded position deltas are all zero, except for the periodic forced sync.");
+-        playerForcedPositionSyncPeriod = Math.max(20, getInt("starforge.performance.tracker.player-forced-position-sync-period", 120, "How often player trackers force a position resync packet while moving."));
+-        playerForcedTeleportSyncPeriod = Math.max(400, getInt("starforge.performance.tracker.player-forced-teleport-sync-period", 1200, "How often player trackers force a full teleport sync packet."));
+-
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/PlayerAdvancements.java b/src/main/java/net/minecraft/server/PlayerAdvancements.java
+index 24e5993b281448734eb67c7a8439a349bbf9fd72..3d6822e2b2bec90ab207f091ec7284b088afc521 100644
+--- a/src/main/java/net/minecraft/server/PlayerAdvancements.java
++++ b/src/main/java/net/minecraft/server/PlayerAdvancements.java
+@@ -115,16 +115,9 @@ public class PlayerAdvancements {
+     }
+ 
+     private void checkForAutomaticTriggers(ServerAdvancementManager advancementLoader) {
+-        Iterator iterator = advancementLoader.getAllAdvancements().iterator();
+-
+-        while (iterator.hasNext()) {
+-            AdvancementHolder advancementholder = (AdvancementHolder) iterator.next();
+-            Advancement advancement = advancementholder.value();
+-
+-            if (advancement.criteria().isEmpty()) {
+-                this.award(advancementholder, "");
+-                advancement.rewards().grant(this.player);
+-            }
++        for (AdvancementHolder advancementholder : advancementLoader.automaticAdvancements) {
++            this.award(advancementholder, "");
++            advancementholder.value().rewards().grant(this.player);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/server/ServerAdvancementManager.java b/src/main/java/net/minecraft/server/ServerAdvancementManager.java
+index 31718823250a1490b783f426fff65bf5a067b6f4..481033608db48252e5b67dfa05696d2277d022ad 100644
+--- a/src/main/java/net/minecraft/server/ServerAdvancementManager.java
++++ b/src/main/java/net/minecraft/server/ServerAdvancementManager.java
+@@ -1,6 +1,7 @@
+ // mc-dev import
+ package net.minecraft.server;
+ 
++import com.google.common.collect.ImmutableList;
+ import com.google.common.collect.ImmutableMap;
+ import com.google.common.collect.ImmutableMap.Builder;
+ import com.google.common.collect.Multimap;
+@@ -12,6 +13,7 @@ import com.mojang.logging.LogUtils;
+ import com.mojang.serialization.JsonOps;
+ import java.util.Collection;
+ import java.util.Iterator;
++import java.util.List;
+ import java.util.Map;
+ import java.util.stream.Collectors;
+ import javax.annotation.Nullable;
+@@ -34,6 +36,7 @@ public class ServerAdvancementManager extends SimpleJsonResourceReloadListener {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     public static final Gson GSON = (new GsonBuilder()).create();
+     public Map<ResourceLocation, AdvancementHolder> advancements = Map.of();
++    public List<AdvancementHolder> automaticAdvancements = List.of();
+     private AdvancementTree tree = new AdvancementTree();
+     private final LootDataManager lootData;
+ 
+@@ -44,6 +47,7 @@ public class ServerAdvancementManager extends SimpleJsonResourceReloadListener {
+ 
+     protected void apply(Map<ResourceLocation, JsonElement> prepared, ResourceManager manager, ProfilerFiller profiler) {
+         Builder<ResourceLocation, AdvancementHolder> builder = ImmutableMap.builder();
++        ImmutableList.Builder<AdvancementHolder> autoBuilder = ImmutableList.builder();
+ 
+         prepared.forEach((minecraftkey, jsonelement) -> {
+             // Spigot start
+@@ -56,13 +60,18 @@ public class ServerAdvancementManager extends SimpleJsonResourceReloadListener {
+                 Advancement advancement = (Advancement) Util.getOrThrow(Advancement.CODEC.parse(JsonOps.INSTANCE, jsonelement), JsonParseException::new);
+ 
+                 this.validate(minecraftkey, advancement);
+-                builder.put(minecraftkey, new AdvancementHolder(minecraftkey, advancement));
++                AdvancementHolder holder = new AdvancementHolder(minecraftkey, advancement);
++                builder.put(minecraftkey, holder);
++                if (holder.value().criteria().isEmpty()) {
++                    autoBuilder.add(holder);
++                }
+             } catch (Exception exception) {
+                 ServerAdvancementManager.LOGGER.error("Parsing error loading custom advancement {}: {}", minecraftkey, exception.getMessage());
+             }
+ 
+         });
+         this.advancements = builder.buildOrThrow();
++        this.automaticAdvancements = autoBuilder.build();
+         AdvancementTree advancementtree = new AdvancementTree();
+ 
+         advancementtree.addAll(this.advancements.values());
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index e106604dffd2759f0aba84fe80f06bf850ae7fc2..c9cdf10d1bc6e00d6f4c21f8ecec4a4b6e592d2b 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -201,9 +201,7 @@ public class ServerEntity {
+                 boolean flag1 = (vec3d_dx * vec3d_dx + vec3d_dy * vec3d_dy + vec3d_dz * vec3d_dz) >= 7.62939453125E-6D;
+                 // Paper end - reduce allocation of Vec3D here
+                 Packet<?> packet1 = null;
+-                final int forcedPositionSyncPeriod = this.entity instanceof ServerPlayer ? EntropyConfig.playerForcedPositionSyncPeriod : ServerEntity.FORCED_POS_UPDATE_PERIOD;
+-                final int forcedTeleportSyncPeriod = this.entity instanceof ServerPlayer ? EntropyConfig.playerForcedTeleportSyncPeriod : ServerEntity.FORCED_TELEPORT_PERIOD;
+-                boolean flag2 = flag1 || this.tickCount % forcedPositionSyncPeriod == 0;
++                boolean flag2 = flag1 || this.tickCount % ServerEntity.FORCED_POS_UPDATE_PERIOD == 0;
+                 boolean flag3 = Math.abs(i - this.yRotp) >= 1 || Math.abs(j - this.xRotp) >= 1;
+                 boolean flag4 = false;
+                 boolean flag5 = false;
+@@ -214,8 +212,8 @@ public class ServerEntity {
+                     long i1 = this.positionCodec.encodeZ(vec3d);
+                     boolean flag6 = k < -32768L || k > 32767L || l < -32768L || l > 32767L || i1 < -32768L || i1 > 32767L;
+ 
+-                    if (!flag6 && this.teleportDelay <= forcedTeleportSyncPeriod && !this.wasRiding && this.wasOnGround == this.entity.onGround() && !(io.papermc.paper.configuration.GlobalConfiguration.get().collisions.sendFullPosForHardCollidingEntities && this.entity.hardCollides())) { // Paper - send full pos for hard colliding entities to prevent collision problems due to desync
+-                        final boolean sendPositionPacket = flag2 && (!EntropyConfig.skipPlayerZeroDeltaMovePackets || !(this.entity instanceof ServerPlayer) || k != 0L || l != 0L || i1 != 0L || this.tickCount % forcedPositionSyncPeriod == 0);
++                    if (!flag6 && this.teleportDelay <= 400 && !this.wasRiding && this.wasOnGround == this.entity.onGround() && !(io.papermc.paper.configuration.GlobalConfiguration.get().collisions.sendFullPosForHardCollidingEntities && this.entity.hardCollides())) { // Paper - send full pos for hard colliding entities to prevent collision problems due to desync
++                        final boolean sendPositionPacket = flag2 && (!EntropyConfig.skipPlayerZeroDeltaMovePackets || !(this.entity instanceof ServerPlayer) || k != 0L || l != 0L || i1 != 0L || this.tickCount % ServerEntity.FORCED_POS_UPDATE_PERIOD == 0);
+                         if (sendPositionPacket || flag3 || this.entity instanceof AbstractArrow) { // Pufferfish
+                         if ((!sendPositionPacket || !flag3) && !(this.entity instanceof AbstractArrow)) {
+                             if (sendPositionPacket) {
+diff --git a/src/main/java/net/minecraft/server/players/GameProfileCache.java b/src/main/java/net/minecraft/server/players/GameProfileCache.java
+index d45fe762941dd6da45c890706bc9e4c0438522c3..e73c7e26f269816b4b55e3a5003b938fc6972219 100644
+--- a/src/main/java/net/minecraft/server/players/GameProfileCache.java
++++ b/src/main/java/net/minecraft/server/players/GameProfileCache.java
+@@ -299,14 +299,13 @@ public class GameProfileCache {
+         this.listTopMRUProfiles(org.spigotmc.SpigotConfig.userCacheCap).forEach((usercache_usercacheentry) -> { // Spigot // Paper - Fix GameProfileCache concurrency
+             jsonarray.add(GameProfileCache.writeGameProfile(usercache_usercacheentry, dateformat));
+         });
+-        String s = this.gson.toJson(jsonarray);
+         Runnable save = () -> { // Paper - Perf: Async GameProfileCache saving
+ 
+         try {
+             BufferedWriter bufferedwriter = Files.newWriter(this.file, StandardCharsets.UTF_8);
+ 
+             try {
+-                bufferedwriter.write(s);
++                bufferedwriter.write(this.gson.toJson(jsonarray));
+             } catch (Throwable throwable) {
+                 if (bufferedwriter != null) {
+                     try {
