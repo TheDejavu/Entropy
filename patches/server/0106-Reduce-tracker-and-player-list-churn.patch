@@ -1,0 +1,147 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 00:58:03 +0200
+Subject: [PATCH] Reduce tracker and player list churn
+
+
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 2a3c6fdaab387c9ef320d7dfbe434760799b61ea..943d5bcee34f0feb9fb649a23487474d117904f8 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1640,9 +1640,10 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     public void tickChildren(BooleanSupplier shouldKeepTicking) {
+-        this.getPlayerList().getPlayers().forEach((entityplayer) -> {
+-            entityplayer.connection.suspendFlushing();
+-        });
++        final List<ServerPlayer> players = this.getPlayerList().getPlayers();
++        for (int i = 0, len = players.size(); i < len; ++i) {
++            players.get(i).connection.suspendFlushing();
++        }
+         this.server.getScheduler().mainThreadHeartbeat(this.tickCount); // CraftBukkit
+         // Paper start - Folia scheduler API
+         ((io.papermc.paper.threadedregions.scheduler.FoliaGlobalRegionScheduler) Bukkit.getGlobalRegionScheduler()).tick();
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index b4fc8514647ebde3069d418c461affcbf2e7aee9..3164b0c8846514ae031e59311b498663be8245a7 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -27,6 +27,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+ import it.unimi.dsi.fastutil.longs.LongSet;
+ import it.unimi.dsi.fastutil.objects.ObjectBidirectionalIterator;
+ import it.unimi.dsi.fastutil.objects.ObjectIterator;
++import it.unimi.dsi.fastutil.objects.ReferenceArrayList;
+ import java.io.IOException;
+ import java.io.Writer;
+ import java.nio.file.Path;
+@@ -1182,7 +1183,10 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         return io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length != 0;
+     }
+ 
++    private boolean trackerEventListeners;
++
+     private final void processTrackQueue() {
++        this.trackerEventListeners = this.hasTrackerEventListeners();
+         if (EntropyConfig.asyncTrackerEnabled && !this.entityMap.isEmpty()) {
+             final TrackedEntity[] trackers = this.entityMap.values().toArray(new TrackedEntity[0]);
+             AsyncTracker.process(this, trackers);
+@@ -1354,6 +1358,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         private final int range;
+         SectionPos lastSectionPos;
+         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
++        private final ReferenceArrayList<ServerPlayerConnection> pendingRemovalChecks = new ReferenceArrayList<>();
+         private final int playerSearchInterval;
+         private Vec3 entityPosition;
+ 
+@@ -1407,11 +1412,23 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             // stuff could have been removed, so we need to check the trackedPlayers set
+             // for players that were removed
+ 
+-            for (ServerPlayerConnection conn : this.seenBy.toArray(new ServerPlayerConnection[0])) { // avoid CME
++            final ReferenceArrayList<ServerPlayerConnection> pendingRemovalChecks = this.pendingRemovalChecks;
++            pendingRemovalChecks.clear();
++
++            for (final ServerPlayerConnection conn : this.seenBy) {
+                 if (newTrackerCandidates == null || !newTrackerCandidates.contains(conn.getPlayer())) {
++                    pendingRemovalChecks.add(conn);
++                }
++            }
++
++            for (int i = 0, len = pendingRemovalChecks.size(); i < len; ++i) {
++                final ServerPlayerConnection conn = pendingRemovalChecks.get(i);
++                if (this.seenBy.contains(conn)) {
+                     this.updatePlayer(conn.getPlayer());
+                 }
+             }
++
++            pendingRemovalChecks.clear();
+         }
+ 
+         private boolean shouldSkipUntrackedPlayerUpdate(ServerPlayer player) {
+@@ -1510,7 +1527,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                             ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.addPairing(player));
+                         } else {
+                             // Paper start - entity tracking events
+-                            if (io.papermc.paper.event.player.PlayerTrackEntityEvent.getHandlerList().getRegisteredListeners().length == 0 || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
++                            if (!ChunkMap.this.trackerEventListeners || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
+                             this.serverEntity.addPairing(player);
+                             }
+                             // Paper end - entity tracking events
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index a77fc060909fe48a0681a95ecb8ee2788f137d1b..fb2a67339c90c1c5e8fa8f790966115ba516c235 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -1028,16 +1028,33 @@ public abstract class PlayerList {
+         if (++this.sendAllPlayerInfoIn > PlayerList.SEND_PLAYER_INFO_INTERVAL) {
+             final List<ServerPlayer> players = this.players;
+             final int playerCount = players.size();
++            final ServerPlayer[] playerArray = players.toArray(new ServerPlayer[playerCount]);
++            final CraftPlayer[] bukkitPlayers = new CraftPlayer[playerCount];
++            boolean hasVisibilityInversions = false;
+ 
+             for (int i = 0; i < playerCount; ++i) {
+-                final ServerPlayer target = players.get(i);
+-                final CraftPlayer targetBukkit = target.getBukkitEntity();
++                final CraftPlayer craftPlayer = playerArray[i].getBukkitEntity();
++                bukkitPlayers[i] = craftPlayer;
++                hasVisibilityInversions |= craftPlayer.hasVisibilityInversions();
++            }
++
++            if (!hasVisibilityInversions) {
++                final ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, players);
++                for (int i = 0; i < playerCount; ++i) {
++                    playerArray[i].connection.send(packet);
++                }
++                this.sendAllPlayerInfoIn = 0;
++                return;
++            }
++
++            for (int i = 0; i < playerCount; ++i) {
++                final ServerPlayer target = playerArray[i];
++                final CraftPlayer targetBukkit = bukkitPlayers[i];
+                 final List<ServerPlayer> visiblePlayers = Lists.newArrayListWithExpectedSize(playerCount);
+ 
+                 for (int j = 0; j < playerCount; ++j) {
+-                    final ServerPlayer input = players.get(j);
+-                    if (targetBukkit.canSee(input.getBukkitEntity())) {
+-                        visiblePlayers.add(input);
++                    if (targetBukkit.canSee(bukkitPlayers[j])) {
++                        visiblePlayers.add(playerArray[j]);
+                     }
+                 }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 5732a146578da4d95e71fc398e0f45a5977d6400..3c4f9acfc538ce9be3199db64c24ec27ea32e977 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -2151,6 +2151,10 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         return entity.isVisibleByDefault() ^ (!this.invertedVisibilityEntities.isEmpty() && this.invertedVisibilityEntities.containsKey(entity.getUniqueId()));
+     }
+ 
++    public boolean hasVisibilityInversions() {
++        return !this.invertedVisibilityEntities.isEmpty();
++    }
++
+     public boolean canSee(UUID uuid) {
+         org.bukkit.entity.Entity entity = this.getServer().getPlayer(uuid);
+         if (entity == null) {
