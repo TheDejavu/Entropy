@@ -1,0 +1,309 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 19:55:59 +0200
+Subject: [PATCH] Add hotspot packet reduction and Sakura toggles
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index ab7ca567f663be493426664bb33a63cfe468afad..f39df364f324099cd0802e55caef173042c9ee16 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -182,6 +182,7 @@ public class EntropyConfig {
+     public static boolean disableBubbleColumns;
+     public static boolean disableHoneySlow;
+     public static boolean disableNonFullBlockHitbox;
++    public static boolean protectScaffoldingFromCreepers;
+     private static void patches() {
+         disableTNTFlow = getBoolean("starforge.patches.disable-tnt-flow", true, "Disable TNT getting pushed by flowing water.");
+         disableTNTSpread = getBoolean("starforge.patches.disable-tnt-spread", true, "Disable the random velocity TNT gets when it is spawned.");
+@@ -193,6 +194,7 @@ public class EntropyConfig {
+         disableBubbleColumns = getBoolean("starforge.patches.disable-bubble-columns", false, "TNT and FallingBlocks will not be affected by bubble columns.");
+         disableHoneySlow = getBoolean("starforge.patches.disable-honey-slow", false, "TNT and FallingBlocks will not be slowed by hones blocks.");
+         disableNonFullBlockHitbox = getBoolean("starforge.patches.disable-non-full-block-hitbox", false, "TNT and FallingBlocks outside of a cannon will collide with every block as if it was a full block on the x and z axis.");
++        protectScaffoldingFromCreepers = getBoolean("starforge.patches.protect-scaffolding-from-creepers", false, "Prevent creeper explosions from breaking scaffolding.");
+ 
+ 
+         setComment("Changes to game mechanics related to cannoning.");
+@@ -281,6 +283,14 @@ public class EntropyConfig {
+     public static boolean skipMapItemDataUpdatesWithoutCraftRenderer;
+     public static boolean dontSavePrimedTnt;
+     public static boolean dontSaveFallingBlocks;
++    public static boolean hotspotEnabled;
++    public static int hotspotRadius;
++    public static int hotspotEnableThreshold;
++    public static int hotspotDisableThreshold;
++    public static int hotspotUpdateInterval;
++    public static double hotspotTrackingRangeModifier;
++    public static boolean hotspotHideParticles;
++    public static boolean hotspotHideSounds;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -341,6 +351,14 @@ public class EntropyConfig {
+         skipMapItemDataUpdatesWithoutCraftRenderer = getBoolean("starforge.performance.maps.skip-data-updates-without-craft-renderer", false, "Skip vanilla map data updates when a map no longer uses the CraftMapRenderer.");
+         dontSavePrimedTnt = getBoolean("starforge.performance.persistence.dont-save-primed-tnt", false, "Do not save primed TNT entities when chunks unload.");
+         dontSaveFallingBlocks = getBoolean("starforge.performance.persistence.dont-save-falling-blocks", false, "Do not save falling block entities when chunks unload.");
++        hotspotEnabled = getBoolean("starforge.performance.hotspot.enabled", true, "Automatically reduce viewer-side packet load in dense player hotspots.");
++        hotspotRadius = Math.max(1, getInt("starforge.performance.hotspot.radius", 100, "Hotspot check radius in blocks."));
++        hotspotEnableThreshold = Math.max(1, getInt("starforge.performance.hotspot.enable-threshold", 100, "Enable hotspot packet reduction when this many players are within the hotspot radius."));
++        hotspotDisableThreshold = Math.max(1, Math.min(hotspotEnableThreshold, getInt("starforge.performance.hotspot.disable-threshold", 80, "Disable hotspot packet reduction once nearby players drop below this threshold.")));
++        hotspotUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.update-interval", 10, "How often each player recomputes hotspot state, in ticks."));
++        hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.75D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
++        hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
++        hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+@@ -466,6 +484,7 @@ public class EntropyConfig {
+     public static double verticalKnockbackMax;
+     public static boolean verticalKnockbackGround;
+     public static boolean rodKnockback;
++    public static boolean fishingHooksPullEntities;
+     public static boolean knockbackResistance;
+     public static double sprintingKnockback;
+     public static int sprintingKnockbackDelay;
+@@ -476,6 +495,7 @@ public class EntropyConfig {
+         verticalKnockbackMax = getDouble("starforge.combat.vertical-knockback-max", 0.4, "Maximum vertical knockback.");
+         verticalKnockbackGround = getBoolean("starforge.combat.vertical-knockback-ground", true, "Vertical knockback requires player to be on ground.");
+         rodKnockback = getBoolean("starforge.combat.rod-knockback", false, "Enable knockback from rods.");
++        fishingHooksPullEntities = getBoolean("starforge.combat.fishing-hooks.pull-entities", true, "Allow fishing hooks to pull hooked entities other than item drops.");
+         knockbackResistance = getBoolean("starforge.combat.knockback-resistance", true, "Toggle knockback resistance.");
+         sprintingKnockback = getDouble("starforge.combat.sprinting-knockback", 0.5, "Add extra sprinting knockback.");
+         sprintingKnockbackDelay = getInt("starforge.combat.sprinting-knockback-delay", 0, "Delay for sprinting knockback.");
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index e510f52af3ffd965903e1c109059ad8db8da8aad..a0861b51800bcc207cdbc3da5d222eb6717ff8b6 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -1,5 +1,6 @@
+ package dev.orhidea.starforge;
+ 
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Player;
+ 
+ import java.util.HashMap;
+@@ -17,13 +18,45 @@ public class EntropyUserManager {
+     public FpsData getFpsData(Player player) {
+         FpsData data = PlayerFpsData.get(player.getUUID());
+         if (data == null) {
+-            FpsData nd = new FpsData(false, false, false, false, false, false, false);
++            FpsData nd = new FpsData();
+             PlayerFpsData.put(player.getUUID(), nd);
+             return nd;
+         }
+         return data;
+     }
+ 
++    public void updateHotspot(ServerPlayer player) {
++        FpsData data = this.getFpsData(player);
++        if (!EntropyConfig.hotspotEnabled) {
++            data.clearHotspotState();
++            player.trackingRangeModifier = 1.0D;
++            return;
++        }
++
++        double radius = EntropyConfig.hotspotRadius;
++        double radiusSquared = radius * radius;
++        int nearbyPlayers = 0;
++        int requiredPlayers = data.HotspotActive ? EntropyConfig.hotspotDisableThreshold : EntropyConfig.hotspotEnableThreshold;
++
++        for (ServerPlayer other : player.serverLevel().players()) {
++            if (other.isRemoved()) {
++                continue;
++            }
++            if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
++                break;
++            }
++        }
++
++        boolean hotspotActive = data.HotspotActive
++            ? nearbyPlayers >= EntropyConfig.hotspotDisableThreshold
++            : nearbyPlayers >= EntropyConfig.hotspotEnableThreshold;
++
++        data.HotspotActive = hotspotActive;
++        data.HotspotParticlesHidden = hotspotActive && EntropyConfig.hotspotHideParticles;
++        data.HotspotSoundsHidden = hotspotActive && EntropyConfig.hotspotHideSounds;
++        player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
++    }
++
+     public static final class FpsData {
+         public boolean TntHidden;
+         public boolean SandHidden;
+@@ -32,18 +65,14 @@ public class EntropyUserManager {
+         public boolean ExplosionHidden;
+         public boolean FlashHidden;
+         public boolean PistonHidden;
++        public boolean HotspotActive;
++        public boolean HotspotParticlesHidden;
++        public boolean HotspotSoundsHidden;
+ 
+-        public FpsData(
+-                boolean TntHidden, boolean SandHidden, boolean AnvilHidden, boolean ConcreteHidden,
+-                boolean ExplosionHidden, boolean FlashHidden, boolean PistonHidden
+-        ) {
+-            this.TntHidden = TntHidden;
+-            this.SandHidden = SandHidden;
+-            this.AnvilHidden = AnvilHidden;
+-            this.ConcreteHidden = ConcreteHidden;
+-            this.ExplosionHidden = ExplosionHidden;
+-            this.FlashHidden = FlashHidden;
+-            this.PistonHidden = PistonHidden;
++        public void clearHotspotState() {
++            this.HotspotActive = false;
++            this.HotspotParticlesHidden = false;
++            this.HotspotSoundsHidden = false;
+         }
+     }
+ }
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index f1645deccaab82dcbf20e57a42fe5b249f8c33d0..bb1bb861f90824f9295d7966a9de233d8de88f50 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -398,10 +398,17 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     public void send(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
+         Player player = this.getPlayer();
+         if (player != null) {
++            EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
++            if (data.HotspotParticlesHidden && packet instanceof net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket) {
++                return;
++            }
++            if (data.HotspotSoundsHidden && (packet instanceof net.minecraft.network.protocol.game.ClientboundSoundPacket || packet instanceof net.minecraft.network.protocol.game.ClientboundSoundEntityPacket)) {
++                return;
++            }
++
+             // Entropy start - fps
+             if (packet instanceof ClientboundMoveEntityPacket p) {
+                 Entity entity = p.getEntity(player.level());
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 boolean delete = false;
+ 
+                 if (entity != null && entity.isTnt && (data.TntHidden || data.FlashHidden)) {
+@@ -425,17 +432,14 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundExplodePacket) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 if (data.ExplosionHidden) {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundBlockEventPacket p) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 if ((p.getBlock() == Blocks.PISTON || p.getBlock() == Blocks.STICKY_PISTON) && data.PistonHidden) {
+                     return;
+                 }
+             } else if (packet instanceof ClientboundSetEntityDataPacket p) {
+-                EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+                 Entity entity = player.level().getEntity(p.id());
+                 if (entity instanceof PrimedTnt t && (data.FlashHidden || t.minimal.contains(player.getUUID()))) {
+                     this.sendPacket(new ClientboundRemoveEntitiesPacket(t.getId()), null, flush);
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 41fd0c1f63bfeaefd4e23d2048ef190ee19d9396..373daba4fa0213c098c5bfd1ab7a7abb36105634 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1139,6 +1139,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         try {
+             for (TrackedEntity tracker : this.entityMap.values()) {
+                 // update tracker entry
++                if (!tracker.shouldLookForPlayers()) continue;
+                 tracker.updatePlayers(tracker.entity.getPlayersInTrackRange());
+             }
+         } finally {
+@@ -1296,12 +1297,26 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         private final int range;
+         SectionPos lastSectionPos;
+         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
++        private final int playerSearchInterval;
++        private Vec3 entityPosition;
+ 
+         public TrackedEntity(Entity entity, int i, int j, boolean flag) {
+             this.serverEntity = new ServerEntity(ChunkMap.this.level, entity, j, flag, this::broadcast, this.seenBy); // CraftBukkit
+             this.entity = entity;
+             this.range = i;
+             this.lastSectionPos = SectionPos.of((EntityAccess) entity);
++            this.playerSearchInterval = Math.max(1, Math.min(j, 20));
++            this.entityPosition = entity.position();
++        }
++
++        final boolean shouldLookForPlayers() {
++            if (this.entity instanceof net.minecraft.world.entity.player.Player || this.entity.tickCount % this.playerSearchInterval == 0) {
++                return true;
++            }
++
++            Vec3 lastPosition = this.entityPosition;
++            this.entityPosition = this.entity.position();
++            return this.entityPosition.distanceToSqr(lastPosition) >= (double) this.range / 2.0D;
+         }
+ 
+         // Paper start - use distance map to optimise tracker
+@@ -1395,7 +1410,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 double vec3d_dz = player.getZ() - this.entity.getZ();
+                 // Paper end - remove allocation of Vec3D here
+                 int i = ChunkMap.this.getPlayerViewDistance(player);
+-                double d0 = (double) Math.min(this.getEffectiveRange(), i * 16);
++                double visibleRange = (double) this.getEffectiveRange() * player.trackingRangeModifier;
++                double d0 = Math.min(visibleRange, i * 16);
+                 double d1 = vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz; // Paper
+                 double d2 = d0 * d0;
+                 boolean flag = d1 <= d2 && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index 9fc724b8725249ca3224a11555317dbffd41d761..cdc4c7e143d453724c2e21a96a78235b0fee1949 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -188,6 +188,7 @@ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+ import org.bukkit.event.player.PlayerToggleSneakEvent;
+ import org.bukkit.inventory.MainHand;
+ import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.EntropyUserManager;
+ import dev.orhidea.starforge.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+@@ -333,6 +334,7 @@ public class ServerPlayer extends Player {
+     // Paper start - optimise chunk tick iteration
+     public double lastEntitySpawnRadiusSquared = -1.0;
+     // Paper end - optimise chunk tick iteration
++    public double trackingRangeModifier = 1.0D;
+ 
+     public ServerPlayer(MinecraftServer server, ServerLevel world, GameProfile profile, ClientInformation clientOptions) {
+         super(world, world.getSharedSpawnPos(), world.getSharedSpawnAngle(), profile);
+@@ -851,6 +853,10 @@ public class ServerPlayer extends Player {
+                 this.connection.send(new ClientboundSetExperiencePacket(this.experienceProgress, this.totalExperience, this.experienceLevel));
+             }
+ 
++            if (this.tickCount % EntropyConfig.hotspotUpdateInterval == 0) {
++                EntropyUserManager.Instance.updateHotspot(this);
++            }
++
+             if (this.tickCount % 20 == 0) {
+                 CriteriaTriggers.LOCATION.trigger(this);
+             }
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+index f82dbbf9b8eb973df374a8ab27c0b4c69ae3deb1..8822d12fbd7bd6e63794489213ebe05b8fe1665e 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+@@ -599,7 +599,7 @@ public class FishingHook extends Projectile {
+     public void pullEntity(Entity entity) {
+         Entity entity1 = this.getOwner();
+ 
+-        if (entity1 != null) {
++        if (entity1 != null && (EntropyConfig.fishingHooksPullEntities || entity instanceof ItemEntity)) {
+             Vec3 vec3d = (new Vec3(entity1.getX() - this.getX(), entity1.getY() - this.getY(), entity1.getZ() - this.getZ())).scale(0.1D);
+ 
+             entity.setDeltaMovement(entity.getDeltaMovement().add(vec3d));
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index c58709d0c32fa8f4e27763b660a4d753782a6ca8..052105e65790ba3851590ee0dfd196c47e208708 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -218,8 +218,12 @@ public class Explosion {
+ 
+             BlockState blockState = chunk.getBlockStateFinal(x, y, z);
+             FluidState fluidState = blockState.getFluidState();
+-
+-            Optional<Float> resistance = !calculateResistance ? Optional.empty() : this.damageCalculator.getBlockExplosionResistance((Explosion)(Object)this, this.level, pos, blockState, fluidState);
++            Optional<Float> resistance;
++            if (calculateResistance && EntropyConfig.protectScaffoldingFromCreepers && blockState.is(Blocks.SCAFFOLDING) && this.source instanceof Creeper) {
++                resistance = Optional.of(Blocks.BARRIER.getExplosionResistance());
++            } else {
++                resistance = !calculateResistance ? Optional.empty() : this.damageCalculator.getBlockExplosionResistance((Explosion)(Object)this, this.level, pos, blockState, fluidState);
++            }
+ 
+             ret = new ExplosionBlockCache(
+                 key, pos, blockState, fluidState,
