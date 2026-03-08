@@ -1,0 +1,242 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 23:14:18 +0200
+Subject: [PATCH] Split move counters and tune player tracking range
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index e9c01cd642f301928b632bbeb6d39ef859f83792..4d65ab524ab0abc4e46cc0abe01e3e1f97f6e1ee 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -284,6 +284,7 @@ public class EntropyConfig {
+     public static int maxFootstepPacketsPerBroadcast;
+     public static boolean asyncTrackerEnabled;
+     public static int asyncTrackerThreads;
++    public static double playerTrackingRangeMultiplier;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -347,6 +348,7 @@ public class EntropyConfig {
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
++        playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+index 8e70f01fff5905331771685188c36f93f6455d82..d9973052b14b732204f867aca6fef090b26327c8 100644
+--- a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
++++ b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+@@ -100,7 +100,8 @@ public final class NetDebugReport {
+         long totalAvgOut = 0L;
+         long totalChunkPackets = 0L;
+         long totalAddEntityPackets = 0L;
+-        long totalMovePackets = 0L;
++        long totalPlayerMovePackets = 0L;
++        long totalNonPlayerMovePackets = 0L;
+         long totalMetadataPackets = 0L;
+         long totalEquipmentPackets = 0L;
+         long totalPlayerInfoPackets = 0L;
+@@ -120,7 +121,8 @@ public final class NetDebugReport {
+             totalAvgOut += snapshot.avgSentPackets();
+             totalChunkPackets += snapshot.chunkPackets();
+             totalAddEntityPackets += snapshot.addEntityPackets();
+-            totalMovePackets += snapshot.movePackets();
++            totalPlayerMovePackets += snapshot.playerMovePackets();
++            totalNonPlayerMovePackets += snapshot.nonPlayerMovePackets();
+             totalMetadataPackets += snapshot.metadataPackets();
+             totalEquipmentPackets += snapshot.equipmentPackets();
+             totalPlayerInfoPackets += snapshot.playerInfoPackets();
+@@ -153,10 +155,11 @@ public final class NetDebugReport {
+             totalFlushCalls
+         );
+         LOGGER.warn(
+-            "TimeoutDebug: packetTypes chunk={} add={} move={} meta={} equip={} info={} sound={} particle={} keepalive={} other={}",
++            "TimeoutDebug: packetTypes chunk={} add={} playerMove={} nonPlayerMove={} meta={} equip={} info={} sound={} particle={} keepalive={} other={}",
+             totalChunkPackets,
+             totalAddEntityPackets,
+-            totalMovePackets,
++            totalPlayerMovePackets,
++            totalNonPlayerMovePackets,
+             totalMetadataPackets,
+             totalEquipmentPackets,
+             totalPlayerInfoPackets,
+@@ -184,7 +187,8 @@ public final class NetDebugReport {
+         long flushCalls,
+         long chunkPackets,
+         long addEntityPackets,
+-        long movePackets,
++        long playerMovePackets,
++        long nonPlayerMovePackets,
+         long metadataPackets,
+         long equipmentPackets,
+         long playerInfoPackets,
+@@ -212,7 +216,8 @@ public final class NetDebugReport {
+                 connection.getFlushCallCount(),
+                 connection.getChunkPacketCount(),
+                 connection.getAddEntityPacketCount(),
+-                connection.getMovePacketCount(),
++                connection.getPlayerMovePacketCount(),
++                connection.getNonPlayerMovePacketCount(),
+                 connection.getMetadataPacketCount(),
+                 connection.getEquipmentPacketCount(),
+                 connection.getPlayerInfoPacketCount(),
+@@ -242,7 +247,8 @@ public final class NetDebugReport {
+                 + " types="
+                 + "ch:" + this.chunkPackets
+                 + " add:" + this.addEntityPackets
+-                + " mv:" + this.movePackets
++                + " pmv:" + this.playerMovePackets
++                + " nmv:" + this.nonPlayerMovePackets
+                 + " md:" + this.metadataPackets
+                 + " eq:" + this.equipmentPackets
+                 + " pi:" + this.playerInfoPackets
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 30d429b9af8c1dcf6a3722274c00147afe28b903..3f68d5300ab3301bb93ab1d27ed248cd702e59ac 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -142,7 +142,8 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private final AtomicLong flushCallCount = new AtomicLong();
+     private long chunkPacketCount;
+     private long addEntityPacketCount;
+-    private long movePacketCount;
++    private long playerMovePacketCount;
++    private long nonPlayerMovePacketCount;
+     private long metadataPacketCount;
+     private long equipmentPacketCount;
+     private long playerInfoPacketCount;
+@@ -564,7 +565,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private void sendPacket(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
+         ++this.sentPackets;
+         this.immediatePacketCount.incrementAndGet();
+-        this.trackSentPacketCategory(packet);
++        this.trackSentPacketCategory(packet, this.getPlayer());
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.doSendPacket(packet, callbacks, flush);
+         } else {
+@@ -1043,7 +1044,15 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     }
+ 
+     public long getMovePacketCount() {
+-        return this.movePacketCount;
++        return this.playerMovePacketCount + this.nonPlayerMovePacketCount;
++    }
++
++    public long getPlayerMovePacketCount() {
++        return this.playerMovePacketCount;
++    }
++
++    public long getNonPlayerMovePacketCount() {
++        return this.nonPlayerMovePacketCount;
+     }
+ 
+     public long getMetadataPacketCount() {
+@@ -1108,13 +1117,17 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
+-    private void trackSentPacketCategory(final Packet<?> packet) {
++    private void trackSentPacketCategory(final Packet<?> packet, @Nullable final Player observer) {
+         if (packet instanceof ClientboundLevelChunkWithLightPacket || packet instanceof ClientboundChunksBiomesPacket || packet instanceof ClientboundForgetLevelChunkPacket) {
+             ++this.chunkPacketCount;
+         } else if (packet instanceof ClientboundAddEntityPacket || packet instanceof ClientboundRemoveEntitiesPacket) {
+             ++this.addEntityPacketCount;
+         } else if (packet instanceof ClientboundMoveEntityPacket || packet instanceof ClientboundTeleportEntityPacket || packet instanceof ClientboundRotateHeadPacket || packet instanceof ClientboundSetEntityMotionPacket) {
+-            ++this.movePacketCount;
++            if (this.isPlayerMovementPacket(packet, observer)) {
++                ++this.playerMovePacketCount;
++            } else {
++                ++this.nonPlayerMovePacketCount;
++            }
+         } else if (packet instanceof ClientboundSetEntityDataPacket) {
+             ++this.metadataPacketCount;
+         } else if (packet instanceof ClientboundSetEquipmentPacket) {
+@@ -1132,6 +1145,27 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
++    private boolean isPlayerMovementPacket(final Packet<?> packet, @Nullable final Player observer) {
++        if (observer == null) {
++            return false;
++        }
++
++        final Entity entity;
++        if (packet instanceof ClientboundMoveEntityPacket movePacket) {
++            entity = movePacket.getEntity(observer.level());
++        } else if (packet instanceof ClientboundRotateHeadPacket rotateHeadPacket) {
++            entity = rotateHeadPacket.getEntity(observer.level());
++        } else if (packet instanceof ClientboundTeleportEntityPacket teleportEntityPacket) {
++            entity = observer.level().getEntity(teleportEntityPacket.getId());
++        } else if (packet instanceof ClientboundSetEntityMotionPacket setEntityMotionPacket) {
++            entity = observer.level().getEntity(setEntityMotionPacket.getId());
++        } else {
++            return false;
++        }
++
++        return entity instanceof Player;
++    }
++
+     private static class InnerUtil { // Attempt to hide these methods from ProtocolLib, so it doesn't accidently pick them up.
+ 
+         @Nullable
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index ee2d5fe332a17b8290320eae5214544a88c62d08..b4fc8514647ebde3069d418c461affcbf2e7aee9 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -7,6 +7,7 @@ import com.google.common.collect.ComparisonChain; // Paper
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Queues;
+ import com.google.common.collect.Sets;
++import dev.orhidea.starforge.EntropyConfig;
+ import com.google.gson.JsonElement;
+ import com.mojang.datafixers.DataFixer;
+ import com.mojang.datafixers.util.Either;
+@@ -164,6 +165,23 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+     private int convertSpigotRangeToVanilla(final int vanilla) {
+         return net.minecraft.server.MinecraftServer.getServer().getScaledTrackingDistance(vanilla);
+     }
++
++    private static int applyPlayerTrackingRangeMultiplier(final int range) {
++        final double multiplier = EntropyConfig.playerTrackingRangeMultiplier;
++        if (multiplier == 1.0D) {
++            return range;
++        }
++
++        return Math.max(1, Mth.floor(range * multiplier));
++    }
++
++    private static int applyTrackingRangeTypeMultiplier(final org.spigotmc.TrackingRange.TrackingRangeType trackingRangeType, final int range) {
++        return trackingRangeType == org.spigotmc.TrackingRange.TrackingRangeType.PLAYER ? applyPlayerTrackingRangeMultiplier(range) : range;
++    }
++
++    private static int applyEntityTrackingRangeMultiplier(final Entity entity, final int range) {
++        return entity instanceof ServerPlayer ? applyPlayerTrackingRangeMultiplier(range) : range;
++    }
+     // Paper end - use distance map to optimise tracker
+ 
+     void addPlayerToDistanceMaps(ServerPlayer player) {
+@@ -335,6 +353,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 default:
+                     throw new IllegalStateException("Missing case for enum " + trackingRangeType);
+             }
++            configuredSpigotValue = applyTrackingRangeTypeMultiplier(trackingRangeType, configuredSpigotValue);
+             configuredSpigotValue = convertSpigotRangeToVanilla(configuredSpigotValue);
+ 
+             int trackRange = (configuredSpigotValue >>> 4) + ((configuredSpigotValue & 15) != 0 ? 1 : 0);
+@@ -1082,6 +1101,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             EntityType<?> entitytypes = entity.getType();
+             int i = entitytypes.clientTrackingRange() * 16;
+             i = org.spigotmc.TrackingRange.getEntityTrackingRange(entity, i); // Spigot
++            i = applyEntityTrackingRangeMultiplier(entity, i);
+ 
+             if (i != 0) {
+                 int j = entitytypes.updateInterval();
+@@ -1518,6 +1538,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 Entity entity = passengers.get(i);
+                 int range = entity.getType().clientTrackingRange() * 16;
+                 range = org.spigotmc.TrackingRange.getEntityTrackingRange(entity, range); // Paper
++                range = applyEntityTrackingRangeMultiplier(entity, range);
+ 
+                 if (range > highest) { // Paper - we need the lowest range thanks to the fact that our tracker doesn't account for passenger logic // Tuinity - not anymore!
+                     highest = range;
