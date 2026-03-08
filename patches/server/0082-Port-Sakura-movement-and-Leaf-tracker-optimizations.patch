@@ -1,0 +1,545 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:06:14 +0200
+Subject: [PATCH] Port Sakura movement and Leaf tracker optimizations
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index f39df364f324099cd0802e55caef173042c9ee16..fd1f81750c665b468bd73888356a28571f18227d 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -47,11 +47,9 @@ public class EntropyConfig {
+     }
+     public static void load() throws IOException {
+         File configFile = new File("starforge.yml");
+-        File legacyConfigFile = new File("entropy.yml");
+-        File loadFile = configFile.exists() ? configFile : legacyConfigFile;
+-        if (loadFile.exists()) {
++        if (configFile.exists()) {
+             try {
+-                config.load(loadFile);
++                config.load(configFile);
+             } catch (InvalidConfigurationException e) {
+                 throw new IOException(e);
+             }
+@@ -59,8 +57,7 @@ public class EntropyConfig {
+         getString("info.version", "1.5");
+         setComment("info",
+                 "====================================",
+-                "Starforge Cannoning Jar by FragmentMC",
+-                "Support: http://fragmentmc.xyz",
++                "Starforge Cannoning Jar",
+                 "====================================");
+ 
+ 		for (Method method : EntropyConfig.class.getDeclaredMethods()) {
+@@ -209,6 +206,7 @@ public class EntropyConfig {
+     public static boolean reduceRays;
+     public static int rayProjectionSize;
+     public static boolean cacheBlockStates;
++    public static boolean fastBasicMovement;
+     private static void optimizations() {
+         skipRayOrigin = getBoolean("starforge.optimizations.skip-ray-origin", true, "Skip the origin of explosion rays, as it gets checked with every ray.");
+         mergeEntities = getBoolean("starforge.optimizations.merge-entities", true, "Merge identical TNT and FallingBlocks together.");
+@@ -220,6 +218,7 @@ public class EntropyConfig {
+         reduceRays = getBoolean("starforge.optimizations.reduce-rays.enabled", true, "* Reduces the amount of rays for explosion block damage.");
+         rayProjectionSize = getInt("starforge.optimizations.reduce-rays.projection-size", 11, "Size of the projection cube for explosion rays (vanilla is 15), amount of rays = (n^2)*6.");
+         cacheBlockStates = getBoolean("starforge.optimizations.cache-block-states", true, "Cache block states in between explosions when possible.");
++        fastBasicMovement = getBoolean("starforge.optimizations.fast-basic-movement", false, "Use Sakura's stripped-down movement path for TNT and falling blocks.", "This can improve cannon entity throughput, but disable it if you notice movement regressions.");
+ 
+         setComment("starforge.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
+     }
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 373daba4fa0213c098c5bfd1ab7a7abb36105634..84652f126f2d5497f3c78de69f14b0eb9d7d670a 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1426,7 +1426,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 // Paper end - Configurable entity tracking range by Y
+ 
+                 // CraftBukkit start - respect vanish API
+-                if (flag && !player.getBukkitEntity().canSee(this.entity.getBukkitEntity())) { // Paper - only consider hits
++                if (flag && !player.getBukkitEntity().canSeeChunkMapUpdatePlayer(this.entity.getBukkitEntity())) { // Paper - only consider hits
+                     flag = false;
+                 }
+                 // CraftBukkit end
+diff --git a/src/main/java/net/minecraft/server/level/ServerEntity.java b/src/main/java/net/minecraft/server/level/ServerEntity.java
+index c518626f90278997f5b7410f27dd4077587aef4a..80cd696b5a2e3f80ed34f1f05892e894f91e60d0 100644
+--- a/src/main/java/net/minecraft/server/level/ServerEntity.java
++++ b/src/main/java/net/minecraft/server/level/ServerEntity.java
+@@ -234,11 +234,13 @@ public class ServerEntity {
+ 
+                 if ((this.trackDelta || this.entity.hasImpulse || this.entity instanceof LivingEntity && ((LivingEntity) this.entity).isFallFlying()) && this.tickCount > 0) {
+                     Vec3 vec3d1 = this.entity.getDeltaMovement();
+-                    double d0 = vec3d1.distanceToSqr(this.ap);
++                    if (vec3d1 != this.ap) {
++                        double d0 = vec3d1.distanceToSqr(this.ap);
+ 
+-                    if (d0 > 1.0E-7D || d0 > 0.0D && vec3d1.lengthSqr() == 0.0D) {
+-                        this.ap = vec3d1;
+-                        this.broadcast.accept(new ClientboundSetEntityMotionPacket(this.entity.getId(), this.ap));
++                        if (d0 > 1.0E-7D || d0 > 0.0D && vec3d1.lengthSqr() == 0.0D) {
++                            this.ap = vec3d1;
++                            this.broadcast.accept(new ClientboundSetEntityMotionPacket(this.entity.getId(), this.ap));
++                        }
+                     }
+                 }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 43434b87927ed717bd712e51bdb2aa04d5b38a4d..e216a4b06941bb66f26ce6409fd7dd3edf4dedad 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1118,6 +1118,89 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     }
+     // Paper end - detailed watchdog information
+ 
++    public void moveBasic(MoverType movementType, Vec3 movement) {
++        io.papermc.paper.util.TickThread.ensureTickThread("Cannot move an entity off-main");
++        if (this.noPhysics) {
++            this.setPos(this.getX() + movement.x, this.getY() + movement.y, this.getZ() + movement.z);
++        } else {
++            if (movementType == MoverType.PISTON) {
++                movement = this.limitPistonMovement(movement);
++                if (movement.equals(Vec3.ZERO)) {
++                    return;
++                }
++            }
++
++            this.level().getProfiler().push("move");
++            if (this.stuckSpeedMultiplier.lengthSqr() > 1.0E-7D) {
++                movement = movement.multiply(this.stuckSpeedMultiplier);
++                this.stuckSpeedMultiplier = Vec3.ZERO;
++                this.setDeltaMovement(Vec3.ZERO);
++            }
++
++            Vec3 vec3d1 = this.collideScan(movement);
++            double d0 = vec3d1.lengthSqr();
++
++            if (d0 > 1.0E-7D) {
++                if (this.fallDistance != 0.0F && d0 >= 1.0D && !this.isFallingBlock) {
++                    BlockHitResult movingobjectpositionblock = this.level().clip(new ClipContext(this.position(), this.position().add(vec3d1), ClipContext.Block.FALLDAMAGE_RESETTING, ClipContext.Fluid.WATER, this));
++
++                    if (movingobjectpositionblock.getType() != HitResult.Type.MISS) {
++                        this.resetFallDistance();
++                    }
++                }
++
++                this.setPos(this.getX() + vec3d1.x, this.getY() + vec3d1.y, this.getZ() + vec3d1.z);
++            }
++
++            this.level().getProfiler().pop();
++            this.level().getProfiler().push("rest");
++            boolean flag = !Mth.equal(movement.x, vec3d1.x);
++            boolean flag1 = !Mth.equal(movement.z, vec3d1.z);
++
++            this.horizontalCollision = flag || flag1;
++            this.verticalCollision = movement.y != vec3d1.y;
++            this.verticalCollisionBelow = this.verticalCollision && movement.y < 0.0D;
++            if (this.horizontalCollision) {
++                this.minorHorizontalCollision = this.isHorizontalCollisionMinor(vec3d1);
++            } else {
++                this.minorHorizontalCollision = false;
++            }
++
++            this.setOnGroundWithKnownMovement(this.verticalCollisionBelow, vec3d1);
++            BlockPos blockposition = this.getOnPosLegacy();
++            BlockState iblockdata = this.level().getBlockState(blockposition);
++
++            this.checkFallDamage(vec3d1.y, this.onGround(), iblockdata, blockposition);
++            if (this.isRemoved()) {
++                this.level().getProfiler().pop();
++            } else {
++                if (this.horizontalCollision) {
++                    Vec3 vec3d2 = this.getDeltaMovement();
++
++                    this.setDeltaMovement(flag ? 0.0D : vec3d2.x, vec3d2.y, flag1 ? 0.0D : vec3d2.z);
++                }
++
++                Block block = iblockdata.getBlock();
++
++                if (movement.y != vec3d1.y) {
++                    block.updateEntityAfterFallOn(this.level(), this);
++                }
++
++                if (this.onGround()) {
++                    block.stepOn(this.level(), blockposition, iblockdata, this);
++                }
++
++                if (EntropyConfig.entityInsideBlockCheck > 0 && (EntropyConfig.entityInsideBlockCheck == 1 || this.tickCount % EntropyConfig.entityInsideBlockCheck == 0)) {
++                    this.tryCheckInsideBlocks();
++                }
++                float f = this.getBlockSpeedFactor();
++
++                this.multiplyDeltaMovement((double) f, 1.0D, (double) f);
++                this.level().getProfiler().pop();
++            }
++        }
++    }
++
+     public void move(MoverType movementType, Vec3 movement) {
+         final Vec3 originalMovement = movement; // Paper - Expose pre-collision velocity
+         // Paper start - detailed watchdog information
+@@ -1297,7 +1380,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+                 if (EntropyConfig.entityInsideBlockCheck > 0 && (EntropyConfig.entityInsideBlockCheck == 1 || this.tickCount % EntropyConfig.entityInsideBlockCheck == 0)) this.tryCheckInsideBlocks(); // Starforge - Pluto tick controls
+                 float f = this.getBlockSpeedFactor();
+ 
+-                this.setDeltaMovement(this.getDeltaMovement().multiply((double) f, 1.0D, (double) f));
++                this.multiplyDeltaMovement((double) f, 1.0D, (double) f);
+                 // Paper start - remove expensive streams from here
+                 boolean noneMatch = true;
+                 AABB fireSearchBox = this.getBoundingBox().deflate(1.0E-6D);
+@@ -1514,6 +1597,92 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+         return offsetFactor;
+     }
+ 
++    private Vec3 collideScan(Vec3 movement) {
++        if (movement.x == 0.0D && movement.y == 0.0D && movement.z == 0.0D) {
++            return movement;
++        }
++
++        final boolean scan = movement.lengthSqr() >= 12.0D;
++        final List<AABB> potentialCollisionsBB = new it.unimi.dsi.fastutil.objects.ObjectArrayList<>(4);
++        final List<VoxelShape> potentialCollisionsVoxel = new it.unimi.dsi.fastutil.objects.ObjectArrayList<>(1);
++        final AABB currBoundingBox = this.getBoundingBox();
++
++        if (scan) {
++            return this.scanAndCollide(movement, currBoundingBox, potentialCollisionsVoxel, potentialCollisionsBB);
++        } else {
++            final AABB bb = currBoundingBox.expandTowards(movement.x, movement.y, movement.z);
++            this.collectCollisions(bb, potentialCollisionsVoxel, potentialCollisionsBB);
++            return io.papermc.paper.util.CollisionUtil.performCollisions(movement, currBoundingBox, potentialCollisionsVoxel, potentialCollisionsBB);
++        }
++    }
++
++    private Vec3 scanAndCollide(Vec3 movement, AABB currBoundingBox, List<VoxelShape> voxelList, List<AABB> bbList) {
++        double x = movement.x;
++        double y = movement.y;
++        double z = movement.z;
++        final boolean xSmaller = Math.abs(x) < Math.abs(z);
++
++        if (y != 0.0D) {
++            y = this.scanY(currBoundingBox, y, voxelList, bbList);
++            if (y != 0.0D) {
++                currBoundingBox = io.papermc.paper.util.CollisionUtil.offsetY(currBoundingBox, y);
++            }
++        }
++
++        if (xSmaller && z != 0.0D) {
++            z = this.scanZ(currBoundingBox, z, voxelList, bbList);
++            if (z != 0.0D) {
++                currBoundingBox = io.papermc.paper.util.CollisionUtil.offsetZ(currBoundingBox, z);
++            }
++        }
++
++        if (x != 0.0D) {
++            x = this.scanX(currBoundingBox, x, voxelList, bbList);
++            if (x != 0.0D) {
++                currBoundingBox = io.papermc.paper.util.CollisionUtil.offsetX(currBoundingBox, x);
++            }
++        }
++
++        if (!xSmaller && z != 0.0D) {
++            z = this.scanZ(currBoundingBox, z, voxelList, bbList);
++        }
++
++        return new Vec3(x, y, z);
++    }
++
++    private void collectCollisions(AABB collisionBox, List<VoxelShape> voxelList, List<AABB> bbList) {
++        int collisionFlags = io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_CHECK_BORDER | this.getExtraCollisionFlags();
++        if ((EntropyConfig.tntLoadsChunks && this instanceof PrimedTnt) || (EntropyConfig.fallingBlockLoadsChunks && this instanceof FallingBlockEntity)) {
++            collisionFlags |= io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_LOAD_CHUNKS;
++        }
++        io.papermc.paper.util.CollisionUtil.getCollisions(
++            this.level, this, collisionBox, voxelList, bbList,
++            collisionFlags,
++            null, null
++        );
++    }
++
++    private double scanX(AABB currBoundingBox, double x, List<VoxelShape> voxelList, List<AABB> bbList) {
++        AABB scanBox = currBoundingBox.expandTowards(x, 0.0D, 0.0D);
++        this.collectCollisions(scanBox, voxelList, bbList);
++        x = io.papermc.paper.util.CollisionUtil.performAABBCollisionsX(currBoundingBox, x, bbList);
++        return io.papermc.paper.util.CollisionUtil.performVoxelCollisionsX(currBoundingBox, x, voxelList);
++    }
++
++    private double scanY(AABB currBoundingBox, double y, List<VoxelShape> voxelList, List<AABB> bbList) {
++        AABB scanBox = currBoundingBox.expandTowards(0.0D, y, 0.0D);
++        this.collectCollisions(scanBox, voxelList, bbList);
++        y = io.papermc.paper.util.CollisionUtil.performAABBCollisionsY(currBoundingBox, y, bbList);
++        return io.papermc.paper.util.CollisionUtil.performVoxelCollisionsY(currBoundingBox, y, voxelList);
++    }
++
++    private double scanZ(AABB currBoundingBox, double z, List<VoxelShape> voxelList, List<AABB> bbList) {
++        AABB scanBox = currBoundingBox.expandTowards(0.0D, 0.0D, z);
++        this.collectCollisions(scanBox, voxelList, bbList);
++        z = io.papermc.paper.util.CollisionUtil.performAABBCollisionsZ(currBoundingBox, z, bbList);
++        return io.papermc.paper.util.CollisionUtil.performVoxelCollisionsZ(currBoundingBox, z, voxelList);
++    }
++
+     private Vec3 collide(Vec3 movement) {
+         // Paper start - optimise collisions
+         final boolean xZero = movement.x == 0.0;
+@@ -2131,6 +2300,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     public void moveTo(double x, double y, double z, float yaw, float pitch) {
+         // Paper start - Fix Entity Teleportation and cancel velocity if teleported
+         if (!preserveMotion) {
++            this.movementDirty = false;
+             this.deltaMovement = Vec3.ZERO;
+         } else {
+             this.preserveMotion = false;
+@@ -3536,30 +3706,30 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+ 
+     public void onAboveBubbleCol(boolean drag) {
+         if((this instanceof FallingBlockEntity || this instanceof PrimedTnt) && EventUtil.sendCancellable(level, new BubbleColumnEvent(EntropyConfig.disableBubbleColumns, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled()) return; // Entropy
+-        Vec3 vec3d = this.getDeltaMovement();
++        this.syncDeltaMovement();
+         double d0;
+ 
+         if (drag) {
+-            d0 = Math.max(-0.9D, vec3d.y - 0.03D);
++            d0 = Math.max(-0.9D, this.movementY - 0.03D);
+         } else {
+-            d0 = Math.min(1.8D, vec3d.y + 0.1D);
++            d0 = Math.min(1.8D, this.movementY + 0.1D);
+         }
+ 
+-        this.setDeltaMovement(vec3d.x, d0, vec3d.z);
++        this.setDeltaMovement(this.movementX, d0, this.movementZ);
+     }
+ 
+     public void onInsideBubbleColumn(boolean drag) {
+         if((this instanceof FallingBlockEntity || this instanceof PrimedTnt) && EventUtil.sendCancellable(level, new BubbleColumnEvent(EntropyConfig.disableBubbleColumns, this.getBukkitEntity(), new Location(level.getWorld(), this.getX(), this.getY(), this.getZ()))).isCancelled()) return; // Entropy
+-        Vec3 vec3d = this.getDeltaMovement();
++        this.syncDeltaMovement();
+         double d0;
+ 
+         if (drag) {
+-            d0 = Math.max(-0.3D, vec3d.y - 0.03D);
++            d0 = Math.max(-0.3D, this.movementY - 0.03D);
+         } else {
+-            d0 = Math.min(0.7D, vec3d.y + 0.06D);
++            d0 = Math.min(0.7D, this.movementY + 0.06D);
+         }
+ 
+-        this.setDeltaMovement(vec3d.x, d0, vec3d.z);
++        this.setDeltaMovement(this.movementX, d0, this.movementZ);
+         this.resetFallDistance();
+     }
+ 
+@@ -4600,16 +4770,15 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+                     vec3d = vec3d.normalize();
+                 }
+ 
+-                Vec3 vec3d2 = this.getDeltaMovement();
+-
+                 vec3d = vec3d.scale(speed * 1.0D);
+                 double d3 = 0.003D;
++                this.syncDeltaMovement();
+ 
+-                if (Math.abs(vec3d2.x) < 0.003D && Math.abs(vec3d2.z) < 0.003D && vec3d.length() < 0.0045000000000000005D) {
++                if (Math.abs(this.movementX) < 0.003D && Math.abs(this.movementZ) < 0.003D && vec3d.length() < 0.0045000000000000005D) {
+                     vec3d = vec3d.normalize().scale(0.0045000000000000005D);
+                 }
+ 
+-                this.setDeltaMovement(this.getDeltaMovement().add(vec3d));
++                this.addDeltaMovement(vec3d.x, vec3d.y, vec3d.z);
+             }
+ 
+             this.fluidHeight.put(tag, d1);
+@@ -4680,11 +4849,52 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+         return this.chunkPosition;
+     }
+ 
++    private double movementX;
++    private double movementY;
++    private double movementZ;
++    private boolean movementDirty;
++
++    public void addDeltaMovement(double x, double y, double z) {
++        this.syncDeltaMovement();
++        this.movementX += x;
++        this.movementY += y;
++        this.movementZ += z;
++    }
++
++    public void scaleDeltaMovement(double scale) {
++        this.syncDeltaMovement();
++        this.movementX *= scale;
++        this.movementY *= scale;
++        this.movementZ *= scale;
++    }
++
++    public void multiplyDeltaMovement(double x, double y, double z) {
++        this.syncDeltaMovement();
++        this.movementX *= x;
++        this.movementY *= y;
++        this.movementZ *= z;
++    }
++
++    private void updateDeltaMovement() {
++        if (this.movementDirty) {
++            this.deltaMovement = new Vec3(this.movementX, this.movementY, this.movementZ);
++            this.movementDirty = false;
++        }
++    }
++
++    private void syncDeltaMovement() {
++        if (!this.movementDirty) {
++            this.setDeltaMovement(this.deltaMovement.x, this.deltaMovement.y, this.deltaMovement.z);
++        }
++    }
++
+     public Vec3 getDeltaMovement() {
++        this.updateDeltaMovement();
+         return this.deltaMovement;
+     }
+ 
+     public void setDeltaMovement(Vec3 velocity) {
++        this.movementDirty = false;
+         synchronized (this.posLock) { // Paper
+         this.deltaMovement = velocity;
+         } // Paper
+@@ -4695,7 +4905,10 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     }
+ 
+     public void setDeltaMovement(double x, double y, double z) {
+-        this.setDeltaMovement(new Vec3(x, y, z));
++        this.movementX = x;
++        this.movementY = y;
++        this.movementZ = z;
++        this.movementDirty = true;
+     }
+ 
+     public final int getBlockX() {
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index 8bdbb6ff662ac5a8a74156375e8080c9ab4cf384..3e672a4445945550270bc232da7b3e9bc2356f98 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -152,10 +152,14 @@ public class FallingBlockEntity extends Entity {
+ 
+             ++this.time;
+             if (!this.isNoGravity()) {
+-                this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.04D, 0.0D));
++                this.addDeltaMovement(0.0D, -0.04D, 0.0D);
+             }
+ 
+-            this.move(MoverType.SELF, this.getDeltaMovement());
++            if (EntropyConfig.fastBasicMovement) {
++                this.moveBasic(MoverType.SELF, this.getDeltaMovement());
++            } else {
++                this.move(MoverType.SELF, this.getDeltaMovement());
++            }
+             // Paper start - Configurable falling blocks height nerf
+             if (this.level().paperConfig().fixes.fallingBlockHeightNerf.test(v -> this.getY() > v)) {
+                 if (this.dropItem && this.level().getGameRules().getBoolean(GameRules.RULE_DOENTITYDROPS)) {
+@@ -192,7 +196,7 @@ public class FallingBlockEntity extends Entity {
+                 } else {
+                     BlockState iblockdata = this.level().getBlockState(blockposition);
+ 
+-                    this.setDeltaMovement(this.getDeltaMovement().multiply(0.7D, -0.5D, 0.7D));
++                    this.multiplyDeltaMovement(0.7D, -0.5D, 0.7D);
+                     if (!iblockdata.is(Blocks.MOVING_PISTON)) {
+                         if (!this.cancelDrop) {
+                             boolean flag2 = iblockdata.canBeReplaced((BlockPlaceContext) (new DirectionalPlaceContext(this.level(), blockposition, Direction.DOWN, ItemStack.EMPTY, Direction.UP)));
+@@ -259,7 +263,7 @@ public class FallingBlockEntity extends Entity {
+                 }
+             }
+ 
+-            this.setDeltaMovement(this.getDeltaMovement().scale(0.98D));
++            this.scaleDeltaMovement(0.98D);
+         }
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index ef231cfee2ee6936c2627d628bb49a05b0cf5ff6..ed0ae2ae6dddcff0eeb8e1b12321eacc25053023 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -96,19 +96,23 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+     public void tick() {
+         if (this.level().spigotConfig.maxTntTicksPerTick > 0 && ++this.level().spigotConfig.currentPrimedTnt > this.level().spigotConfig.maxTntTicksPerTick) { return; } // Spigot
+         if (!this.isNoGravity()) {
+-            this.setDeltaMovement(this.getDeltaMovement().add(0.0D, -0.04D, 0.0D));
++            this.addDeltaMovement(0.0D, -0.04D, 0.0D);
+         }
+ 
+-        this.move(MoverType.SELF, this.getDeltaMovement());
++        if (EntropyConfig.fastBasicMovement) {
++            this.moveBasic(MoverType.SELF, this.getDeltaMovement());
++        } else {
++            this.move(MoverType.SELF, this.getDeltaMovement());
++        }
+         // Paper start - Configurable TNT height nerf
+         if (this.level().paperConfig().fixes.tntEntityHeightNerf.test(v -> this.getY() > v)) {
+             this.discard(EntityRemoveEvent.Cause.OUT_OF_WORLD);
+             return;
+         }
+         // Paper end - Configurable TNT height nerf
+-        this.setDeltaMovement(this.getDeltaMovement().scale(0.98D));
++        this.scaleDeltaMovement(0.98D);
+         if (this.onGround()) {
+-            this.setDeltaMovement(this.getDeltaMovement().multiply(0.7D, -0.5D, 0.7D));
++            this.multiplyDeltaMovement(0.7D, -0.5D, 0.7D);
+         }
+ 
+         int i = this.getFuse() - 1;
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 052105e65790ba3851590ee0dfd196c47e208708..5f302dc4ddd0e8111a1e18e124a1d4f34e5a719c 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -670,9 +670,15 @@ public class Explosion {
+                         }
+                         // Entropy end
+ 
+-                        Vec3 vec3d1 = new Vec3(x, y, z);
++                        Vec3 vec3d1 = null;
+ 
+-                        entity.setDeltaMovement(entity.getDeltaMovement().add(vec3d1));
++                        if (entity instanceof LivingEntity) {
++                            vec3d1 = new Vec3(x, y, z);
++                            entity.setDeltaMovement(entity.getDeltaMovement().add(vec3d1));
++                        } else {
++                            entity.addDeltaMovement(x, y, z);
++                            vec3d1 = new Vec3(x, y, z);
++                        }
+                         if (entity instanceof Player) {
+                             Player entityhuman = (Player) entity;
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/Block.java b/src/main/java/net/minecraft/world/level/block/Block.java
+index a2d531c38251aa45a7b9e209bb552018e7a3691c..50c67113883a3f6de03d802787ec42646dfeef0e 100644
+--- a/src/main/java/net/minecraft/world/level/block/Block.java
++++ b/src/main/java/net/minecraft/world/level/block/Block.java
+@@ -463,7 +463,7 @@ public class Block extends BlockBehaviour implements ItemLike {
+     }
+ 
+     public void updateEntityAfterFallOn(BlockGetter world, Entity entity) {
+-        entity.setDeltaMovement(entity.getDeltaMovement().multiply(1.0D, 0.0D, 1.0D));
++        entity.multiplyDeltaMovement(1.0D, 0.0D, 1.0D);
+     }
+ 
+     public ItemStack getCloneItemStack(LevelReader world, BlockPos pos, BlockState state) {
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index ef695cc98faf9d03a77710b8d64c2d734e5b00b5..5732a146578da4d95e71fc398e0f45a5977d6400 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -187,7 +187,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     private boolean hasPlayedBefore = false;
+     private final ConversationTracker conversationTracker = new ConversationTracker();
+     private final Set<String> channels = new HashSet<String>();
+-    private final Map<UUID, Set<WeakReference<Plugin>>> invertedVisibilityEntities = new HashMap<>();
++    private final Map<UUID, Set<WeakReference<Plugin>>> invertedVisibilityEntities = new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>();
+     private final Set<UUID> unlistedEntities = new HashSet<>(); // Paper - Add Listing API for Player
+     private static final WeakHashMap<Plugin, WeakReference<Plugin>> pluginWeakReferences = new WeakHashMap<>();
+     private int hash = 0;
+@@ -2144,7 +2144,11 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+ 
+     @Override
+     public boolean canSee(org.bukkit.entity.Entity entity) {
+-        return this.equals(entity) || entity.isVisibleByDefault() ^ this.invertedVisibilityEntities.containsKey(entity.getUniqueId()); // SPIGOT-7312: Can always see self
++        return this.equals(entity) || entity.isVisibleByDefault() ^ (!this.invertedVisibilityEntities.isEmpty() && this.invertedVisibilityEntities.containsKey(entity.getUniqueId())); // SPIGOT-7312: Can always see self
++    }
++
++    public boolean canSeeChunkMapUpdatePlayer(org.bukkit.entity.Entity entity) {
++        return entity.isVisibleByDefault() ^ (!this.invertedVisibilityEntities.isEmpty() && this.invertedVisibilityEntities.containsKey(entity.getUniqueId()));
+     }
+ 
+     public boolean canSee(UUID uuid) {

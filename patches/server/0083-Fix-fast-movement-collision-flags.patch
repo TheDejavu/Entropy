@@ -1,0 +1,19 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:07:15 +0200
+Subject: [PATCH] Fix fast movement collision flags
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index e216a4b06941bb66f26ce6409fd7dd3edf4dedad..92105887618cc3512b7a47b2650c9e079439d781 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1651,7 +1651,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     }
+ 
+     private void collectCollisions(AABB collisionBox, List<VoxelShape> voxelList, List<AABB> bbList) {
+-        int collisionFlags = io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_CHECK_BORDER | this.getExtraCollisionFlags();
++        int collisionFlags = io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_CHECK_BORDER;
+         if ((EntropyConfig.tntLoadsChunks && this instanceof PrimedTnt) || (EntropyConfig.fallingBlockLoadsChunks && this instanceof FallingBlockEntity)) {
+             collisionFlags |= io.papermc.paper.util.CollisionUtil.COLLISION_FLAG_LOAD_CHUNKS;
+         }
