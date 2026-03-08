@@ -1,0 +1,688 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 16:00:27 +0200
+Subject: [PATCH] Import Pluto tick and performance patches
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 877b32e343eaf60754dc4adde0b74d7db06759b0..0dd30ff72dda56ef9cf5317a351f1303b6c64f9c 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -220,6 +220,70 @@ public class EntropyConfig {
+         setComment("starforge.optimizations", "Changes that improve cannoning performance.", "* - slight behaviour changes, should not be noticeable.");
+     }
+ 
++    public static boolean useGameEventCache;
++    public static boolean useCustomNameOptimisation;
++    public static boolean useSupportingBlockLookupOptimisation;
++    public static boolean disableItemMergeCheckWhileMoving;
++    public static int itemMergeMovingInterval;
++    public static int itemMergeStaticInterval;
++    public static boolean cropIgnoreLightLevel;
++    public static boolean mushroomIgnoreLightLevel;
++    public static boolean stemIgnoreLightLevel;
++    public static boolean bambooSaplingIgnoreLightLevel;
++    public static boolean bambooStalkIgnoreLightLevel;
++    public static boolean sweetBerryBushIgnoreLightLevel;
++    public static boolean saplingIgnoreLightLevel;
++    public static boolean pitcherCropIgnoreLightLevel;
++    public static boolean disableTargetSelector;
++    public static boolean disableGoalSelector;
++    public static boolean disableFlapEvents;
++    private static void performance() {
++        useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
++        useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
++        useSupportingBlockLookupOptimisation = getBoolean("starforge.performance.use-supporting-block-lookup-optimisation", true, "Shrink the vertical search range when checking a supporting block.");
++        disableItemMergeCheckWhileMoving = getBoolean("starforge.performance.item-merge.disable-check-while-moving", false, "Skip item merge scans while an item entity is moving.");
++        itemMergeMovingInterval = Math.max(1, getInt("starforge.performance.item-merge.moving-interval", 2, "Tick interval for merge checks on moving item entities."));
++        itemMergeStaticInterval = Math.max(1, getInt("starforge.performance.item-merge.static-interval", 40, "Tick interval for merge checks on stationary item entities."));
++        cropIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.crop", false, "Skip crop light-level checks.");
++        mushroomIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.mushroom", false, "Skip mushroom light-level checks.");
++        stemIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.stem", false, "Skip melon and pumpkin stem light-level checks.");
++        bambooSaplingIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.bamboo-sapling", false, "Skip bamboo sapling light-level checks.");
++        bambooStalkIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.bamboo-stalk", false, "Skip bamboo stalk light-level checks.");
++        sweetBerryBushIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.sweet-berry-bush", false, "Skip sweet berry bush light-level checks.");
++        saplingIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.sapling", false, "Skip sapling light-level checks.");
++        pitcherCropIgnoreLightLevel = getBoolean("starforge.performance.ignore-light-level.pitcher-crop", false, "Skip pitcher crop light-level checks.");
++        disableTargetSelector = getBoolean("starforge.performance.disable-target-selector", false, "Disable mob target selector ticking.");
++        disableGoalSelector = getBoolean("starforge.performance.disable-goal-selector", false, "Disable mob goal selector ticking.");
++        disableFlapEvents = getBoolean("starforge.performance.disable-flap-game-event", false, "Disable the movement game event emitted by flapping entities.");
++
++        setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
++    }
++
++    public static int entityActivationInterval;
++    public static boolean disableEntityActivation;
++    public static int blockTickingModulo;
++    public static int fluidTickingModulo;
++    public static int raidTickingModulo;
++    public static int blockEventTickingModulo;
++    public static int entityDespawnCheckModulo;
++    public static int entityPushingModulo;
++    public static int entityInsideBlockCheck;
++    public static int entityRainCheckRate;
++    private static void ticking() {
++        entityActivationInterval = Math.max(1, getInt("starforge.ticking.entity-activation.interval", 1, "Only run activation range scans every N ticks."));
++        disableEntityActivation = getBoolean("starforge.ticking.entity-activation.disable", false, "Disable activation range scans entirely.");
++        blockTickingModulo = getInt("starforge.ticking.block-ticks-modulo", 1, "How often scheduled block ticks run. Values below 1 disable block ticks.");
++        fluidTickingModulo = getInt("starforge.ticking.fluid-ticks-modulo", 1, "How often scheduled fluid ticks run. Values below 1 disable fluid ticks.");
++        raidTickingModulo = getInt("starforge.ticking.raid-ticks-modulo", 1, "How often raid logic runs. Values below 1 disable raid ticking.");
++        blockEventTickingModulo = getInt("starforge.ticking.block-event-ticks-modulo", 1, "How often block events run. Values below 1 disable block-event ticking.");
++        entityDespawnCheckModulo = getInt("starforge.ticking.entity-despawn-check-modulo", 1, "How often entity despawn checks run. Values below 1 disable despawn checks.");
++        entityPushingModulo = getInt("starforge.ticking.entity-pushing-modulo", 1, "How often living entities perform push checks. Values below 1 disable entity pushing.");
++        entityInsideBlockCheck = getInt("starforge.ticking.entity-inside-block-check-modulo", 1, "How often entities run inside-block collision checks. Values below 1 disable the check.");
++        entityRainCheckRate = Math.max(1, getInt("starforge.ticking.entity-rain-check-rate", 10, "How often entities recompute rain exposure."));
++
++        setComment("starforge.ticking", "Tick-rate controls imported from Pluto. Values below 1 disable the guarded task unless otherwise noted.");
++    }
++
+     public static boolean packetLimiterTntFlow;
+     public static boolean packetLimiterTntMove;
+     public static boolean packetLimiterTntVelocity;
+diff --git a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
+index 92f7f0f13d33f64ae9eac26bc4caaea9c5760e70..06a69923bc1e03297fdb8b5224ad316865403613 100644
+--- a/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
++++ b/src/main/java/io/papermc/paper/configuration/GlobalConfiguration.java
+@@ -196,6 +196,8 @@ public class GlobalConfiguration extends ConfigurationPart {
+         public boolean allowHeadlessPistons = false;
+         @Comment("This setting controls if grindstones should be able to output overstacked items (such as cursed books).")
+         public boolean allowGrindstoneOverstacking = false;
++        @Comment("Only checks an item's amount and type instead of its full data during inventory desync checks.")
++        public boolean simplifyRemoteItemMatching = false;
+         @Comment("This setting controls what compression format is used for region files.")
+         public CompressionFormat compressionFormat = CompressionFormat.ZLIB;
+ 
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 3e0677314ccc2a5d019eb7be51d58bd9f8c3a861..d93b949c19572c1d1575225cd8f450776c7d43da 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
+ import java.util.stream.Stream;
+ import javax.annotation.Nonnull;
+ import javax.annotation.Nullable;
++import dev.orhidea.starforge.EntropyConfig;
+ import net.minecraft.CrashReport;
+ import net.minecraft.CrashReportCategory;
+ import net.minecraft.Util;
+@@ -850,9 +851,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         if (!this.isDebug() && flag) {
+             j = this.getGameTime();
+             gameprofilerfiller.push("blockTicks");
+-            this.blockTicks.tick(j, paperConfig().environment.maxBlockTicks, this::tickBlock); // Paper - configurable max block ticks
++            if (EntropyConfig.blockTickingModulo > 0 && (EntropyConfig.blockTickingModulo == 1 || MinecraftServer.currentTick % EntropyConfig.blockTickingModulo == 0)) this.blockTicks.tick(j, paperConfig().environment.maxBlockTicks, this::tickBlock); // Paper - configurable max block ticks // Starforge - Pluto tick controls
+             gameprofilerfiller.popPush("fluidTicks");
+-            this.fluidTicks.tick(j, paperConfig().environment.maxFluidTicks, this::tickFluid); // Paper - configurable max fluid ticks
++            if (EntropyConfig.fluidTickingModulo > 0 && (EntropyConfig.fluidTickingModulo == 1 || MinecraftServer.currentTick % EntropyConfig.fluidTickingModulo == 0)) this.fluidTicks.tick(j, paperConfig().environment.maxFluidTicks, this::tickFluid); // Paper - configurable max fluid ticks // Starforge - Pluto tick controls
+             gameprofilerfiller.pop();
+         }
+         this.timings.scheduledBlocks.stopTiming(); // Paper
+@@ -860,7 +861,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         gameprofilerfiller.popPush("raid");
+         if (flag) {
+             this.timings.raids.startTiming(); // Paper - timings
+-            this.raids.tick();
++            if (EntropyConfig.raidTickingModulo > 0 && (EntropyConfig.raidTickingModulo == 1 || MinecraftServer.currentTick % EntropyConfig.raidTickingModulo == 0)) this.raids.tick(); // Starforge - Pluto tick controls
+             this.timings.raids.stopTiming(); // Paper - timings
+         }
+ 
+@@ -871,7 +872,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         gameprofilerfiller.popPush("blockEvents");
+         if (flag) {
+             this.timings.doSounds.startTiming(); // Spigot
+-            this.runBlockEvents();
++            if (EntropyConfig.blockEventTickingModulo > 0 && (EntropyConfig.blockEventTickingModulo == 1 || MinecraftServer.currentTick % EntropyConfig.blockEventTickingModulo == 0)) this.runBlockEvents(); // Starforge - Pluto tick controls
+             this.timings.doSounds.stopTiming(); // Spigot
+         }
+ 
+@@ -892,7 +893,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                 gameprofilerfiller.pop();
+             }
+ 
+-            org.spigotmc.ActivationRange.activateEntities(this); // Spigot
++            if (!EntropyConfig.disableEntityActivation && MinecraftServer.currentTick % EntropyConfig.entityActivationInterval == 0) org.spigotmc.ActivationRange.activateEntities(this); // Spigot // Starforge - Pluto tick controls
+             this.timings.entityTick.startTiming(); // Spigot
+             this.entityTickList.forEach((entity) -> {
+                 entity.activatedPriorityReset = false; // Pufferfish - DAB
+@@ -901,7 +902,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                         entity.discard();
+                     } else if (!tickratemanager.isEntityFrozen(entity)) {
+                         gameprofilerfiller.push("checkDespawn");
+-                        entity.checkDespawn();
++                        if (EntropyConfig.entityDespawnCheckModulo > 0 && (EntropyConfig.entityDespawnCheckModulo == 1 || MinecraftServer.currentTick % EntropyConfig.entityDespawnCheckModulo == 0)) entity.checkDespawn(); // Starforge - Pluto tick controls
+                         gameprofilerfiller.pop();
+                         if (true || this.chunkSource.chunkMap.getDistanceManager().inEntityTickingRange(entity.chunkPosition().toLong())) { // Paper - now always true if in the ticking list
+                             Entity entity1 = entity.getVehicle();
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index 848cd4910c454ed9cff56aa00c4f31e2657d180e..c74e1e4c3f4a705a515ed80c7abbab4bd5af325e 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -366,6 +366,11 @@ public class ServerPlayer extends Player {
+                 ServerPlayer.this.connection.send(new ClientboundContainerSetSlotPacket(handler.containerId, handler.incrementStateId(), slot, stack));
+             }
+ 
++            @Override
++            public ServerPlayer player() {
++                return ServerPlayer.this;
++            }
++
+             @Override
+             public void sendCarriedChange(AbstractContainerMenu handler, ItemStack stack) {
+                 ServerPlayer.this.connection.send(new ClientboundContainerSetSlotPacket(-1, handler.incrementStateId(), -1, stack));
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index e666fc60ef20b439c64cb93db37feb13eac8129e..43434b87927ed717bd712e51bdb2aa04d5b38a4d 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1294,7 +1294,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+                     }
+                 }
+ 
+-                this.tryCheckInsideBlocks();
++                if (EntropyConfig.entityInsideBlockCheck > 0 && (EntropyConfig.entityInsideBlockCheck == 1 || this.tickCount % EntropyConfig.entityInsideBlockCheck == 0)) this.tryCheckInsideBlocks(); // Starforge - Pluto tick controls
+                 float f = this.getBlockSpeedFactor();
+ 
+                 this.setDeltaMovement(this.getDeltaMovement().multiply((double) f, 1.0D, (double) f));
+@@ -1418,7 +1418,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     protected void processFlappingMovement() {
+         if (this.isFlapping()) {
+             this.onFlap();
+-            if (this.getMovementEmission().emitsEvents()) {
++            if (!EntropyConfig.disableFlapEvents && this.getMovementEmission().emitsEvents()) {
+                 this.gameEvent(GameEvent.FLAP);
+             }
+         }
+@@ -1876,10 +1876,24 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+         return this.wasTouchingWater;
+     }
+ 
++    private int lastRainCheck = -1;
++    private boolean lastRainCheckResult;
++
+     public boolean isInRain() {
++        if (this.tickCount - this.lastRainCheck < EntropyConfig.entityRainCheckRate) {
++            return this.lastRainCheckResult;
++        }
++
++        this.lastRainCheck = this.tickCount;
++        if (!this.level().dimensionType().hasSkyLight()) {
++            this.lastRainCheckResult = false;
++            return false;
++        }
++
+         BlockPos blockposition = this.blockPosition();
+ 
+-        return this.level().isRainingAt(blockposition) || this.level().isRainingAt(BlockPos.containing((double) blockposition.getX(), this.getBoundingBox().maxY, (double) blockposition.getZ()));
++        this.lastRainCheckResult = this.level().isRainingAt(blockposition) || this.level().isRainingAt(BlockPos.containing((double) blockposition.getX(), this.getBoundingBox().maxY, (double) blockposition.getZ()));
++        return this.lastRainCheckResult;
+     }
+ 
+     public boolean isInBubbleColumn() {
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 967e9d76e0adef5456c8c3f1cc1415fb20e6f73b..f5cbca1b77674f5eac453514a59285f730425865 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -3534,7 +3534,7 @@ public abstract class LivingEntity extends Entity implements Attackable {
+             this.checkAutoSpinAttack(axisalignedbb, this.getBoundingBox());
+         }
+ 
+-        this.pushEntities();
++        if (EntropyConfig.entityPushingModulo > 0 && (EntropyConfig.entityPushingModulo == 1 || this.tickCount % EntropyConfig.entityPushingModulo == 0)) this.pushEntities(); // Starforge - Pluto tick controls
+         this.level().getProfiler().pop();
+         // Paper start - Add EntityMoveEvent
+         if (((ServerLevel) this.level()).hasEntityMoveEvent && !(this instanceof net.minecraft.world.entity.player.Player)) {
+diff --git a/src/main/java/net/minecraft/world/entity/Mob.java b/src/main/java/net/minecraft/world/entity/Mob.java
+index a6b48b4eab6e0e98205fd9cafc3cde5ad39651af..c63cd35e03ba6d46d10f4d1e72136132a51bae26 100644
+--- a/src/main/java/net/minecraft/world/entity/Mob.java
++++ b/src/main/java/net/minecraft/world/entity/Mob.java
+@@ -10,6 +10,7 @@ import java.util.Optional;
+ import java.util.UUID;
+ import java.util.function.Predicate;
+ import javax.annotation.Nullable;
++import dev.orhidea.starforge.EntropyConfig;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.NonNullList;
+ import net.minecraft.core.Vec3i;
+@@ -228,10 +229,10 @@ public abstract class Mob extends LivingEntity implements Targeting {
+     public void inactiveTick() {
+         super.inactiveTick();
+         boolean isThrottled = gg.pufferfish.pufferfish.PufferfishConfig.throttleInactiveGoalSelectorTick && _pufferfish_inactiveTickDisableCounter++ % 20 != 0; // Pufferfish - throttle inactive goal selector ticking
+-        if (this.goalSelector.inactiveTick(this.activatedPriority, true) && !isThrottled) { // Pufferfish - pass activated priroity // Pufferfish - throttle inactive goal selector ticking
++        if (!EntropyConfig.disableGoalSelector && this.goalSelector.inactiveTick(this.activatedPriority, true) && !isThrottled) { // Pufferfish - pass activated priroity // Pufferfish - throttle inactive goal selector ticking
+             this.goalSelector.tick();
+         }
+-        if (this.targetSelector.inactiveTick(this.activatedPriority, true)) { // Pufferfish - pass activated priority
++        if (!EntropyConfig.disableTargetSelector && this.targetSelector.inactiveTick(this.activatedPriority, true)) { // Pufferfish - pass activated priority
+             this.targetSelector.tick();
+         }
+     }
+@@ -915,20 +916,20 @@ public abstract class Mob extends LivingEntity implements Targeting {
+ 
+         if (i % 2 != 0 && this.tickCount > 1) {
+             this.level().getProfiler().push("targetSelector");
+-            if (this.targetSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
++            if (!EntropyConfig.disableTargetSelector && this.targetSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
+             this.targetSelector.tickRunningGoals(false);
+             this.level().getProfiler().pop();
+             this.level().getProfiler().push("goalSelector");
+-            if (this.goalSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
++            if (!EntropyConfig.disableGoalSelector && this.goalSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
+             this.goalSelector.tickRunningGoals(false);
+             this.level().getProfiler().pop();
+         } else {
+             this.level().getProfiler().push("targetSelector");
+-            if (this.targetSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
++            if (!EntropyConfig.disableTargetSelector && this.targetSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
+             this.targetSelector.tick();
+             this.level().getProfiler().pop();
+             this.level().getProfiler().push("goalSelector");
+-            if (this.goalSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
++            if (!EntropyConfig.disableGoalSelector && this.goalSelector.inactiveTick(this.activatedPriority, false)) // Pufferfish - use this to alternate ticking
+             this.goalSelector.tick();
+             this.level().getProfiler().pop();
+         }
+diff --git a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+index 29ce703a79f7893ac990ad80e0f1c1cf63546e6c..ebbb8ccabec497e84001de439b8697b62cac6de2 100644
+--- a/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/ItemEntity.java
+@@ -5,6 +5,7 @@ import java.util.List;
+ import java.util.Objects;
+ import java.util.UUID;
+ import javax.annotation.Nullable;
++import dev.orhidea.starforge.EntropyConfig;
+ import net.minecraft.tags.DamageTypeTags;
+ import net.minecraft.tags.FluidTags;
+ import net.minecraft.tags.ItemTags;
+@@ -198,10 +199,10 @@ public class ItemEntity extends Entity implements TraceableEntity {
+                 }
+             }
+ 
+-            boolean flag = Mth.floor(this.xo) != Mth.floor(this.getX()) || Mth.floor(this.yo) != Mth.floor(this.getY()) || Mth.floor(this.zo) != Mth.floor(this.getZ());
+-            int i = flag ? 2 : 40;
++            boolean flag = this.xo != this.getX() || this.yo != this.getY() || this.zo != this.getZ();
++            int i = flag ? EntropyConfig.itemMergeMovingInterval : EntropyConfig.itemMergeStaticInterval;
+ 
+-            if (this.tickCount % i == 0 && !this.level().isClientSide && this.isMergable()) {
++            if ((!flag || !EntropyConfig.disableItemMergeCheckWhileMoving) && this.tickCount % i == 0 && !this.level().isClientSide && this.isMergable()) {
+                 this.mergeWithNeighbours();
+             }
+ 
+diff --git a/src/main/java/net/minecraft/world/inventory/AbstractContainerMenu.java b/src/main/java/net/minecraft/world/inventory/AbstractContainerMenu.java
+index 48f634a7521d31c1e9dfd3cfc83139d428dbd37a..4aecef8b45615ed5efecb647d0ed1719593fc4b1 100644
+--- a/src/main/java/net/minecraft/world/inventory/AbstractContainerMenu.java
++++ b/src/main/java/net/minecraft/world/inventory/AbstractContainerMenu.java
+@@ -313,7 +313,7 @@ public abstract class AbstractContainerMenu {
+         if (!this.suppressRemoteUpdates) {
+             ItemStack itemstack1 = (ItemStack) this.remoteSlots.get(slot);
+ 
+-            if (!ItemStack.matches(itemstack1, stack)) {
++            if (!this.matchesRemote(itemstack1, stack)) {
+                 ItemStack itemstack2 = (ItemStack) copySupplier.get();
+ 
+                 this.remoteSlots.set(slot, itemstack2);
+@@ -341,7 +341,7 @@ public abstract class AbstractContainerMenu {
+ 
+     private void synchronizeCarriedToRemote() {
+         if (!this.suppressRemoteUpdates) {
+-            if (!ItemStack.matches(this.getCarried(), this.remoteCarried)) {
++            if (!this.matchesRemote(this.getCarried(), this.remoteCarried)) {
+                 this.remoteCarried = this.getCarried().copy();
+                 if (this.synchronizer != null) {
+                     this.synchronizer.sendCarriedChange(this, this.remoteCarried);
+@@ -351,6 +351,13 @@ public abstract class AbstractContainerMenu {
+         }
+     }
+ 
++    private boolean matchesRemote(final ItemStack stack, final ItemStack other) {
++        if (this.synchronizer != null && this.synchronizer.player() != null && this.synchronizer.player().getBukkitEntity().simplifyContainerDesyncCheck()) {
++            return stack == other || (stack.getCount() == other.getCount() && ItemStack.isSameItem(stack, other));
++        }
++        return ItemStack.matches(stack, other);
++    }
++
+     public void setRemoteSlot(int slot, ItemStack stack) {
+         this.remoteSlots.set(slot, stack.copy());
+     }
+diff --git a/src/main/java/net/minecraft/world/inventory/ContainerSynchronizer.java b/src/main/java/net/minecraft/world/inventory/ContainerSynchronizer.java
+index a45ef5fcffc05e4e30801b73e82d29c6dbf5b8fd..5b619a88b742ee97306325d4f29493080f4c122f 100644
+--- a/src/main/java/net/minecraft/world/inventory/ContainerSynchronizer.java
++++ b/src/main/java/net/minecraft/world/inventory/ContainerSynchronizer.java
+@@ -1,6 +1,7 @@
+ package net.minecraft.world.inventory;
+ 
+ import net.minecraft.core.NonNullList;
++import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.item.ItemStack;
+ 
+ public interface ContainerSynchronizer {
+@@ -12,4 +13,8 @@ public interface ContainerSynchronizer {
+     void sendCarriedChange(AbstractContainerMenu handler, ItemStack stack);
+ 
+     void sendDataChange(AbstractContainerMenu handler, int property, int value);
++
++    default @org.jetbrains.annotations.Nullable ServerPlayer player() {
++        return null;
++    }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/BlockCollisions.java b/src/main/java/net/minecraft/world/level/BlockCollisions.java
+index 48710a60561824a3670ebef3601f284dd7089481..3ffec66892601904d3ec726561e2a455a8668603 100644
+--- a/src/main/java/net/minecraft/world/level/BlockCollisions.java
++++ b/src/main/java/net/minecraft/world/level/BlockCollisions.java
+@@ -3,6 +3,7 @@ package net.minecraft.world.level;
+ import com.google.common.collect.AbstractIterator;
+ import java.util.function.BiFunction;
+ import javax.annotation.Nullable;
++import dev.orhidea.starforge.EntropyConfig;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Cursor3D;
+ import net.minecraft.core.SectionPos;
+@@ -31,6 +32,12 @@ public class BlockCollisions<T> extends AbstractIterator<T> {
+ 
+     public BlockCollisions(
+         CollisionGetter world, @Nullable Entity entity, AABB box, boolean forEntity, BiFunction<BlockPos.MutableBlockPos, VoxelShape, T> resultFunction
++    ) {
++        this(world, entity, box, forEntity, resultFunction, false);
++    }
++
++    public BlockCollisions(
++        CollisionGetter world, @Nullable Entity entity, AABB box, boolean forEntity, BiFunction<BlockPos.MutableBlockPos, VoxelShape, T> resultFunction, boolean shrinkVerticalRange
+     ) {
+         this.context = entity == null ? CollisionContext.empty() : CollisionContext.of(entity);
+         this.pos = new BlockPos.MutableBlockPos();
+@@ -45,6 +52,10 @@ public class BlockCollisions<T> extends AbstractIterator<T> {
+         int l = Mth.floor(box.maxY + 1.0E-7) + 1;
+         int m = Mth.floor(box.minZ - 1.0E-7) - 1;
+         int n = Mth.floor(box.maxZ + 1.0E-7) + 1;
++        if (shrinkVerticalRange && entity != null && EntropyConfig.useSupportingBlockLookupOptimisation) {
++            k = Mth.floor(box.minY - 1.0E-7);
++            l = Mth.floor(box.minY);
++        }
+         this.cursor = new Cursor3D(i, k, m, j, l, n);
+     }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/CollisionGetter.java b/src/main/java/net/minecraft/world/level/CollisionGetter.java
+index dc877fe2e3c53b353baa59c125232e425fee67d7..6cad595fbf216694ac065513d82a945763e0c0ab 100644
+--- a/src/main/java/net/minecraft/world/level/CollisionGetter.java
++++ b/src/main/java/net/minecraft/world/level/CollisionGetter.java
+@@ -111,7 +111,7 @@ public interface CollisionGetter extends BlockGetter {
+     default Optional<BlockPos> findSupportingBlock(Entity entity, AABB box) {
+         BlockPos blockPos = null;
+         double d = Double.MAX_VALUE;
+-        BlockCollisions<BlockPos> blockCollisions = new BlockCollisions<>(this, entity, box, false, (pos, voxelShape) -> pos);
++        BlockCollisions<BlockPos> blockCollisions = new BlockCollisions<>(this, entity, box, false, (pos, voxelShape) -> pos, true);
+ 
+         while (blockCollisions.hasNext()) {
+             BlockPos blockPos2 = blockCollisions.next();
+diff --git a/src/main/java/net/minecraft/world/level/block/BambooSaplingBlock.java b/src/main/java/net/minecraft/world/level/block/BambooSaplingBlock.java
+index 8430f4ecee42e7112b7bafe04cec237b22dade88..27f57c743d2ebb4cb337ab1c75e02ca5c346b4da 100644
+--- a/src/main/java/net/minecraft/world/level/block/BambooSaplingBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/BambooSaplingBlock.java
+@@ -45,7 +45,7 @@ public class BambooSaplingBlock extends Block implements BonemealableBlock {
+ 
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+-        if (random.nextFloat() < (world.spigotConfig.bambooModifier / (100.0f * 3)) && world.isEmptyBlock(pos.above()) && world.getRawBrightness(pos.above(), 0) >= 9) { // Spigot - SPIGOT-7159: Better modifier resolution
++        if (random.nextFloat() < (world.spigotConfig.bambooModifier / (100.0f * 3)) && world.isEmptyBlock(pos.above()) && (dev.orhidea.starforge.EntropyConfig.bambooSaplingIgnoreLightLevel || world.getRawBrightness(pos.above(), 0) >= 9)) { // Spigot - SPIGOT-7159: Better modifier resolution
+             this.growBamboo(world, pos);
+         }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/BambooStalkBlock.java b/src/main/java/net/minecraft/world/level/block/BambooStalkBlock.java
+index e8dc4ea90d74036dacb0785fcb9125df192a4c22..77fb8671e8ad21bf71c24b32b3afe4c9ee6c915d 100644
+--- a/src/main/java/net/minecraft/world/level/block/BambooStalkBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/BambooStalkBlock.java
+@@ -134,7 +134,7 @@ public class BambooStalkBlock extends Block implements BonemealableBlock {
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+         if ((Integer) state.getValue(BambooStalkBlock.STAGE) == 0) {
+-            if (random.nextFloat() < (world.spigotConfig.bambooModifier / (100.0f * 3)) && world.isEmptyBlock(pos.above()) && world.getRawBrightness(pos.above(), 0) >= 9) { // Spigot - SPIGOT-7159: Better modifier resolution
++            if (random.nextFloat() < (world.spigotConfig.bambooModifier / (100.0f * 3)) && world.isEmptyBlock(pos.above()) && (dev.orhidea.starforge.EntropyConfig.bambooStalkIgnoreLightLevel || world.getRawBrightness(pos.above(), 0) >= 9)) { // Spigot - SPIGOT-7159: Better modifier resolution
+                 int i = this.getHeightBelowUpToMax(world, pos) + 1;
+ 
+                 if (i < world.paperConfig().maxGrowthHeight.bamboo.max) { // Paper - Configurable cactus/bamboo/reed growth height
+diff --git a/src/main/java/net/minecraft/world/level/block/CropBlock.java b/src/main/java/net/minecraft/world/level/block/CropBlock.java
+index 5b96d1ae4bd8546311e986bc312b1f85883a67f4..5d3b2168044bfdad3d62aa35cde6b342dc5c87f7 100644
+--- a/src/main/java/net/minecraft/world/level/block/CropBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/CropBlock.java
+@@ -77,7 +77,7 @@ public class CropBlock extends BushBlock implements BonemealableBlock {
+ 
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+-        if (world.getRawBrightness(pos, 0) >= 9) {
++        if (dev.orhidea.starforge.EntropyConfig.cropIgnoreLightLevel || world.getRawBrightness(pos, 0) >= 9) {
+             int i = this.getAge(state);
+ 
+             if (i < this.getMaxAge()) {
+@@ -173,7 +173,7 @@ public class CropBlock extends BushBlock implements BonemealableBlock {
+     }
+ 
+     protected static boolean hasSufficientLight(LevelReader world, BlockPos pos) {
+-        return world.getRawBrightness(pos, 0) >= 8;
++        return dev.orhidea.starforge.EntropyConfig.cropIgnoreLightLevel || world.getRawBrightness(pos, 0) >= 8;
+     }
+ 
+     @Override
+diff --git a/src/main/java/net/minecraft/world/level/block/MushroomBlock.java b/src/main/java/net/minecraft/world/level/block/MushroomBlock.java
+index 1f27ae8abd5891a0b8057b454f2210b088b4e95a..a18a5a47d6f9eeb0565540782ce91bb8e97a399f 100644
+--- a/src/main/java/net/minecraft/world/level/block/MushroomBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/MushroomBlock.java
+@@ -95,7 +95,7 @@ public class MushroomBlock extends BushBlock implements BonemealableBlock {
+         BlockPos blockposition1 = pos.below();
+         BlockState iblockdata1 = world.getBlockState(blockposition1);
+ 
+-        return iblockdata1.is(BlockTags.MUSHROOM_GROW_BLOCK) ? true : world.getRawBrightness(pos, 0) < 13 && this.mayPlaceOn(iblockdata1, world, blockposition1);
++        return iblockdata1.is(BlockTags.MUSHROOM_GROW_BLOCK) ? true : (dev.orhidea.starforge.EntropyConfig.mushroomIgnoreLightLevel || world.getRawBrightness(pos, 0) < 13) && this.mayPlaceOn(iblockdata1, world, blockposition1);
+     }
+ 
+     public boolean growMushroom(ServerLevel world, BlockPos pos, BlockState state, RandomSource random) {
+diff --git a/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java b/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
+index 5f1ec3f69295760b7b8097916c82cbf9ddd49700..f5bc2dda2dc1cffed847e41d869c300f5122ddf4 100644
+--- a/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/PitcherCropBlock.java
+@@ -146,7 +146,7 @@ public class PitcherCropBlock extends DoublePlantBlock implements BonemealableBl
+     }
+ 
+     private static boolean sufficientLight(LevelReader world, BlockPos pos) {
+-        return CropBlock.hasSufficientLight(world, pos);
++        return dev.orhidea.starforge.EntropyConfig.pitcherCropIgnoreLightLevel || CropBlock.hasSufficientLight(world, pos);
+     }
+ 
+     private static boolean isLower(BlockState state) {
+diff --git a/src/main/java/net/minecraft/world/level/block/SaplingBlock.java b/src/main/java/net/minecraft/world/level/block/SaplingBlock.java
+index 3ff0d08e4964aae82d8e51d3b8bf9aa002096f81..7577faef3d4d22223a14e7821bf0d92d0867c5be 100644
+--- a/src/main/java/net/minecraft/world/level/block/SaplingBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/SaplingBlock.java
+@@ -55,7 +55,7 @@ public class SaplingBlock extends BushBlock implements BonemealableBlock {
+ 
+     @Override
+     public void randomTick(net.minecraft.world.level.block.state.BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+-        if (world.getMaxLocalRawBrightness(pos.above()) >= 9 && random.nextFloat() < (world.spigotConfig.saplingModifier / (100.0f * 7))) { // Spigot - SPIGOT-7159: Better modifier resolution
++        if ((dev.orhidea.starforge.EntropyConfig.saplingIgnoreLightLevel || world.getMaxLocalRawBrightness(pos.above()) >= 9) && random.nextFloat() < (world.spigotConfig.saplingModifier / (100.0f * 7))) { // Spigot - SPIGOT-7159: Better modifier resolution
+             this.advanceTree(world, pos, state, random);
+         }
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/StemBlock.java b/src/main/java/net/minecraft/world/level/block/StemBlock.java
+index 121a872cd750a87b779895687ae1abf5bb77b088..011b3723284266d3f2bd494cc1915a7dc82110a5 100644
+--- a/src/main/java/net/minecraft/world/level/block/StemBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/StemBlock.java
+@@ -72,7 +72,7 @@ public class StemBlock extends BushBlock implements BonemealableBlock {
+ 
+     @Override
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+-        if (world.getRawBrightness(pos, 0) >= 9) {
++        if (dev.orhidea.starforge.EntropyConfig.stemIgnoreLightLevel || world.getRawBrightness(pos, 0) >= 9) {
+             float f = CropBlock.getGrowthSpeed(this, world, pos);
+ 
+             if (random.nextFloat() < ((this == Blocks.PUMPKIN_STEM ? world.spigotConfig.pumpkinModifier : world.spigotConfig.melonModifier) / (100.0f * (Math.floor((25.0F / f) + 1))))) { // Spigot - SPIGOT-7159: Better modifier resolution
+diff --git a/src/main/java/net/minecraft/world/level/block/SweetBerryBushBlock.java b/src/main/java/net/minecraft/world/level/block/SweetBerryBushBlock.java
+index 62ed86114c1a6e724ccfea119a331356d0a22600..23b71ce082abe50f7b149495e718a163f7cac370 100644
+--- a/src/main/java/net/minecraft/world/level/block/SweetBerryBushBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/SweetBerryBushBlock.java
+@@ -72,7 +72,7 @@ public class SweetBerryBushBlock extends BushBlock implements BonemealableBlock
+     public void randomTick(BlockState state, ServerLevel world, BlockPos pos, RandomSource random) {
+         int i = (Integer) state.getValue(SweetBerryBushBlock.AGE);
+ 
+-        if (i < 3 && random.nextFloat() < (world.spigotConfig.sweetBerryModifier / (100.0f * 5)) && world.getRawBrightness(pos.above(), 0) >= 9) { // Spigot - SPIGOT-7159: Better modifier resolution
++        if (i < 3 && random.nextFloat() < (world.spigotConfig.sweetBerryModifier / (100.0f * 5)) && (dev.orhidea.starforge.EntropyConfig.sweetBerryBushIgnoreLightLevel || world.getRawBrightness(pos.above(), 0) >= 9)) { // Spigot - SPIGOT-7159: Better modifier resolution
+             BlockState iblockdata1 = (BlockState) state.setValue(SweetBerryBushBlock.AGE, i + 1);
+ 
+             if (!CraftEventFactory.handleBlockGrowEvent(world, pos, iblockdata1, 2)) return; // CraftBukkit
+diff --git a/src/main/java/net/minecraft/world/level/gameevent/GameEventDispatcher.java b/src/main/java/net/minecraft/world/level/gameevent/GameEventDispatcher.java
+index 37ae0f928440af5b2fdfe68ad6c9c54e8c95c82c..da052d4205191a470e86543b0021fef9d418d3c4 100644
+--- a/src/main/java/net/minecraft/world/level/gameevent/GameEventDispatcher.java
++++ b/src/main/java/net/minecraft/world/level/gameevent/GameEventDispatcher.java
+@@ -4,6 +4,8 @@ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.Iterator;
+ import java.util.List;
++import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
++import dev.orhidea.starforge.EntropyConfig;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.SectionPos;
+ import net.minecraft.network.protocol.game.DebugPackets;
+@@ -19,6 +21,7 @@ import org.bukkit.event.world.GenericGameEvent;
+ 
+ public class GameEventDispatcher {
+ 
++    private static final Object2ObjectOpenHashMap<String, org.bukkit.GameEvent> GAME_EVENT_CACHE = new Object2ObjectOpenHashMap<>();
+     private final ServerLevel level;
+ 
+     public GameEventDispatcher(ServerLevel world) {
+@@ -28,13 +31,16 @@ public class GameEventDispatcher {
+     public void post(GameEvent event, Vec3 emitterPos, GameEvent.Context emitter) {
+         int i = event.getNotificationRadius();
+         BlockPos blockposition = BlockPos.containing(emitterPos);
++        org.bukkit.GameEvent bukkitEvent = EntropyConfig.useGameEventCache ? GAME_EVENT_CACHE.computeIfAbsent(event.builtInRegistryHolder().key().location().getPath(), key -> CraftGameEvent.minecraftToBukkit(event)) : CraftGameEvent.minecraftToBukkit(event);
+         // CraftBukkit start
+-        GenericGameEvent event1 = new GenericGameEvent(CraftGameEvent.minecraftToBukkit(event), CraftLocation.toBukkit(blockposition, this.level.getWorld()), (emitter.sourceEntity() == null) ? null : emitter.sourceEntity().getBukkitEntity(), i, !Bukkit.isPrimaryThread());
+-        this.level.getCraftServer().getPluginManager().callEvent(event1);
+-        if (event1.isCancelled()) {
+-            return;
++        if (bukkitEvent != null) {
++            GenericGameEvent event1 = new GenericGameEvent(bukkitEvent, CraftLocation.toBukkit(blockposition, this.level.getWorld()), (emitter.sourceEntity() == null) ? null : emitter.sourceEntity().getBukkitEntity(), i, !Bukkit.isPrimaryThread());
++            this.level.getCraftServer().getPluginManager().callEvent(event1);
++            if (event1.isCancelled()) {
++                return;
++            }
++            i = event1.getRadius();
+         }
+-        i = event1.getRadius();
+         // CraftBukkit end
+         int j = SectionPos.blockToSectionCoord(blockposition.getX() - i);
+         int k = SectionPos.blockToSectionCoord(blockposition.getY() - i);
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftStatistic.java b/src/main/java/org/bukkit/craftbukkit/CraftStatistic.java
+index 52f3765a13024544e677b16788ced59542be93b8..38e483e5881f4a9d2893d2e000a98948a968f61e 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftStatistic.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftStatistic.java
+@@ -225,6 +225,7 @@ public enum CraftStatistic {
+     }
+ 
+     public static void setStatistic(ServerStatsCounter manager, Statistic statistic, int newValue, ServerPlayer player) {
++        if (newValue < 0) return; // Starforge - Pluto stat overflow guard
+         Preconditions.checkArgument(statistic != null, "Statistic cannot be null");
+         Preconditions.checkArgument(statistic.getType() == Type.UNTYPED, "Must supply additional parameter for this statistic");
+         Preconditions.checkArgument(newValue >= 0, "Value must be greater than or equal to 0");
+@@ -267,6 +268,7 @@ public enum CraftStatistic {
+     }
+ 
+     public static void setStatistic(ServerStatsCounter manager, Statistic statistic, Material material, int newValue, ServerPlayer player) {
++        if (newValue < 0) return; // Starforge - Pluto stat overflow guard
+         Preconditions.checkArgument(statistic != null, "Statistic cannot be null");
+         Preconditions.checkArgument(material != null, "Material cannot be null");
+         Preconditions.checkArgument(newValue >= 0, "Value must be greater than or equal to 0");
+@@ -311,6 +313,7 @@ public enum CraftStatistic {
+     }
+ 
+     public static void setStatistic(ServerStatsCounter manager, Statistic statistic, EntityType entityType, int newValue, ServerPlayer player) {
++        if (newValue < 0) return; // Starforge - Pluto stat overflow guard
+         Preconditions.checkArgument(statistic != null, "Statistic cannot be null");
+         Preconditions.checkArgument(entityType != null, "EntityType cannot be null");
+         Preconditions.checkArgument(newValue >= 0, "Value must be greater than or equal to 0");
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+index e8e4489bcd64fde1b3226bdc7a7cc612508bda3f..81ceea112e59dfac030b67ef4c56a4f3dad78539 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftEntity.java
+@@ -4,6 +4,7 @@ import com.google.common.base.Function;
+ import com.google.common.base.Preconditions;
+ import com.google.common.base.Predicates;
+ import com.google.common.collect.ImmutableSet;
++import dev.orhidea.starforge.EntropyConfig;
+ import com.google.common.collect.Lists;
+ import java.util.List;
+ import java.util.Set;
+@@ -646,6 +647,10 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
+             name = name.substring(0, 256);
+         }
+ 
++        if (EntropyConfig.useCustomNameOptimisation) {
++            this.getHandle().setCustomName(CraftChatMessage.fromStringOrNull(name, false, true));
++            return;
++        }
+         this.getHandle().setCustomName(CraftChatMessage.fromStringOrNull(name));
+     }
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 44f4665db613c558078df5bb49106e4ca5679dfe..ef695cc98faf9d03a77710b8d64c2d734e5b00b5 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -199,6 +199,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     public org.bukkit.event.player.PlayerResourcePackStatusEvent.Status resourcePackStatus; // Paper - more resource pack API
+     private static final boolean DISABLE_CHANNEL_LIMIT = System.getProperty("paper.disableChannelLimit") != null; // Paper - add a flag to disable the channel limit
+     private long lastSaveTime; // Paper - getLastPlayed replacement API
++    private boolean simplifyContainerDesyncCheck = io.papermc.paper.configuration.GlobalConfiguration.get().unsupportedSettings.simplifyRemoteItemMatching;
+ 
+     public CraftPlayer(CraftServer server, ServerPlayer entity) {
+         super(server, entity);
+@@ -3456,4 +3457,12 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     public void setSendViewDistance(final int viewDistance) {
+         this.getHandle().setSendViewDistance(viewDistance);
+     }
++
++    public boolean simplifyContainerDesyncCheck() {
++        return this.simplifyContainerDesyncCheck;
++    }
++
++    public void setSimplifyContainerDesyncCheck(final boolean simplifyContainerDesyncCheck) {
++        this.simplifyContainerDesyncCheck = simplifyContainerDesyncCheck;
++    }
+ }
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/CraftChatMessage.java b/src/main/java/org/bukkit/craftbukkit/util/CraftChatMessage.java
+index 753200057e74b8e2d5274894b982e6ee946a559e..bd148286e29cb9417e44231263d37f7d501aafff 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/CraftChatMessage.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/CraftChatMessage.java
+@@ -42,6 +42,7 @@ public final class CraftChatMessage {
+     }
+ 
+     private static final class StringMessage {
++        private static final Pattern INCREMENTAL_PATTERN_NO_LINKS = Pattern.compile("(" + ChatColor.COLOR_CHAR + "[0-9a-fk-orx])|(\\n)", Pattern.CASE_INSENSITIVE);
+         private static final Pattern INCREMENTAL_PATTERN = Pattern.compile("(" + String.valueOf(org.bukkit.ChatColor.COLOR_CHAR) + "[0-9a-fk-orx])|((?:(?:https?):\\/\\/)?(?:[-\\w_\\.]{2,}\\.[a-z]{2,4}.*?(?=[\\.\\?!,;:]?(?:[" + String.valueOf(org.bukkit.ChatColor.COLOR_CHAR) + " \\n]|$))))|(\\n)", Pattern.CASE_INSENSITIVE);
+         // Separate pattern with no group 3, new lines are part of previous string
+         private static final Pattern INCREMENTAL_PATTERN_KEEP_NEWLINES = Pattern.compile("(" + String.valueOf(org.bukkit.ChatColor.COLOR_CHAR) + "[0-9a-fk-orx])|((?:(?:https?):\\/\\/)?(?:[-\\w_\\.]{2,}\\.[a-z]{2,4}.*?(?=[\\.\\?!,;:]?(?:[" + String.valueOf(org.bukkit.ChatColor.COLOR_CHAR) + " ]|$))))", Pattern.CASE_INSENSITIVE);
+@@ -58,6 +59,10 @@ public final class CraftChatMessage {
+         private final String message;
+ 
+         private StringMessage(String message, boolean keepNewlines, boolean plain) {
++            this(message, keepNewlines, plain, false);
++        }
++
++        private StringMessage(String message, boolean keepNewlines, boolean plain, boolean noLinks) {
+             this.message = message;
+             if (message == null) {
+                 this.output = new Component[]{this.currentChatComponent};
+@@ -65,7 +70,7 @@ public final class CraftChatMessage {
+             }
+             this.list.add(this.currentChatComponent);
+ 
+-            Matcher matcher = (keepNewlines ? StringMessage.INCREMENTAL_PATTERN_KEEP_NEWLINES : StringMessage.INCREMENTAL_PATTERN).matcher(message);
++            Matcher matcher = (noLinks ? StringMessage.INCREMENTAL_PATTERN_NO_LINKS : keepNewlines ? StringMessage.INCREMENTAL_PATTERN_KEEP_NEWLINES : StringMessage.INCREMENTAL_PATTERN).matcher(message);
+             String match = null;
+             boolean needsAdd = false;
+             boolean hasReset = false; // Paper - Improve Legacy Component serialization size
+@@ -189,6 +194,10 @@ public final class CraftChatMessage {
+         return (message == null || message.isEmpty()) ? null : CraftChatMessage.fromString(message, keepNewlines)[0];
+     }
+ 
++    public static Component fromStringOrNull(String message, boolean keepNewlines, boolean noLinks) {
++        return (message == null || message.isEmpty()) ? null : noLinks ? new StringMessage(message, keepNewlines, false, true).getOutput()[0] : CraftChatMessage.fromString(message, keepNewlines)[0];
++    }
++
+     public static Component[] fromString(String message) {
+         return CraftChatMessage.fromString(message, false);
+     }
