@@ -1,0 +1,238 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:25:51 +0200
+Subject: [PATCH] Offload hotspot density checks async
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index bf143e83a9ac68428516672e70602f4c3b090079..fd00a88f6617ec48fe2d1b6c320af098ca880db0 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -286,6 +286,7 @@ public class EntropyConfig {
+     public static int hotspotEnableThreshold;
+     public static int hotspotDisableThreshold;
+     public static int hotspotUpdateInterval;
++    public static boolean hotspotAsyncComputation;
+     public static double hotspotTrackingRangeModifier;
+     public static int hotspotTrackedPairUpdateInterval;
+     public static int hotspotAdvancementFlushInterval;
+@@ -363,6 +364,7 @@ public class EntropyConfig {
+         hotspotEnableThreshold = Math.max(1, getInt("starforge.performance.hotspot.enable-threshold", 100, "Enable hotspot packet reduction when this many players are within the hotspot radius."));
+         hotspotDisableThreshold = Math.max(1, Math.min(hotspotEnableThreshold, getInt("starforge.performance.hotspot.disable-threshold", 80, "Disable hotspot packet reduction once nearby players drop below this threshold.")));
+         hotspotUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.update-interval", 10, "How often each player recomputes hotspot state, in ticks."));
++        hotspotAsyncComputation = getBoolean("starforge.performance.hotspot.async-computation", true, "Compute hotspot density from world snapshots on a worker thread and reuse cached results on the main thread.");
+         hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.60D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
+         hotspotTrackedPairUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.tracker-pair-update-interval", 2, "How often to re-check already tracked entity/viewer pairs while a viewer is inside a hotspot."));
+         hotspotAdvancementFlushInterval = Math.max(1, getInt("starforge.performance.hotspot.advancement-flush-interval", 5, "How often hotspot players flush dirty advancement progress."));
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index a248bd820ded8d24e08b6d7d4fda54df5781534f..109f5dcb9045d9380e1bafa2ed557ce87b374ff3 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -74,6 +74,28 @@ public class EntropyUserManager {
+             return;
+         }
+ 
++        if (EntropyConfig.hotspotAsyncComputation) {
++            HotspotAsyncManager.Instance.schedule(player.serverLevel());
++            Boolean hotspotActive = HotspotAsyncManager.Instance.getHotspotState(player.serverLevel(), player.getUUID());
++            if (hotspotActive != null) {
++                this.applyHotspotState(player, data, hotspotActive);
++                return;
++            }
++        }
++
++        this.applyHotspotState(player, data, this.computeHotspotState(player, data));
++    }
++
++    private void applyHotspotState(ServerPlayer player, FpsData data, boolean hotspotActive) {
++        data.HotspotActive = hotspotActive;
++        data.HotspotItemsHidden = hotspotActive && EntropyConfig.hotspotHideItems;
++        data.HotspotExperienceOrbsHidden = hotspotActive && EntropyConfig.hotspotHideExperienceOrbs;
++        data.HotspotParticlesHidden = hotspotActive && EntropyConfig.hotspotHideParticles;
++        data.HotspotSoundsHidden = hotspotActive && EntropyConfig.hotspotHideSounds;
++        player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
++    }
++
++    private boolean computeHotspotState(ServerPlayer player, FpsData data) {
+         double radius = EntropyConfig.hotspotRadius;
+         double radiusSquared = radius * radius;
+         int nearbyPlayers = 0;
+@@ -102,16 +124,9 @@ public class EntropyUserManager {
+             }
+         }
+ 
+-        boolean hotspotActive = data.HotspotActive
++        return data.HotspotActive
+             ? nearbyPlayers >= EntropyConfig.hotspotDisableThreshold
+             : nearbyPlayers >= EntropyConfig.hotspotEnableThreshold;
+-
+-        data.HotspotActive = hotspotActive;
+-        data.HotspotItemsHidden = hotspotActive && EntropyConfig.hotspotHideItems;
+-        data.HotspotExperienceOrbsHidden = hotspotActive && EntropyConfig.hotspotHideExperienceOrbs;
+-        data.HotspotParticlesHidden = hotspotActive && EntropyConfig.hotspotHideParticles;
+-        data.HotspotSoundsHidden = hotspotActive && EntropyConfig.hotspotHideSounds;
+-        player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
+     }
+ 
+     private ReferenceList<ServerPlayer> getHotspotCandidates(ServerPlayer player, double radius) {
+diff --git a/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java b/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..20b9eb7eeb366ae14a1ad26f989fde04b36f4e2e
+--- /dev/null
++++ b/src/main/java/dev/orhidea/starforge/HotspotAsyncManager.java
+@@ -0,0 +1,155 @@
++package dev.orhidea.starforge;
++
++import io.papermc.paper.util.MCUtil;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.server.level.ServerLevel;
++import net.minecraft.server.level.ServerPlayer;
++import net.minecraft.util.Mth;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.UUID;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.concurrent.atomic.AtomicReference;
++
++public final class HotspotAsyncManager {
++    public static final HotspotAsyncManager Instance = new HotspotAsyncManager();
++
++    private static final WorldState EMPTY_WORLD_STATE = new WorldState();
++    private final ConcurrentHashMap<String, WorldState> worldStates = new ConcurrentHashMap<>();
++
++    private HotspotAsyncManager() {
++    }
++
++    public void schedule(ServerLevel level) {
++        if (!EntropyConfig.hotspotEnabled || !EntropyConfig.hotspotAsyncComputation) {
++            return;
++        }
++
++        WorldState state = this.worldStates.computeIfAbsent(level.dimension().location().toString(), ignored -> new WorldState());
++        int currentTick = MinecraftServer.currentTick;
++        if (state.lastScheduledTick == currentTick) {
++            return;
++        }
++        state.lastScheduledTick = currentTick;
++
++        if (!state.running.compareAndSet(false, true)) {
++            return;
++        }
++
++        List<ServerPlayer> players = level.players();
++        if (players.isEmpty()) {
++            state.result.set(WorldResult.EMPTY);
++            state.running.set(false);
++            return;
++        }
++
++        PlayerSnapshot[] snapshots = new PlayerSnapshot[players.size()];
++        for (int i = 0, len = players.size(); i < len; ++i) {
++            ServerPlayer player = players.get(i);
++            snapshots[i] = new PlayerSnapshot(
++                player.getUUID(),
++                player.getX(),
++                player.getZ(),
++                EntropyUserManager.Instance.isHotspotActive(player)
++            );
++        }
++
++        double radius = EntropyConfig.hotspotRadius;
++        int enableThreshold = EntropyConfig.hotspotEnableThreshold;
++        int disableThreshold = EntropyConfig.hotspotDisableThreshold;
++        int sourceTick = currentTick;
++        String worldKey = level.dimension().location().toString();
++
++        CompletableFuture
++            .supplyAsync(() -> computeWorldResult(snapshots, radius, enableThreshold, disableThreshold, sourceTick), MCUtil.asyncExecutor)
++            .whenComplete((result, throwable) -> {
++                if (throwable == null && result != null) {
++                    state.result.set(result);
++                } else if (throwable != null) {
++                    MinecraftServer.LOGGER.warn("Failed to compute hotspot state asynchronously for {}", worldKey, throwable);
++                }
++                state.running.set(false);
++            });
++    }
++
++    public Boolean getHotspotState(ServerLevel level, UUID playerId) {
++        WorldResult result = this.getWorldState(level).result.get();
++        if (result.tick < 0) {
++            return null;
++        }
++        return result.hotspotStates.get(playerId);
++    }
++
++    public boolean hasFreshResult(ServerLevel level) {
++        return this.getWorldState(level).result.get().tick >= 0;
++    }
++
++    private WorldState getWorldState(ServerLevel level) {
++        return this.worldStates.getOrDefault(level.dimension().location().toString(), EMPTY_WORLD_STATE);
++    }
++
++    private static WorldResult computeWorldResult(PlayerSnapshot[] players, double radius, int enableThreshold, int disableThreshold, int tick) {
++        double radiusSquared = radius * radius;
++        int cellSize = Math.max(1, Mth.floor(radius));
++        HashMap<Long, ArrayList<Integer>> cells = new HashMap<>();
++
++        for (int i = 0, len = players.length; i < len; ++i) {
++            PlayerSnapshot player = players[i];
++            long cellKey = getCellKey(Mth.floor(player.x / cellSize), Mth.floor(player.z / cellSize));
++            cells.computeIfAbsent(cellKey, ignored -> new ArrayList<>()).add(i);
++        }
++
++        HashMap<UUID, Boolean> hotspotStates = new HashMap<>(players.length);
++        for (int i = 0, len = players.length; i < len; ++i) {
++            PlayerSnapshot player = players[i];
++            int requiredPlayers = player.hotspotActive ? disableThreshold : enableThreshold;
++            int nearbyPlayers = 0;
++            int cellX = Mth.floor(player.x / cellSize);
++            int cellZ = Mth.floor(player.z / cellSize);
++
++            outer:
++            for (int searchX = cellX - 1; searchX <= cellX + 1; ++searchX) {
++                for (int searchZ = cellZ - 1; searchZ <= cellZ + 1; ++searchZ) {
++                    ArrayList<Integer> cell = cells.get(getCellKey(searchX, searchZ));
++                    if (cell == null) {
++                        continue;
++                    }
++
++                    for (int index : cell) {
++                        PlayerSnapshot other = players[index];
++                        double deltaX = player.x - other.x;
++                        double deltaZ = player.z - other.z;
++                        if (deltaX * deltaX + deltaZ * deltaZ <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
++                            break outer;
++                        }
++                    }
++                }
++            }
++
++            hotspotStates.put(player.uuid, player.hotspotActive ? nearbyPlayers >= disableThreshold : nearbyPlayers >= enableThreshold);
++        }
++
++        return new WorldResult(tick, hotspotStates);
++    }
++
++    private static long getCellKey(int x, int z) {
++        return ((long) z << 32) | (x & 0xFFFFFFFFL);
++    }
++
++    private record PlayerSnapshot(UUID uuid, double x, double z, boolean hotspotActive) {
++    }
++
++    private static final class WorldState {
++        private final AtomicBoolean running = new AtomicBoolean(false);
++        private final AtomicReference<WorldResult> result = new AtomicReference<>(WorldResult.EMPTY);
++        private volatile int lastScheduledTick = Integer.MIN_VALUE;
++    }
++
++    private record WorldResult(int tick, HashMap<UUID, Boolean> hotspotStates) {
++        private static final WorldResult EMPTY = new WorldResult(-1, new HashMap<>());
++    }
++}
