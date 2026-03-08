@@ -1,0 +1,1124 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 15:30:08 +0200
+Subject: [PATCH] Rename package segment to starforge
+
+
+diff --git a/src/main/java/dev/orhidea/entropy/ChunkLoader.java b/src/main/java/dev/orhidea/starforge/ChunkLoader.java
+similarity index 96%
+rename from src/main/java/dev/orhidea/entropy/ChunkLoader.java
+rename to src/main/java/dev/orhidea/starforge/ChunkLoader.java
+index f2dd925d519fcc9b00931cb87bc163802b7e55f1..73b757749f91f9adfdd760a08552bfc1bed1d077 100644
+--- a/src/main/java/dev/orhidea/entropy/ChunkLoader.java
++++ b/src/main/java/dev/orhidea/starforge/ChunkLoader.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy;
++package dev.orhidea.starforge;
+ 
+ import net.minecraft.server.level.FullChunkStatus;
+ import net.minecraft.server.level.ServerLevel;
+@@ -20,3 +20,4 @@ public class ChunkLoader {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+similarity index 99%
+rename from src/main/java/dev/orhidea/entropy/EntropyConfig.java
+rename to src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index fb060ebeefe51215da110013ef58ce1bd6dd88d9..877b32e343eaf60754dc4adde0b74d7db06759b0 100644
+--- a/src/main/java/dev/orhidea/entropy/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy;
++package dev.orhidea.starforge;
+ 
+ import it.unimi.dsi.fastutil.ints.Int2IntMap;
+ import net.minecraft.server.MinecraftServer;
+@@ -8,8 +8,8 @@ import org.jetbrains.annotations.Nullable;
+ import org.simpleyaml.configuration.comments.CommentType;
+ import org.simpleyaml.configuration.file.YamlFile;
+ import org.simpleyaml.exceptions.InvalidConfigurationException;
+-import dev.orhidea.entropy.explosion.ExplosionProofItems;
+-import dev.orhidea.entropy.explosion.UnbreakableDurability;
++import dev.orhidea.starforge.explosion.ExplosionProofItems;
++import dev.orhidea.starforge.explosion.UnbreakableDurability;
+ 
+ import java.io.File;
+ import java.io.IOException;
+@@ -358,3 +358,4 @@ public class EntropyConfig {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+similarity index 97%
+rename from src/main/java/dev/orhidea/entropy/EntropyUserManager.java
+rename to src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index ce5ba2e88faf6ada6eb647b927e023b96f46de28..e510f52af3ffd965903e1c109059ad8db8da8aad 100644
+--- a/src/main/java/dev/orhidea/entropy/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy;
++package dev.orhidea.starforge;
+ 
+ import net.minecraft.world.entity.player.Player;
+ 
+@@ -48,3 +48,4 @@ public class EntropyUserManager {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/EntropyVersionFetcher.java b/src/main/java/dev/orhidea/starforge/EntropyVersionFetcher.java
+similarity index 95%
+rename from src/main/java/dev/orhidea/entropy/EntropyVersionFetcher.java
+rename to src/main/java/dev/orhidea/starforge/EntropyVersionFetcher.java
+index 030dd9bcd8915bea6ebf1e2fda118b2a7d295a61..22a43742e5ce186f17d2764378826bb54af77f6a 100644
+--- a/src/main/java/dev/orhidea/entropy/EntropyVersionFetcher.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyVersionFetcher.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy;
++package dev.orhidea.starforge;
+ 
+ import com.destroystokyo.paper.util.VersionFetcher;
+ import net.kyori.adventure.text.Component;
+@@ -20,3 +20,4 @@ public class EntropyVersionFetcher implements VersionFetcher {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/command/EntropyCommandBase.java b/src/main/java/dev/orhidea/starforge/command/EntropyCommandBase.java
+similarity index 97%
+rename from src/main/java/dev/orhidea/entropy/command/EntropyCommandBase.java
+rename to src/main/java/dev/orhidea/starforge/command/EntropyCommandBase.java
+index 67e195e50f54d466e463fe373661afb159e791cb..b8d647b3430bbdf023c90011de76fe0f4430a848 100644
+--- a/src/main/java/dev/orhidea/entropy/command/EntropyCommandBase.java
++++ b/src/main/java/dev/orhidea/starforge/command/EntropyCommandBase.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.command;
++package dev.orhidea.starforge.command;
+ 
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.JoinConfiguration;
+@@ -47,3 +47,4 @@ public abstract class EntropyCommandBase extends Command {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/command/EntropyCommandData.java b/src/main/java/dev/orhidea/starforge/command/EntropyCommandData.java
+similarity index 91%
+rename from src/main/java/dev/orhidea/entropy/command/EntropyCommandData.java
+rename to src/main/java/dev/orhidea/starforge/command/EntropyCommandData.java
+index a1ffe70ab820ec3bb1e919116c4e2e61dc25bbbd..5d1c8d9de8f40c061d593219c69d7c0374620d16 100644
+--- a/src/main/java/dev/orhidea/entropy/command/EntropyCommandData.java
++++ b/src/main/java/dev/orhidea/starforge/command/EntropyCommandData.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.command;
++package dev.orhidea.starforge.command;
+ 
+ import java.lang.annotation.Retention;
+ import java.lang.annotation.RetentionPolicy;
+@@ -14,3 +14,4 @@ public @interface EntropyCommandData {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/command/EntropyCommandLoader.java b/src/main/java/dev/orhidea/starforge/command/EntropyCommandLoader.java
+similarity index 71%
+rename from src/main/java/dev/orhidea/entropy/command/EntropyCommandLoader.java
+rename to src/main/java/dev/orhidea/starforge/command/EntropyCommandLoader.java
+index 3a64d20969505c8dd35ee85e0557c4992e762d0e..a81393d6d8eb24a38462182d9a4df48edf136a07 100644
+--- a/src/main/java/dev/orhidea/entropy/command/EntropyCommandLoader.java
++++ b/src/main/java/dev/orhidea/starforge/command/EntropyCommandLoader.java
+@@ -1,9 +1,9 @@
+-package dev.orhidea.entropy.command;
++package dev.orhidea.starforge.command;
+ 
+ import net.minecraft.server.MinecraftServer;
+ import org.bukkit.command.Command;
+-import dev.orhidea.entropy.command.commands.EntropyCommand;
+-import dev.orhidea.entropy.command.commands.FpsCommand;
++import dev.orhidea.starforge.command.commands.EntropyCommand;
++import dev.orhidea.starforge.command.commands.FpsCommand;
+ 
+ public class EntropyCommandLoader {
+     public static void loadCommands() {
+@@ -16,3 +16,4 @@ public class EntropyCommandLoader {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/command/commands/EntropyCommand.java b/src/main/java/dev/orhidea/starforge/command/commands/EntropyCommand.java
+similarity index 91%
+rename from src/main/java/dev/orhidea/entropy/command/commands/EntropyCommand.java
+rename to src/main/java/dev/orhidea/starforge/command/commands/EntropyCommand.java
+index 970866bef554aa298905ca9a815da21265d8fb10..c9a6e3045d7c9d354506e2ce2624cc1e0eea4aff 100644
+--- a/src/main/java/dev/orhidea/entropy/command/commands/EntropyCommand.java
++++ b/src/main/java/dev/orhidea/starforge/command/commands/EntropyCommand.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.command.commands;
++package dev.orhidea.starforge.command.commands;
+ 
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.format.NamedTextColor;
+@@ -8,9 +8,9 @@ import org.bukkit.Location;
+ import org.bukkit.command.Command;
+ import org.bukkit.command.CommandSender;
+ import org.jetbrains.annotations.NotNull;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.command.EntropyCommandBase;
+-import dev.orhidea.entropy.command.EntropyCommandData;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.command.EntropyCommandBase;
++import dev.orhidea.starforge.command.EntropyCommandData;
+ 
+ import java.io.IOException;
+ import java.util.Collections;
+@@ -52,3 +52,4 @@ public class EntropyCommand extends EntropyCommandBase {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/command/commands/FpsCommand.java b/src/main/java/dev/orhidea/starforge/command/commands/FpsCommand.java
+similarity index 76%
+rename from src/main/java/dev/orhidea/entropy/command/commands/FpsCommand.java
+rename to src/main/java/dev/orhidea/starforge/command/commands/FpsCommand.java
+index 9ef7cbd8845ab0446aa98eb1e2b0322d687780c9..86ee3fb52b74f0394c6fb2b5e5d452ac888de93e 100644
+--- a/src/main/java/dev/orhidea/entropy/command/commands/FpsCommand.java
++++ b/src/main/java/dev/orhidea/starforge/command/commands/FpsCommand.java
+@@ -1,14 +1,14 @@
+-package dev.orhidea.entropy.command.commands;
++package dev.orhidea.starforge.command.commands;
+ 
+ import org.bukkit.Bukkit;
+ import org.bukkit.command.CommandSender;
+ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.entity.Player;
+ import org.jetbrains.annotations.NotNull;
+-import dev.orhidea.entropy.command.EntropyCommandBase;
+-import dev.orhidea.entropy.command.EntropyCommandData;
+-import dev.orhidea.entropy.gui.EntropyGuiBase;
+-import dev.orhidea.entropy.gui.guis.FpsGui;
++import dev.orhidea.starforge.command.EntropyCommandBase;
++import dev.orhidea.starforge.command.EntropyCommandData;
++import dev.orhidea.starforge.gui.EntropyGuiBase;
++import dev.orhidea.starforge.gui.guis.FpsGui;
+ 
+ @EntropyCommandData(name = "fps", description = "FPS Command", usageMessage = "/fps", permission = "starforge.command.fps", hasArgs = false)
+ public class FpsCommand extends EntropyCommandBase {
+@@ -24,3 +24,4 @@ public class FpsCommand extends EntropyCommandBase {
+ }
+ 
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/connection/IPMap.java b/src/main/java/dev/orhidea/starforge/connection/IPMap.java
+similarity index 96%
+rename from src/main/java/dev/orhidea/entropy/connection/IPMap.java
+rename to src/main/java/dev/orhidea/starforge/connection/IPMap.java
+index 951b0ec97d5448c35d8e94f98bc08fe4523d590c..044fb2cbf8fdeb2197555bdb9d8eb804a9d1713a 100644
+--- a/src/main/java/dev/orhidea/entropy/connection/IPMap.java
++++ b/src/main/java/dev/orhidea/starforge/connection/IPMap.java
+@@ -1,7 +1,7 @@
+-package dev.orhidea.entropy.connection;
++package dev.orhidea.starforge.connection;
+ 
+ import com.google.common.hash.Hashing;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ import java.net.Inet4Address;
+ import java.net.InetAddress;
+@@ -64,3 +64,4 @@ public class IPMap {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/entity/CraftEntropyFallingBlock.java b/src/main/java/dev/orhidea/starforge/entity/CraftEntropyFallingBlock.java
+similarity index 93%
+rename from src/main/java/dev/orhidea/entropy/entity/CraftEntropyFallingBlock.java
+rename to src/main/java/dev/orhidea/starforge/entity/CraftEntropyFallingBlock.java
+index ef78d2d4a3bce5dabcd1cacac6d17d55df8a3365..48e526bc77f7d979d5981a7111a651944d3282ea 100644
+--- a/src/main/java/dev/orhidea/entropy/entity/CraftEntropyFallingBlock.java
++++ b/src/main/java/dev/orhidea/starforge/entity/CraftEntropyFallingBlock.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.entity;
++package dev.orhidea.starforge.entity;
+ 
+ import net.minecraft.world.entity.item.FallingBlockEntity;
+ import org.bukkit.craftbukkit.CraftServer;
+@@ -21,3 +21,4 @@ public class CraftEntropyFallingBlock extends CraftFallingBlock implements Entro
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/entity/CraftEntropyTntPrimed.java b/src/main/java/dev/orhidea/starforge/entity/CraftEntropyTntPrimed.java
+similarity index 93%
+rename from src/main/java/dev/orhidea/entropy/entity/CraftEntropyTntPrimed.java
+rename to src/main/java/dev/orhidea/starforge/entity/CraftEntropyTntPrimed.java
+index d8eb0761247c821405052893081a0e08d5bf6247..7fe215cd128f2a9445f59e344ad8249a2d2455c5 100644
+--- a/src/main/java/dev/orhidea/entropy/entity/CraftEntropyTntPrimed.java
++++ b/src/main/java/dev/orhidea/starforge/entity/CraftEntropyTntPrimed.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.entity;
++package dev.orhidea.starforge.entity;
+ 
+ import net.minecraft.world.entity.item.PrimedTnt;
+ import org.bukkit.craftbukkit.CraftServer;
+@@ -21,3 +21,4 @@ public class CraftEntropyTntPrimed extends CraftTNTPrimed implements EntropyTntP
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/BlockDensity.java b/src/main/java/dev/orhidea/starforge/explosion/BlockDensity.java
+similarity index 94%
+rename from src/main/java/dev/orhidea/entropy/explosion/BlockDensity.java
+rename to src/main/java/dev/orhidea/starforge/explosion/BlockDensity.java
+index 7bb82888438a238359a4fffad40b34e67e59793f..34ab79a064ec0f4f4449370bce001c2f9d0dc6ad 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/BlockDensity.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/BlockDensity.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import net.minecraft.world.phys.AABB;
+ 
+@@ -22,3 +22,4 @@ public class BlockDensity {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/BlockStateCache.java b/src/main/java/dev/orhidea/starforge/explosion/BlockStateCache.java
+similarity index 96%
+rename from src/main/java/dev/orhidea/entropy/explosion/BlockStateCache.java
+rename to src/main/java/dev/orhidea/starforge/explosion/BlockStateCache.java
+index fd552a273f3dfbe2dc2be8356526cc90e054d153..71d862d19601e2b81645099170d79289687bc1e7 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/BlockStateCache.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/BlockStateCache.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import net.minecraft.core.BlockPos;
+@@ -46,3 +46,4 @@ public class BlockStateCache extends BlockStateHandler
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/BlockStateHandler.java b/src/main/java/dev/orhidea/starforge/explosion/BlockStateHandler.java
+similarity index 92%
+rename from src/main/java/dev/orhidea/entropy/explosion/BlockStateHandler.java
+rename to src/main/java/dev/orhidea/starforge/explosion/BlockStateHandler.java
+index 9796ed32d67cc4580d1defb68aef58c75924d9fe..e04ee25859ec5ec7c6ebef1949ce6c75fdadaf6d 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/BlockStateHandler.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/BlockStateHandler.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.level.Level;
+@@ -22,3 +22,4 @@ public class BlockStateHandler {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/CachedEntityExplosionDamageCalculator.java b/src/main/java/dev/orhidea/starforge/explosion/CachedEntityExplosionDamageCalculator.java
+similarity index 98%
+rename from src/main/java/dev/orhidea/entropy/explosion/CachedEntityExplosionDamageCalculator.java
+rename to src/main/java/dev/orhidea/starforge/explosion/CachedEntityExplosionDamageCalculator.java
+index 12fd7d89842c6179498582414055f7b07b5ab195..5add90452ecca9afdb5c1c025ec536709d8b0877 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/CachedEntityExplosionDamageCalculator.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/CachedEntityExplosionDamageCalculator.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+@@ -45,3 +45,4 @@ public class CachedEntityExplosionDamageCalculator extends ExplosionDamageCalcul
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/DensityCache.java b/src/main/java/dev/orhidea/starforge/explosion/DensityCache.java
+similarity index 91%
+rename from src/main/java/dev/orhidea/entropy/explosion/DensityCache.java
+rename to src/main/java/dev/orhidea/starforge/explosion/DensityCache.java
+index 6bf1e1fb6498bbb736b6c9d53fc53ebbff892fbc..825aba430bbeb63ace210438c35f37e8e506a2b3 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/DensityCache.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/DensityCache.java
+@@ -1,9 +1,9 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+ import net.minecraft.world.phys.AABB;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public class DensityCache {
+     public final Long2ObjectMap<BlockDensity> cache = new Long2ObjectOpenHashMap<>();
+@@ -26,3 +26,4 @@ public class DensityCache {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/ExplosionProofItems.java b/src/main/java/dev/orhidea/starforge/explosion/ExplosionProofItems.java
+similarity index 87%
+rename from src/main/java/dev/orhidea/entropy/explosion/ExplosionProofItems.java
+rename to src/main/java/dev/orhidea/starforge/explosion/ExplosionProofItems.java
+index 143934cddb41e4268efa294e2564d4bdb46a4f10..bd70df1434e7fc0802aaae084a6eb83f0a8f0621 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/ExplosionProofItems.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/ExplosionProofItems.java
+@@ -1,10 +1,10 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import net.minecraft.world.entity.item.ItemEntity;
+ import org.bukkit.Material;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.util.ConfigUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.util.ConfigUtil;
+ 
+ public class ExplosionProofItems {
+     private static ObjectOpenHashSet<Material> explosionProofItems = new ObjectOpenHashSet<>();
+@@ -24,3 +24,4 @@ public class ExplosionProofItems {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/explosion/UnbreakableDurability.java b/src/main/java/dev/orhidea/starforge/explosion/UnbreakableDurability.java
+similarity index 96%
+rename from src/main/java/dev/orhidea/entropy/explosion/UnbreakableDurability.java
+rename to src/main/java/dev/orhidea/starforge/explosion/UnbreakableDurability.java
+index 970c7240ffdec37abde7e95687a2106e4f0b87c6..d12c795ebfae42bc14986ce92a0ed1a53ac0bcfa 100644
+--- a/src/main/java/dev/orhidea/entropy/explosion/UnbreakableDurability.java
++++ b/src/main/java/dev/orhidea/starforge/explosion/UnbreakableDurability.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.explosion;
++package dev.orhidea.starforge.explosion;
+ 
+ import it.unimi.dsi.fastutil.ints.Int2IntMap;
+ import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+@@ -12,8 +12,8 @@ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.Block;
+ import net.minecraft.world.level.block.state.BlockState;
+ import org.bukkit.Location;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.event.AssignDurabilityEvent;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.event.AssignDurabilityEvent;
+ 
+ import java.util.HashMap;
+ import java.util.Map;
+@@ -99,3 +99,4 @@ public class UnbreakableDurability {
+         return map;
+     }
+ }
++
+diff --git a/src/main/java/dev/orhidea/entropy/gui/EntropyGuiBase.java b/src/main/java/dev/orhidea/starforge/gui/EntropyGuiBase.java
+similarity index 96%
+rename from src/main/java/dev/orhidea/entropy/gui/EntropyGuiBase.java
+rename to src/main/java/dev/orhidea/starforge/gui/EntropyGuiBase.java
+index c6c9d084650f6695fd6a85d57d9b4a21f1d5c726..6bb755de7437777cd0d37e857aec058c07ae6399 100644
+--- a/src/main/java/dev/orhidea/entropy/gui/EntropyGuiBase.java
++++ b/src/main/java/dev/orhidea/starforge/gui/EntropyGuiBase.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.gui;
++package dev.orhidea.starforge.gui;
+ 
+ import net.minecraft.world.entity.player.Player;
+ import org.bukkit.Bukkit;
+@@ -7,7 +7,7 @@ import org.bukkit.Material;
+ import org.bukkit.inventory.Inventory;
+ import org.bukkit.inventory.ItemStack;
+ import org.bukkit.inventory.meta.ItemMeta;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ import java.util.HashMap;
+ 
+@@ -67,3 +67,4 @@ public abstract class EntropyGuiBase {
+     public record InventoryWrapper(EntropyGuiBase gui, Inventory inventory) {}
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/gui/guis/FpsGui.java b/src/main/java/dev/orhidea/starforge/gui/guis/FpsGui.java
+similarity index 95%
+rename from src/main/java/dev/orhidea/entropy/gui/guis/FpsGui.java
+rename to src/main/java/dev/orhidea/starforge/gui/guis/FpsGui.java
+index fa525deb055181c4117c8e5e021c69828f9c524d..499f73231b106c1d0bce029757bc1de6bd0b90dc 100644
+--- a/src/main/java/dev/orhidea/entropy/gui/guis/FpsGui.java
++++ b/src/main/java/dev/orhidea/starforge/gui/guis/FpsGui.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.gui.guis;
++package dev.orhidea.starforge.gui.guis;
+ 
+ import net.minecraft.world.entity.player.Player;
+ import org.bukkit.ChatColor;
+@@ -7,9 +7,9 @@ import org.bukkit.enchantments.Enchantment;
+ import org.bukkit.inventory.ItemFlag;
+ import org.bukkit.inventory.ItemStack;
+ import org.bukkit.inventory.meta.ItemMeta;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.EntropyUserManager;
+-import dev.orhidea.entropy.gui.EntropyGuiBase;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.EntropyUserManager;
++import dev.orhidea.starforge.gui.EntropyGuiBase;
+ 
+ import java.util.HashMap;
+ 
+@@ -106,3 +106,4 @@ public class FpsGui extends EntropyGuiBase {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/shapes/MovingBlockHelper.java b/src/main/java/dev/orhidea/starforge/shapes/MovingBlockHelper.java
+similarity index 98%
+rename from src/main/java/dev/orhidea/entropy/shapes/MovingBlockHelper.java
+rename to src/main/java/dev/orhidea/starforge/shapes/MovingBlockHelper.java
+index 2b59a0674239ad4f97fcb220c64220d36c699b00..00c88005ea4f0003412247e65ef43de5a3d2663c 100644
+--- a/src/main/java/dev/orhidea/entropy/shapes/MovingBlockHelper.java
++++ b/src/main/java/dev/orhidea/starforge/shapes/MovingBlockHelper.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.shapes;
++package dev.orhidea.starforge.shapes;
+ 
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.level.block.Blocks;
+@@ -57,3 +57,4 @@ public class MovingBlockHelper {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/shapes/OffsetVoxelShapeCache.java b/src/main/java/dev/orhidea/starforge/shapes/OffsetVoxelShapeCache.java
+similarity index 88%
+rename from src/main/java/dev/orhidea/entropy/shapes/OffsetVoxelShapeCache.java
+rename to src/main/java/dev/orhidea/starforge/shapes/OffsetVoxelShapeCache.java
+index ebaaf42999d392883949af7be719cd6f886ce870..81878bd27608df18e6d561ce0df8d4193f507e65 100644
+--- a/src/main/java/dev/orhidea/entropy/shapes/OffsetVoxelShapeCache.java
++++ b/src/main/java/dev/orhidea/starforge/shapes/OffsetVoxelShapeCache.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.shapes;
++package dev.orhidea.starforge.shapes;
+ 
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+@@ -8,3 +8,4 @@ public interface OffsetVoxelShapeCache {
+     void setShape(float offset, Direction direction, VoxelShape offsetShape);
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/util/CannonUtil.java b/src/main/java/dev/orhidea/starforge/util/CannonUtil.java
+similarity index 94%
+rename from src/main/java/dev/orhidea/entropy/util/CannonUtil.java
+rename to src/main/java/dev/orhidea/starforge/util/CannonUtil.java
+index 8540afe39059fd7dc4c2b81250a0e3425df0ff41..9d65f29ea2261010c641052aeb1e20280bc4c98f 100644
+--- a/src/main/java/dev/orhidea/entropy/util/CannonUtil.java
++++ b/src/main/java/dev/orhidea/starforge/util/CannonUtil.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.util;
++package dev.orhidea.starforge.util;
+ 
+ import io.papermc.paper.util.CollisionUtil;
+ import net.minecraft.core.BlockPos;
+@@ -8,7 +8,7 @@ import net.minecraft.world.level.block.Blocks;
+ import net.minecraft.world.phys.AABB;
+ import org.bukkit.event.Cancellable;
+ import org.bukkit.util.Vector;
+-import dev.orhidea.entropy.event.IsInCannonEvent;
++import dev.orhidea.starforge.event.IsInCannonEvent;
+ 
+ import java.util.UUID;
+ 
+@@ -34,3 +34,4 @@ public class CannonUtil {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/util/ConfigUtil.java b/src/main/java/dev/orhidea/starforge/util/ConfigUtil.java
+similarity index 93%
+rename from src/main/java/dev/orhidea/entropy/util/ConfigUtil.java
+rename to src/main/java/dev/orhidea/starforge/util/ConfigUtil.java
+index 1acde7364a3e25747fd8fbec3d1425d0e1792f10..56773133e671d9d7e12a68b844c3d924c8294821 100644
+--- a/src/main/java/dev/orhidea/entropy/util/ConfigUtil.java
++++ b/src/main/java/dev/orhidea/starforge/util/ConfigUtil.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.util;
++package dev.orhidea.starforge.util;
+ 
+ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+ import org.bukkit.Material;
+@@ -18,3 +18,4 @@ public class ConfigUtil {
+     }
+ }
+ 
++
+diff --git a/src/main/java/dev/orhidea/entropy/util/EventUtil.java b/src/main/java/dev/orhidea/starforge/util/EventUtil.java
+similarity index 93%
+rename from src/main/java/dev/orhidea/entropy/util/EventUtil.java
+rename to src/main/java/dev/orhidea/starforge/util/EventUtil.java
+index 18f9394622579d1c36bf5ae0a66163a3e3175d26..a7b67c5af86bfa3c622529475ec27177a1bf6b09 100644
+--- a/src/main/java/dev/orhidea/entropy/util/EventUtil.java
++++ b/src/main/java/dev/orhidea/starforge/util/EventUtil.java
+@@ -1,4 +1,4 @@
+-package dev.orhidea.entropy.util;
++package dev.orhidea.starforge.util;
+ 
+ import net.minecraft.world.level.Level;
+ import org.bukkit.Bukkit;
+@@ -17,3 +17,4 @@ public class EventUtil {
+     }
+ }
+ 
++
+diff --git a/src/main/java/io/papermc/paper/util/CollisionUtil.java b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+index dc9181839783a3e63f491836e7c296e62b41a2f7..60be630f9ac94bfd8d86d79c14b44cc99946a8bd 100644
+--- a/src/main/java/io/papermc/paper/util/CollisionUtil.java
++++ b/src/main/java/io/papermc/paper/util/CollisionUtil.java
+@@ -39,7 +39,7 @@ import net.minecraft.world.phys.shapes.OffsetDoubleList;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import java.util.Arrays;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ import java.util.List;
+ import java.util.function.BiPredicate;
+ import java.util.function.Predicate;
+@@ -1866,3 +1866,4 @@ public final class CollisionUtil {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 3f8cc96900c26cc6f747bbb321a76e30c8a60f8c..f1645deccaab82dcbf20e57a42fe5b249f8c33d0 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -70,9 +70,9 @@ import org.apache.commons.lang3.Validate;
+ import org.slf4j.Logger;
+ import org.slf4j.Marker;
+ import org.slf4j.MarkerFactory;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.EntropyUserManager;
+-import dev.orhidea.entropy.connection.IPMap;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.EntropyUserManager;
++import dev.orhidea.starforge.connection.IPMap;
+ 
+ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ 
+@@ -1075,3 +1075,4 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+ }
+ 
+ 
++
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index a73291bf366a81db4b97986fd7eee199b84510c0..0ffa9fdedd733a9e01760bb5692e2c2b3d735507 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -62,7 +62,7 @@ import co.aikar.timings.MinecraftTimings; // Paper
+ import org.bukkit.event.server.ServerCommandEvent;
+ import org.bukkit.craftbukkit.util.Waitable; // Paper
+ import org.bukkit.event.server.RemoteServerCommandEvent;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class DedicatedServer extends MinecraftServer implements ServerInterface {
+@@ -225,8 +225,8 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         gg.pufferfish.pufferfish.PufferfishConfig.load(); // Pufferfish
+         gg.pufferfish.pufferfish.PufferfishCommand.init(); // Pufferfish
+ 
+-        dev.orhidea.entropy.EntropyConfig.load(); // Entropy
+-        dev.orhidea.entropy.command.EntropyCommandLoader.loadCommands(); // Entropy
++        dev.orhidea.starforge.EntropyConfig.load(); // Entropy
++        dev.orhidea.starforge.command.EntropyCommandLoader.loadCommands(); // Entropy
+ 
+         this.setPvpAllowed(dedicatedserverproperties.pvp);
+         this.setFlightAllowed(dedicatedserverproperties.allowFlight);
+@@ -884,3 +884,4 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+     // CraftBukkit end
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index afa66d63ba718ffe02e0be20f391b8ad007a9fed..848cd4910c454ed9cff56aa00c4f31e2657d180e 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -186,8 +186,8 @@ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
+ import org.bukkit.event.player.PlayerToggleSneakEvent;
+ import org.bukkit.inventory.MainHand;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.gui.EntropyGuiBase;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+ public class ServerPlayer extends Player {
+@@ -2767,3 +2767,4 @@ public class ServerPlayer extends Player {
+     // CraftBukkit end
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/level/TicketType.java b/src/main/java/net/minecraft/server/level/TicketType.java
+index e2ea0130955c536d473e45e7f69d27317ae7995a..7392b69c9f804b18fe4f044558e8da9ef995ef81 100644
+--- a/src/main/java/net/minecraft/server/level/TicketType.java
++++ b/src/main/java/net/minecraft/server/level/TicketType.java
+@@ -5,7 +5,7 @@ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Vec3i;
+ import net.minecraft.util.Unit;
+ import net.minecraft.world.level.ChunkPos;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public class TicketType<T> {
+     public static final TicketType<Long> FUTURE_AWAIT = create("future_await", Long::compareTo); // Paper
+@@ -67,3 +67,4 @@ public class TicketType<T> {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/network/ServerConnectionListener.java b/src/main/java/net/minecraft/server/network/ServerConnectionListener.java
+index 52ca4994977c3c418186c9f65746aba0948d2d9a..383d1eef05f36d00ae44b9c6120b0ce5672c0200 100644
+--- a/src/main/java/net/minecraft/server/network/ServerConnectionListener.java
++++ b/src/main/java/net/minecraft/server/network/ServerConnectionListener.java
+@@ -48,7 +48,7 @@ import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
+ import net.minecraft.server.MinecraftServer;
+ import org.slf4j.Logger;
+-import dev.orhidea.entropy.connection.IPMap;
++import dev.orhidea.starforge.connection.IPMap;
+ 
+ public class ServerConnectionListener {
+ 
+@@ -311,3 +311,4 @@ public class ServerConnectionListener {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index de9bd21c0d6cdf0be564244a6725415639b0c7b7..99f5851c7cd04d23eafb11045ee46dc28ec5fd2d 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -248,8 +248,8 @@ import org.bukkit.inventory.CraftingInventory;
+ import org.bukkit.inventory.EquipmentSlot;
+ import org.bukkit.inventory.InventoryView;
+ import org.bukkit.inventory.SmithingInventory;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.gui.EntropyGuiBase;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.gui.EntropyGuiBase;
+ // CraftBukkit end
+ 
+ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl implements ServerGamePacketListener, ServerPlayerConnection, TickablePacketListener {
+@@ -3601,3 +3601,4 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+     // Paper end - Add fail move event
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+index aab52a94ac00326867a95eedb4e41dd62a0e68f0..cea2cd6034178e99f5e9b53dc790d5345020775f 100644
+--- a/src/main/java/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerHandshakePacketListenerImpl.java
+@@ -10,7 +10,7 @@ import net.minecraft.network.protocol.handshake.ServerHandshakePacketListener;
+ import net.minecraft.network.protocol.login.ClientboundLoginDisconnectPacket;
+ import net.minecraft.network.protocol.status.ServerStatus;
+ import net.minecraft.server.MinecraftServer;
+-import dev.orhidea.entropy.connection.IPMap;
++import dev.orhidea.starforge.connection.IPMap;
+ 
+ // CraftBukkit start
+ import java.net.InetAddress;
+@@ -189,3 +189,4 @@ public class ServerHandshakePacketListenerImpl implements ServerHandshakePacketL
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index dcab73e30632d60af0e48379ba5b6d622277f767..7cbd9d59719f06690469d4823a5f936be4931480 100644
+--- a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -43,7 +43,7 @@ import org.slf4j.Logger;
+ import org.bukkit.craftbukkit.util.Waitable;
+ import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
+ import org.bukkit.event.player.PlayerPreLoginEvent;
+-import dev.orhidea.entropy.connection.IPMap;
++import dev.orhidea.starforge.connection.IPMap;
+ // CraftBukkit end
+ 
+ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener, TickablePacketListener {
+@@ -454,3 +454,4 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 370bbef665580cb566cb9d336c4103eaa46ba2a4..a0dbc93265d84be029dff4824f74715d545c8d2f 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -120,7 +120,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
+ import org.bukkit.event.player.PlayerRespawnEvent;
+ import org.bukkit.event.player.PlayerRespawnEvent.RespawnReason;
+ import org.bukkit.event.player.PlayerSpawnChangeEvent;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ // CraftBukkit end
+ 
+ public abstract class PlayerList {
+@@ -1602,3 +1602,4 @@ public abstract class PlayerList {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 4968d081fff7d533a43c71469f2021e59f36ee9a..e666fc60ef20b439c64cb93db37feb13eac8129e 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -160,11 +160,11 @@ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerTeleportEvent;
+ import org.bukkit.plugin.PluginManager;
+ import org.bukkit.util.Vector;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.event.BubbleColumnEvent;
+-import dev.orhidea.entropy.event.NonFullBlockCollideEvent;
+-import dev.orhidea.entropy.util.CannonUtil;
+-import dev.orhidea.entropy.util.EventUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.event.BubbleColumnEvent;
++import dev.orhidea.starforge.event.NonFullBlockCollideEvent;
++import dev.orhidea.starforge.util.CannonUtil;
++import dev.orhidea.starforge.util.EventUtil;
+ // CraftBukkit end
+ 
+ public abstract class Entity implements Nameable, EntityAccess, CommandSource, ScoreHolder {
+@@ -5044,3 +5044,4 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+     // Paper end - Expose entity id counter
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/LivingEntity.java b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+index 78755018ba2591d57d24cdf6df3bb9fc76ff7861..967e9d76e0adef5456c8c3f1cc1415fb20e6f73b 100644
+--- a/src/main/java/net/minecraft/world/entity/LivingEntity.java
++++ b/src/main/java/net/minecraft/world/entity/LivingEntity.java
+@@ -135,7 +135,7 @@ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.entity.EntityResurrectEvent;
+ import org.bukkit.event.entity.EntityTeleportEvent;
+ import org.bukkit.event.player.PlayerItemConsumeEvent;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ // CraftBukkit end
+ 
+ 
+@@ -4602,3 +4602,4 @@ public abstract class LivingEntity extends Entity implements Attackable {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+index 5e6be6abe465650732f528457ca8d2c87bd736b0..b4cb4e66b2b82b0135bb98286383337990e704b6 100644
+--- a/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
++++ b/src/main/java/net/minecraft/world/entity/animal/IronGolem.java
+@@ -49,7 +49,7 @@ import net.minecraft.world.level.NaturalSpawner;
+ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.level.material.Fluids;
+ import net.minecraft.world.phys.Vec3;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public class IronGolem extends AbstractGolem implements NeutralMob {
+ 
+@@ -395,3 +395,4 @@ public class IronGolem extends AbstractGolem implements NeutralMob {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+index b1497ba951a3e412e35946785209588f9fd656d4..dd711983b678e67bdd6976eb09607fe2123bba70 100644
+--- a/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/entity/item/FallingBlockEntity.java
+@@ -54,11 +54,11 @@ import org.slf4j.Logger;
+ // CraftBukkit start;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.entity.CraftEntropyFallingBlock;
+-import dev.orhidea.entropy.entity.EntropyFallingBlock;
+-import dev.orhidea.entropy.event.ConcreteHardenEvent;
+-import dev.orhidea.entropy.util.EventUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.entity.CraftEntropyFallingBlock;
++import dev.orhidea.starforge.entity.EntropyFallingBlock;
++import dev.orhidea.starforge.event.ConcreteHardenEvent;
++import dev.orhidea.starforge.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class FallingBlockEntity extends Entity {
+@@ -417,3 +417,4 @@ public class FallingBlockEntity extends Entity {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+index 6ae7130b9de76547a735a80d1c115e864bebf6c0..6f0dc96b8c9f11a12b2f6af267b3cc2711bbc672 100644
+--- a/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
++++ b/src/main/java/net/minecraft/world/entity/item/PrimedTnt.java
+@@ -23,11 +23,11 @@ import org.bukkit.Location;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.entity.ExplosionPrimeEvent;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.entity.CraftEntropyTntPrimed;
+-import dev.orhidea.entropy.event.TntFlowEvent;
+-import dev.orhidea.entropy.event.TntSpreadEvent;
+-import dev.orhidea.entropy.util.EventUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.entity.CraftEntropyTntPrimed;
++import dev.orhidea.starforge.event.TntFlowEvent;
++import dev.orhidea.starforge.event.TntSpreadEvent;
++import dev.orhidea.starforge.util.EventUtil;
+ 
+ import java.util.HashSet;
+ import java.util.UUID;
+@@ -252,3 +252,4 @@ public class PrimedTnt extends Entity implements TraceableEntity {
+     // Entropy end
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/player/Player.java b/src/main/java/net/minecraft/world/entity/player/Player.java
+index cac87beca556ce8e9dce919420f08d3b2eefbfb6..f9c8f70b07d8664d3a34eb25bd136edf52717ee6 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Player.java
++++ b/src/main/java/net/minecraft/world/entity/player/Player.java
+@@ -123,7 +123,7 @@ import org.bukkit.event.entity.EntityKnockbackEvent;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerDropItemEvent;
+ import org.bukkit.event.player.PlayerVelocityEvent;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ // CraftBukkit end
+ 
+ public abstract class Player extends LivingEntity {
+@@ -2439,3 +2439,4 @@ public abstract class Player extends LivingEntity {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+index 3e9a795d756616e589a53b8d2aebfe6f0011aedb..f82dbbf9b8eb973df374a8ab27c0b4c69ae3deb1 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/FishingHook.java
+@@ -50,7 +50,7 @@ import org.bukkit.entity.Player;
+ import org.bukkit.entity.FishHook;
+ import org.bukkit.event.entity.EntityRemoveEvent;
+ import org.bukkit.event.player.PlayerFishEvent;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ // CraftBukkit end
+ 
+ public class FishingHook extends Projectile {
+@@ -695,3 +695,4 @@ public class FishingHook extends Projectile {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+index 86fb785ea449ac56cd3e58b4ad65bbc36fd01a4f..737e5a623bf41f062fa44919d666e10457af4f70 100644
+--- a/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
++++ b/src/main/java/net/minecraft/world/entity/projectile/ThrowableProjectile.java
+@@ -13,8 +13,8 @@ import net.minecraft.world.level.block.state.BlockState;
+ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.HitResult;
+ import net.minecraft.world.phys.Vec3;
+-import dev.orhidea.entropy.ChunkLoader;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.ChunkLoader;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public abstract class ThrowableProjectile extends Projectile {
+ 
+@@ -114,3 +114,4 @@ public abstract class ThrowableProjectile extends Projectile {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/level/BaseSpawner.java b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+index d41141ac2a05b0708b9fafe6f8bd589abaa4558f..11924211dd45d315102fd0da793c507461067c11 100644
+--- a/src/main/java/net/minecraft/world/level/BaseSpawner.java
++++ b/src/main/java/net/minecraft/world/level/BaseSpawner.java
+@@ -27,7 +27,7 @@ import net.minecraft.world.level.entity.EntityTypeTest;
+ import net.minecraft.world.level.gameevent.GameEvent;
+ import net.minecraft.world.phys.AABB;
+ import org.slf4j.Logger;
+-import dev.orhidea.entropy.EntropyConfig;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public abstract class BaseSpawner {
+ 
+@@ -372,3 +372,4 @@ public abstract class BaseSpawner {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/level/Explosion.java b/src/main/java/net/minecraft/world/level/Explosion.java
+index 39eec3e5953603727aa7346cac0f2f6561c6ae76..c58709d0c32fa8f4e27763b660a4d753782a6ca8 100644
+--- a/src/main/java/net/minecraft/world/level/Explosion.java
++++ b/src/main/java/net/minecraft/world/level/Explosion.java
+@@ -52,16 +52,16 @@ import org.bukkit.craftbukkit.event.CraftEventFactory;
+ import org.bukkit.event.entity.EntityExplodeEvent;
+ import org.bukkit.Location;
+ import org.bukkit.event.block.BlockExplodeEvent;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.event.CombinedExplosionEvent;
+-import dev.orhidea.entropy.event.DetermineFallingBlockExposureEvent;
+-import dev.orhidea.entropy.event.ExplodeLavaEvent;
+-import dev.orhidea.entropy.event.ExplodeWaterloggedEvent;
+-import dev.orhidea.entropy.explosion.BlockDensity;
+-import dev.orhidea.entropy.explosion.CachedEntityExplosionDamageCalculator;
+-import dev.orhidea.entropy.explosion.DensityCache;
+-import dev.orhidea.entropy.explosion.ExplosionProofItems;
+-import dev.orhidea.entropy.util.EventUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.event.CombinedExplosionEvent;
++import dev.orhidea.starforge.event.DetermineFallingBlockExposureEvent;
++import dev.orhidea.starforge.event.ExplodeLavaEvent;
++import dev.orhidea.starforge.event.ExplodeWaterloggedEvent;
++import dev.orhidea.starforge.explosion.BlockDensity;
++import dev.orhidea.starforge.explosion.CachedEntityExplosionDamageCalculator;
++import dev.orhidea.starforge.explosion.DensityCache;
++import dev.orhidea.starforge.explosion.ExplosionProofItems;
++import dev.orhidea.starforge.util.EventUtil;
+ // CraftBukkit end
+ 
+ public class Explosion {
+@@ -979,3 +979,4 @@ public class Explosion {
+ }
+ 
+ 
++
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 961b1fd0b1027c4ead8387a70fa5edd2a3253e2c..8d5ac3d8e4fd5cebbf7019921aa472efb307c18a 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -100,11 +100,11 @@ import org.bukkit.craftbukkit.util.CraftNamespacedKey;
+ import org.bukkit.entity.SpawnCategory;
+ import org.bukkit.event.block.BlockPhysicsEvent;
+ import org.bukkit.event.world.GenericGameEvent;
+-import dev.orhidea.entropy.ChunkLoader;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.explosion.BlockStateCache;
+-import dev.orhidea.entropy.explosion.BlockStateHandler;
+-import dev.orhidea.entropy.explosion.UnbreakableDurability;
++import dev.orhidea.starforge.ChunkLoader;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.explosion.BlockStateCache;
++import dev.orhidea.starforge.explosion.BlockStateHandler;
++import dev.orhidea.starforge.explosion.UnbreakableDurability;
+ // CraftBukkit end
+ 
+ public abstract class Level implements LevelAccessor, AutoCloseable {
+@@ -1922,3 +1922,4 @@ public abstract class Level implements LevelAccessor, AutoCloseable {
+     // Paper end - optimize redstone (Alternate Current)
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/level/block/HoneyBlock.java b/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
+index a94734e5c44559072723d0d8ad312783eca60ddf..b08e01349adce409b915c6a1dec3d8f632c8016a 100644
+--- a/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
++++ b/src/main/java/net/minecraft/world/level/block/HoneyBlock.java
+@@ -21,10 +21,10 @@ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.CollisionContext;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+ import org.bukkit.Location;
+-import dev.orhidea.entropy.EntropyConfig;
+-import dev.orhidea.entropy.event.BubbleColumnEvent;
+-import dev.orhidea.entropy.event.HoneyBlockEvent;
+-import dev.orhidea.entropy.util.EventUtil;
++import dev.orhidea.starforge.EntropyConfig;
++import dev.orhidea.starforge.event.BubbleColumnEvent;
++import dev.orhidea.starforge.event.HoneyBlockEvent;
++import dev.orhidea.starforge.util.EventUtil;
+ 
+ public class HoneyBlock extends HalfTransparentBlock {
+     public static final MapCodec<HoneyBlock> CODEC = simpleCodec(HoneyBlock::new);
+@@ -143,3 +143,4 @@ public class HoneyBlock extends HalfTransparentBlock {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java b/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
+index 5845d03becfa582bc1560c9288ad9913f6b5a9ee..0fa158cba32f20797c7abd3c269d2090beaba91b 100644
+--- a/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
++++ b/src/main/java/net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java
+@@ -27,7 +27,7 @@ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.Vec3;
+ import net.minecraft.world.phys.shapes.Shapes;
+ import net.minecraft.world.phys.shapes.VoxelShape;
+-import dev.orhidea.entropy.shapes.MovingBlockHelper;
++import dev.orhidea.starforge.shapes.MovingBlockHelper;
+ 
+ public class PistonMovingBlockEntity extends BlockEntity {
+     private static final int TICKS_TO_EXTEND = 2;
+@@ -400,3 +400,4 @@ public class PistonMovingBlockEntity extends BlockEntity {
+     }
+ }
+ 
++
+diff --git a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+index ef77ccee49b6baea397c4ac75905a10c3e1d6372..1b47ff1acdde3c5e2f6d6e2e8315a3ca63a7c8ce 100644
+--- a/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
++++ b/src/main/java/net/minecraft/world/phys/shapes/VoxelShape.java
+@@ -14,7 +14,7 @@ import net.minecraft.util.Mth;
+ import net.minecraft.world.phys.AABB;
+ import net.minecraft.world.phys.BlockHitResult;
+ import net.minecraft.world.phys.Vec3;
+-import dev.orhidea.entropy.shapes.OffsetVoxelShapeCache;
++import dev.orhidea.starforge.shapes.OffsetVoxelShapeCache;
+ 
+ public abstract class VoxelShape implements OffsetVoxelShapeCache {
+     public final DiscreteVoxelShape shape; // Paper - optimise collisions - public
+@@ -915,3 +915,4 @@ public abstract class VoxelShape implements OffsetVoxelShapeCache {
+ }
+ 
+ 
++
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+index be90c6053cce942868f1b0c3069af59b20ebe595..35717ded68364e1fe1fa753d0b8070c62645e473 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/CraftMagicNumbers.java
+@@ -502,7 +502,7 @@ public final class CraftMagicNumbers implements UnsafeValues {
+ 
+     @Override
+     public com.destroystokyo.paper.util.VersionFetcher getVersionFetcher() {
+-        return new dev.orhidea.entropy.EntropyVersionFetcher(); // Entropy
++        return new dev.orhidea.starforge.EntropyVersionFetcher(); // Entropy
+     }
+ 
+     @Override
+@@ -716,3 +716,4 @@ public final class CraftMagicNumbers implements UnsafeValues {
+     }
+ }
+ 
++
+diff --git a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+index 45c33c2625f6d4a50a4e7051089b98544ff5d4f5..f7be457fc462986241d04a5c91f5b895c8733b59 100644
+--- a/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
++++ b/src/main/java/org/bukkit/craftbukkit/util/Versioning.java
+@@ -11,7 +11,7 @@ public final class Versioning {
+     public static String getBukkitVersion() {
+         String result = "Unknown-Version";
+ 
+-        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/dev.orhidea.entropy/entropy-api/pom.properties"); // Entropy
++        InputStream stream = Bukkit.class.getClassLoader().getResourceAsStream("META-INF/maven/dev.orhidea.starforge/entropy-api/pom.properties"); // Entropy
+         Properties properties = new Properties();
+ 
+         if (stream != null) {
+@@ -28,3 +28,4 @@ public final class Versioning {
+     }
+ }
+ 
++
