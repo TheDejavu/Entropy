@@ -1,0 +1,113 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:12:59 +0200
+Subject: [PATCH] Throttle hotspot metadata and equipment updates
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 536c0f02786fa7fbadfa8f5bf91096f88633c3bd..30805bf4aaaf3d9d8c3e795aabe74b0bfdbbc9f2 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -295,6 +295,8 @@ public class EntropyConfig {
+     public static boolean hotspotHideSounds;
+     public static int maxFootstepPacketsPerBroadcast;
+     public static int hotspotMaxLowPrioritySoundPacketsPerBroadcast;
++    public static int hotspotMetadataUpdateInterval;
++    public static int hotspotEquipmentUpdateInterval;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -369,6 +371,8 @@ public class EntropyConfig {
+         hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
+         hotspotMaxLowPrioritySoundPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.hotspot.max-low-priority-sound-packets-per-broadcast", -1, "Limit how many hotspot viewers receive each low-priority sound broadcast. Use -1 to disable the cap."));
++        hotspotMetadataUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.metadata-update-interval", 2, "Only send non-player hotspot metadata updates every N ticks."));
++        hotspotEquipmentUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.equipment-update-interval", 2, "Only send non-player hotspot equipment updates every N ticks."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index 0b6866762fee841ba142f004ba80235fab1df272..7139967b25835448409136d970b8c64914b005dc 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -4,7 +4,9 @@ import com.destroystokyo.paper.util.maplist.ReferenceList;
+ import io.papermc.paper.util.player.NearbyPlayers;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.ExperienceOrb;
++import net.minecraft.world.entity.LivingEntity;
+ import net.minecraft.world.entity.item.ItemEntity;
++import net.minecraft.world.entity.decoration.ArmorStand;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.entity.player.Player;
+ 
+@@ -43,6 +45,14 @@ public class EntropyUserManager {
+         return data.HotspotExperienceOrbsHidden && entity instanceof ExperienceOrb;
+     }
+ 
++    public boolean shouldThrottleHotspotMetadata(Player player, Entity entity, int interval) {
++        return this.shouldThrottleHotspotEntityUpdates(player, entity, interval, false);
++    }
++
++    public boolean shouldThrottleHotspotEquipment(Player player, Entity entity, int interval) {
++        return this.shouldThrottleHotspotEntityUpdates(player, entity, interval, true);
++    }
++
+     public void updateHotspot(ServerPlayer player) {
+         FpsData data = this.getFpsData(player);
+         if (!EntropyConfig.hotspotEnabled) {
+@@ -110,6 +120,20 @@ public class EntropyUserManager {
+         );
+     }
+ 
++    private boolean shouldThrottleHotspotEntityUpdates(Player player, Entity entity, int interval, boolean equipment) {
++        if (interval <= 1 || !this.isHotspotActive(player)) {
++            return false;
++        }
++        if (!(entity instanceof LivingEntity) || entity instanceof Player || entity instanceof ArmorStand) {
++            return false;
++        }
++        if (equipment && entity.tickCount < 1) {
++            return false;
++        }
++
++        return (net.minecraft.server.MinecraftServer.currentTick + entity.getId() + player.getId()) % interval != 0;
++    }
++
+     public static final class FpsData {
+         public boolean TntHidden;
+         public boolean SandHidden;
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index bb1bb861f90824f9295d7966a9de233d8de88f50..8aaa75dab6cd413972adbc5bf8c5143bd90aa036 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -52,6 +52,7 @@ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
+ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
++import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+@@ -405,6 +406,12 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+             if (data.HotspotSoundsHidden && (packet instanceof net.minecraft.network.protocol.game.ClientboundSoundPacket || packet instanceof net.minecraft.network.protocol.game.ClientboundSoundEntityPacket)) {
+                 return;
+             }
++            if (packet instanceof ClientboundSetEquipmentPacket p) {
++                Entity entity = player.level().getEntity(p.getEntity());
++                if (entity != null && EntropyUserManager.Instance.shouldThrottleHotspotEquipment(player, entity, EntropyConfig.hotspotEquipmentUpdateInterval)) {
++                    return;
++                }
++            }
+ 
+             // Entropy start - fps
+             if (packet instanceof ClientboundMoveEntityPacket p) {
+@@ -453,6 +460,9 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+                     }
+                     return;
+                 }
++                if (entity != null && EntropyUserManager.Instance.shouldThrottleHotspotMetadata(player, entity, EntropyConfig.hotspotMetadataUpdateInterval)) {
++                    return;
++                }
+             }
+             // Entropy end
+ 
