@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:00:46 +0200
+Subject: [PATCH] Use nearby player maps for hotspot checks
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index 9b6724318ccfdf4c8c912d7f2e544a074c6608b5..0b6866762fee841ba142f004ba80235fab1df272 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -1,5 +1,7 @@
+ package dev.orhidea.starforge;
+ 
++import com.destroystokyo.paper.util.maplist.ReferenceList;
++import io.papermc.paper.util.player.NearbyPlayers;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.ExperienceOrb;
+ import net.minecraft.world.entity.item.ItemEntity;
+@@ -54,12 +56,26 @@ public class EntropyUserManager {
+         int nearbyPlayers = 0;
+         int requiredPlayers = data.HotspotActive ? EntropyConfig.hotspotDisableThreshold : EntropyConfig.hotspotEnableThreshold;
+ 
+-        for (ServerPlayer other : player.serverLevel().players()) {
+-            if (other.isRemoved()) {
+-                continue;
++        ReferenceList<ServerPlayer> hotspotCandidates = this.getHotspotCandidates(player, radius);
++        if (hotspotCandidates != null) {
++            Object[] rawData = hotspotCandidates.getRawData();
++            for (int i = 0, len = hotspotCandidates.size(); i < len; ++i) {
++                ServerPlayer other = (ServerPlayer) rawData[i];
++                if (other.isRemoved()) {
++                    continue;
++                }
++                if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
++                    break;
++                }
+             }
+-            if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
+-                break;
++        } else {
++            for (ServerPlayer other : player.serverLevel().players()) {
++                if (other.isRemoved()) {
++                    continue;
++                }
++                if (player.distanceToSqr(other) <= radiusSquared && ++nearbyPlayers >= requiredPlayers) {
++                    break;
++                }
+             }
+         }
+ 
+@@ -75,6 +91,25 @@ public class EntropyUserManager {
+         player.trackingRangeModifier = hotspotActive ? EntropyConfig.hotspotTrackingRangeModifier : 1.0D;
+     }
+ 
++    private ReferenceList<ServerPlayer> getHotspotCandidates(ServerPlayer player, double radius) {
++        NearbyPlayers.NearbyMapType type;
++        if (radius <= NearbyPlayers.GENERAL_REALLY_SMALL_AREA_VIEW_DISTANCE_BLOCKS) {
++            type = NearbyPlayers.NearbyMapType.GENERAL_REALLY_SMALL;
++        } else if (radius <= NearbyPlayers.GENERAL_SMALL_AREA_VIEW_DISTANCE_BLOCKS) {
++            type = NearbyPlayers.NearbyMapType.GENERAL_SMALL;
++        } else if (radius <= NearbyPlayers.GENERAL_AREA_VIEW_DISTANCE_BLOCKS) {
++            type = NearbyPlayers.NearbyMapType.GENERAL;
++        } else {
++            return null;
++        }
++
++        return player.serverLevel().chunkSource.chunkMap.getNearbyPlayers().getPlayersByBlock(
++            player.getBlockX(),
++            player.getBlockZ(),
++            type
++        );
++    }
++
+     public static final class FpsData {
+         public boolean TntHidden;
+         public boolean SandHidden;
