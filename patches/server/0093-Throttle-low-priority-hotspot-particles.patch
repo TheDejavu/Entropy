@@ -1,0 +1,137 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:16:06 +0200
+Subject: [PATCH] Throttle low-priority hotspot particles
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 30805bf4aaaf3d9d8c3e795aabe74b0bfdbbc9f2..bf143e83a9ac68428516672e70602f4c3b090079 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -297,6 +297,7 @@ public class EntropyConfig {
+     public static int hotspotMaxLowPrioritySoundPacketsPerBroadcast;
+     public static int hotspotMetadataUpdateInterval;
+     public static int hotspotEquipmentUpdateInterval;
++    public static int hotspotLowPriorityParticleInterval;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -373,6 +374,7 @@ public class EntropyConfig {
+         hotspotMaxLowPrioritySoundPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.hotspot.max-low-priority-sound-packets-per-broadcast", -1, "Limit how many hotspot viewers receive each low-priority sound broadcast. Use -1 to disable the cap."));
+         hotspotMetadataUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.metadata-update-interval", 2, "Only send non-player hotspot metadata updates every N ticks."));
+         hotspotEquipmentUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.equipment-update-interval", 2, "Only send non-player hotspot equipment updates every N ticks."));
++        hotspotLowPriorityParticleInterval = Math.max(1, getInt("starforge.performance.hotspot.low-priority-particle-interval", 2, "Only send low-priority hotspot particles every N ticks."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index 7139967b25835448409136d970b8c64914b005dc..a248bd820ded8d24e08b6d7d4fda54df5781534f 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -2,6 +2,7 @@ package dev.orhidea.starforge;
+ 
+ import com.destroystokyo.paper.util.maplist.ReferenceList;
+ import io.papermc.paper.util.player.NearbyPlayers;
++import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+ import net.minecraft.world.entity.Entity;
+ import net.minecraft.world.entity.ExperienceOrb;
+ import net.minecraft.world.entity.LivingEntity;
+@@ -53,6 +54,18 @@ public class EntropyUserManager {
+         return this.shouldThrottleHotspotEntityUpdates(player, entity, interval, true);
+     }
+ 
++    public boolean shouldThrottleHotspotParticle(Player player, ClientboundLevelParticlesPacket packet, int interval) {
++        if (interval <= 1 || !this.isHotspotActive(player)) {
++            return false;
++        }
++
++        long positionHash = ((long) Math.floor(packet.getX()) * 73428767L)
++            ^ ((long) Math.floor(packet.getY()) * 912931L)
++            ^ ((long) Math.floor(packet.getZ()) * 3644798167L);
++        long discriminator = net.minecraft.server.MinecraftServer.currentTick + player.getId() + positionHash;
++        return Math.floorMod(discriminator, interval) != 0;
++    }
++
+     public void updateHotspot(ServerPlayer player) {
+         FpsData data = this.getFpsData(player);
+         if (!EntropyConfig.hotspotEnabled) {
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 8aaa75dab6cd413972adbc5bf8c5143bd90aa036..66431aea8fe0a5e1b15f30afcad130e60e3d0ff1 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -31,6 +31,7 @@ import io.netty.handler.timeout.TimeoutException;
+ import io.netty.util.AttributeKey;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
++import java.util.HashSet;
+ import java.util.Objects;
+ import java.util.Queue;
+ import java.util.UUID;
+@@ -41,6 +42,8 @@ import javax.annotation.Nullable;
+ import javax.crypto.Cipher;
+ import net.minecraft.SharedConstants;
+ import net.minecraft.Util;
++import net.minecraft.core.particles.ParticleType;
++import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.network.chat.Component;
+ import net.minecraft.network.chat.MutableComponent;
+ import net.minecraft.network.protocol.Packet;
+@@ -91,6 +94,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     });
+     public static final AttributeKey<ConnectionProtocol.CodecData<?>> ATTRIBUTE_SERVERBOUND_PROTOCOL = AttributeKey.valueOf("serverbound_protocol");
+     public static final AttributeKey<ConnectionProtocol.CodecData<?>> ATTRIBUTE_CLIENTBOUND_PROTOCOL = AttributeKey.valueOf("clientbound_protocol");
++    private static final java.util.Set<ParticleType<?>> LOW_PRIORITY_HOTSPOT_PARTICLES = new HashSet<>();
+     public static final Supplier<NioEventLoopGroup> NETWORK_WORKER_GROUP = Suppliers.memoize(() -> {
+         return new NioEventLoopGroup(0, (new ThreadFactoryBuilder()).setNameFormat("Netty Client IO #%d").setDaemon(true).setUncaughtExceptionHandler(new net.minecraft.DefaultUncaughtExceptionHandlerWithName(LOGGER)).build()); // Paper
+     });
+@@ -400,8 +404,13 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         Player player = this.getPlayer();
+         if (player != null) {
+             EntropyUserManager.FpsData data = EntropyUserManager.Instance.getFpsData(player);
+-            if (data.HotspotParticlesHidden && packet instanceof net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket) {
+-                return;
++            if (packet instanceof net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket p) {
++                if (data.HotspotParticlesHidden) {
++                    return;
++                }
++                if (this.shouldThrottleLowPriorityHotspotParticle(player, p)) {
++                    return;
++                }
+             }
+             if (data.HotspotSoundsHidden && (packet instanceof net.minecraft.network.protocol.game.ClientboundSoundPacket || packet instanceof net.minecraft.network.protocol.game.ClientboundSoundEntityPacket)) {
+                 return;
+@@ -538,6 +547,34 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
++    private boolean shouldThrottleLowPriorityHotspotParticle(Player player, net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket packet) {
++        if (EntropyConfig.hotspotLowPriorityParticleInterval <= 1) {
++            return false;
++        }
++        if (!this.isLowPriorityHotspotParticle(packet.getParticle().getType())) {
++            return false;
++        }
++
++        return EntropyUserManager.Instance.shouldThrottleHotspotParticle(player, packet, EntropyConfig.hotspotLowPriorityParticleInterval);
++    }
++
++    private boolean isLowPriorityHotspotParticle(ParticleType<?> particleType) {
++        if (LOW_PRIORITY_HOTSPOT_PARTICLES.isEmpty()) {
++            this.prefillLowPriorityHotspotParticles();
++        }
++
++        return LOW_PRIORITY_HOTSPOT_PARTICLES.contains(particleType);
++    }
++
++    private void prefillLowPriorityHotspotParticles() {
++        for (java.util.Map.Entry<net.minecraft.resources.ResourceKey<ParticleType<?>>, ParticleType<?>> entry : BuiltInRegistries.PARTICLE_TYPE.entrySet()) {
++            String path = entry.getKey().location().getPath();
++            if (path.contains("ambient") || path.contains("bubble") || path.contains("poof") || path.contains("smoke") || path.contains("splash")) {
++                LOW_PRIORITY_HOTSPOT_PARTICLES.add(entry.getValue());
++            }
++        }
++    }
++
+     public void runOnceConnected(Consumer<Connection> task) {
+         if (this.isConnected()) {
+             this.flushQueue();
