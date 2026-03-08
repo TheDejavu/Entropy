@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:37:10 +0200
+Subject: [PATCH] Throttle hotspot tracker rechecks
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index fd1f81750c665b468bd73888356a28571f18227d..93ce337478b833d309a6901f489ef0ea478cf259 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -288,6 +288,8 @@ public class EntropyConfig {
+     public static int hotspotDisableThreshold;
+     public static int hotspotUpdateInterval;
+     public static double hotspotTrackingRangeModifier;
++    public static int hotspotTrackedPairUpdateInterval;
++    public static int hotspotAdvancementFlushInterval;
+     public static boolean hotspotHideParticles;
+     public static boolean hotspotHideSounds;
+     private static void performance() {
+@@ -356,6 +358,8 @@ public class EntropyConfig {
+         hotspotDisableThreshold = Math.max(1, Math.min(hotspotEnableThreshold, getInt("starforge.performance.hotspot.disable-threshold", 80, "Disable hotspot packet reduction once nearby players drop below this threshold.")));
+         hotspotUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.update-interval", 10, "How often each player recomputes hotspot state, in ticks."));
+         hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.75D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
++        hotspotTrackedPairUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.tracker-pair-update-interval", 2, "How often to re-check already tracked entity/viewer pairs while a viewer is inside a hotspot."));
++        hotspotAdvancementFlushInterval = Math.max(1, getInt("starforge.performance.hotspot.advancement-flush-interval", 5, "How often hotspot players flush dirty advancement progress."));
+         hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+         hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
+ 
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+index a0861b51800bcc207cdbc3da5d222eb6717ff8b6..f3f3284be2509ebaa6740f072b323e87fe165c31 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyUserManager.java
+@@ -25,6 +25,10 @@ public class EntropyUserManager {
+         return data;
+     }
+ 
++    public boolean isHotspotActive(Player player) {
++        return this.getFpsData(player).HotspotActive;
++    }
++
+     public void updateHotspot(ServerPlayer player) {
+         FpsData data = this.getFpsData(player);
+         if (!EntropyConfig.hotspotEnabled) {
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 84652f126f2d5497f3c78de69f14b0eb9d7d670a..345610c2e18ec5fbb034ff91999216b065d69e33 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1334,6 +1334,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                         continue;
+                     }
+                     ServerPlayer player = (ServerPlayer)raw;
++                    if (this.shouldSkipHotspotTrackedPlayerUpdate(player)) {
++                        continue;
++                    }
+                     this.updatePlayer(player);
+                 }
+             }
+@@ -1353,6 +1356,20 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 }
+             }
+         }
++
++        private boolean shouldSkipHotspotTrackedPlayerUpdate(ServerPlayer player) {
++            if (dev.orhidea.starforge.EntropyConfig.hotspotTrackedPairUpdateInterval <= 1) {
++                return false;
++            }
++            if (!dev.orhidea.starforge.EntropyUserManager.Instance.isHotspotActive(player)) {
++                return false;
++            }
++            if (!this.seenBy.contains(player.connection) || this.entity == player) {
++                return false;
++            }
++
++            return (net.minecraft.server.MinecraftServer.currentTick + this.entity.getId() + player.getId()) % dev.orhidea.starforge.EntropyConfig.hotspotTrackedPairUpdateInterval != 0;
++        }
+         // Paper end - use distance map to optimise tracker
+ 
+         public boolean equals(Object object) {
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index cdc4c7e143d453724c2e21a96a78235b0fee1949..f5fb911c98a9d51e7ed34cf0ca52ffc3872e068f 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -787,7 +787,9 @@ public class ServerPlayer extends Player {
+ 
+         this.trackStartFallingPosition();
+         this.trackEnteredOrExitedLavaOnVehicle();
+-        this.advancements.flushDirty(this);
++        if (!EntropyUserManager.Instance.isHotspotActive(this) || this.tickCount % EntropyConfig.hotspotAdvancementFlushInterval == 0) {
++            this.advancements.flushDirty(this);
++        }
+     }
+ 
+     public void doTick() {
