@@ -44,6 +44,21 @@ subprojects {
     }
 }
 
+project(":entropy-api") {
+    tasks.named<JavaCompile>("compileJava") {
+        dependsOn(rootProject.tasks.named("applyApiPatches"))
+        dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
+    }
+}
+
+project(":entropy-server") {
+    tasks.named<JavaCompile>("compileJava") {
+        dependsOn(rootProject.tasks.named("applyApiPatches"))
+        dependsOn(rootProject.tasks.named("applyGeneratedApiPatches"))
+        dependsOn(rootProject.tasks.named("applyServerPatches"))
+    }
+}
+
 paperweight {
     serverProject.set(project(":entropy-server"))
 
