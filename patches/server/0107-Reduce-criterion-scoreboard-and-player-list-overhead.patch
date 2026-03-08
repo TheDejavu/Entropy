@@ -1,0 +1,564 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 01:29:57 +0200
+Subject: [PATCH] Reduce criterion, scoreboard, and player list overhead
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 26aad24bdb0725fcb3ca9a6a7aa1c71522f2d816..33270c2707947872704a448b297aa6034e956543 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -283,6 +283,7 @@ public class EntropyConfig {
+     public static boolean dontSavePrimedTnt;
+     public static boolean dontSaveFallingBlocks;
+     public static int maxFootstepPacketsPerBroadcast;
++    public static boolean disableCriterionTriggers;
+     public static boolean asyncTrackerEnabled;
+     public static int asyncTrackerThreads;
+     public static double playerTrackingRangeMultiplier;
+@@ -350,6 +351,7 @@ public class EntropyConfig {
+         dontSavePrimedTnt = getBoolean("starforge.performance.persistence.dont-save-primed-tnt", false, "Do not save primed TNT entities when chunks unload.");
+         dontSaveFallingBlocks = getBoolean("starforge.performance.persistence.dont-save-falling-blocks", false, "Do not save falling block entities when chunks unload.");
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
++        disableCriterionTriggers = getBoolean("starforge.performance.disable-criterion-triggers", org.spigotmc.SpigotConfig.disableAdvancementSaving || org.spigotmc.SpigotConfig.disabledAdvancements.contains("*"), "Skip advancement criterion trigger evaluation entirely.", "Enable this when advancements are disabled to remove criterion work from hot player paths.");
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+diff --git a/src/main/java/net/minecraft/advancements/critereon/SimpleCriterionTrigger.java b/src/main/java/net/minecraft/advancements/critereon/SimpleCriterionTrigger.java
+index 35772110e9318df46a2729dbc0b5879b290011b7..db82afb3a39a17bae4a5ab5169c61ba69cfd84d9 100644
+--- a/src/main/java/net/minecraft/advancements/critereon/SimpleCriterionTrigger.java
++++ b/src/main/java/net/minecraft/advancements/critereon/SimpleCriterionTrigger.java
+@@ -13,6 +13,7 @@ import net.minecraft.advancements.CriterionTriggerInstance;
+ import net.minecraft.server.PlayerAdvancements;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.world.level.storage.loot.LootContext;
++import dev.orhidea.starforge.EntropyConfig;
+ 
+ public abstract class SimpleCriterionTrigger<T extends SimpleCriterionTrigger.SimpleInstance> implements CriterionTrigger<T> {
+     // private final Map<PlayerAdvancements, Set<CriterionTrigger.Listener<T>>> players = Maps.newIdentityHashMap(); // Paper - fix AdvancementDataPlayer leak; moved into AdvancementDataPlayer to fix memory leak
+@@ -39,6 +40,9 @@ public abstract class SimpleCriterionTrigger<T extends SimpleCriterionTrigger.Si
+     }
+ 
+     protected void trigger(ServerPlayer player, Predicate<T> predicate) {
++        if (EntropyConfig.disableCriterionTriggers) {
++            return;
++        }
+         PlayerAdvancements playerAdvancements = player.getAdvancements();
+         Set<CriterionTrigger.Listener<T>> set = (Set) playerAdvancements.criterionData.get(this); // Paper - fix AdvancementDataPlayer leak
+         if (set != null && !set.isEmpty()) {
+diff --git a/src/main/java/net/minecraft/server/MinecraftServer.java b/src/main/java/net/minecraft/server/MinecraftServer.java
+index 943d5bcee34f0feb9fb649a23487474d117904f8..34eef62571d93c00899215b5f5aca58c3ea0d4b4 100644
+--- a/src/main/java/net/minecraft/server/MinecraftServer.java
++++ b/src/main/java/net/minecraft/server/MinecraftServer.java
+@@ -1618,31 +1618,31 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+     }
+ 
+     private ServerStatus.Players buildPlayerStatus() {
+-        List<ServerPlayer> list = this.playerList.getPlayers();
++        ServerPlayer[] players = this.playerList.getPlayersArray();
+         int i = this.getMaxPlayers();
+ 
+         if (this.hidesOnlinePlayers()) {
+-            return new ServerStatus.Players(i, list.size(), List.of());
++            return new ServerStatus.Players(i, players.length, List.of());
+         } else {
+-            int j = Math.min(list.size(), org.spigotmc.SpigotConfig.playerSample); // Paper - PaperServerListPingEvent
++            int j = Math.min(players.length, org.spigotmc.SpigotConfig.playerSample); // Paper - PaperServerListPingEvent
+             ObjectArrayList<GameProfile> objectarraylist = new ObjectArrayList(j);
+-            int k = Mth.nextInt(this.random, 0, list.size() - j);
++            int k = Mth.nextInt(this.random, 0, players.length - j);
+ 
+             for (int l = 0; l < j; ++l) {
+-                ServerPlayer entityplayer = (ServerPlayer) list.get(k + l);
++                ServerPlayer entityplayer = players[k + l];
+ 
+                 objectarraylist.add(entityplayer.allowsListing() ? entityplayer.getGameProfile() : MinecraftServer.ANONYMOUS_PLAYER_PROFILE);
+             }
+ 
+             Util.shuffle(objectarraylist, this.random);
+-            return new ServerStatus.Players(i, list.size(), objectarraylist);
++            return new ServerStatus.Players(i, players.length, objectarraylist);
+         }
+     }
+ 
+     public void tickChildren(BooleanSupplier shouldKeepTicking) {
+-        final List<ServerPlayer> players = this.getPlayerList().getPlayers();
+-        for (int i = 0, len = players.size(); i < len; ++i) {
+-            players.get(i).connection.suspendFlushing();
++        final ServerPlayer[] players = this.getPlayerList().getPlayersArray();
++        for (int i = 0, len = players.length; i < len; ++i) {
++            players[i].connection.suspendFlushing();
+         }
+         this.server.getScheduler().mainThreadHeartbeat(this.tickCount); // CraftBukkit
+         // Paper start - Folia scheduler API
+@@ -1759,11 +1759,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<TickTa
+         }
+ 
+         this.profiler.popPush("send chunks");
+-        iterator = this.playerList.getPlayers().iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        for (ServerPlayer entityplayer : this.playerList.getPlayersArray()) {
+             entityplayer.connection.chunkSender.sendNextChunks(entityplayer);
+             entityplayer.connection.resumeFlushing();
+         }
+diff --git a/src/main/java/net/minecraft/server/ServerScoreboard.java b/src/main/java/net/minecraft/server/ServerScoreboard.java
+index 76d67d01388ecc1af6b43212e018edc678e84d72..0568b18b3c87bbb30ae8a95ea4bd162a92594d4a 100644
+--- a/src/main/java/net/minecraft/server/ServerScoreboard.java
++++ b/src/main/java/net/minecraft/server/ServerScoreboard.java
+@@ -144,6 +144,9 @@ public class ServerScoreboard extends Scoreboard {
+     @Override
+     public void onObjectiveAdded(Objective objective) {
+         super.onObjectiveAdded(objective);
++        if (this.server.server != null && this.server.server.getScoreboardManager() != null) {
++            this.server.server.getScoreboardManager().onObjectiveAdded(this, objective);
++        }
+         this.setDirty();
+     }
+ 
+@@ -160,6 +163,9 @@ public class ServerScoreboard extends Scoreboard {
+     @Override
+     public void onObjectiveRemoved(Objective objective) {
+         super.onObjectiveRemoved(objective);
++        if (this.server.server != null && this.server.server.getScoreboardManager() != null) {
++            this.server.server.getScoreboardManager().onObjectiveRemoved(this, objective);
++        }
+         if (this.trackedObjectives.contains(objective)) {
+             this.stopTrackingObjective(objective);
+         }
+@@ -231,10 +237,7 @@ public class ServerScoreboard extends Scoreboard {
+ 
+     public void startTrackingObjective(Objective objective) {
+         List<Packet<?>> list = this.getStartTrackingPackets(objective);
+-        Iterator iterator = this.server.getPlayerList().getPlayers().iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++        for (ServerPlayer entityplayer : this.server.getPlayerList().getPlayersArray()) {
+             if (entityplayer.getBukkitEntity().getScoreboard().getHandle() != this) continue; // CraftBukkit - Only players on this board
+             Iterator iterator1 = list.iterator();
+ 
+@@ -268,10 +271,7 @@ public class ServerScoreboard extends Scoreboard {
+ 
+     public void stopTrackingObjective(Objective objective) {
+         List<Packet<?>> list = this.getStopTrackingPackets(objective);
+-        Iterator iterator = this.server.getPlayerList().getPlayers().iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++        for (ServerPlayer entityplayer : this.server.getPlayerList().getPlayersArray()) {
+             if (entityplayer.getBukkitEntity().getScoreboard().getHandle() != this) continue; // CraftBukkit - Only players on this board
+             Iterator iterator1 = list.iterator();
+ 
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index fb2a67339c90c1c5e8fa8f790966115ba516c235..9666b114b5a4c2b436eb3900e7a905327a4c65cd 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -136,9 +136,11 @@ public abstract class PlayerList {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private static final int SEND_PLAYER_INFO_INTERVAL = 600;
+     private static final EnumSet<ClientboundPlayerInfoUpdatePacket.Action> UPDATE_LATENCY_ACTION = EnumSet.of(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_LATENCY);
++    private static final ServerPlayer[] EMPTY_PLAYERS = new ServerPlayer[0];
+     private static final SimpleDateFormat BAN_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd 'at' HH:mm:ss z");
+     private final MinecraftServer server;
+     public final List<ServerPlayer> players = new java.util.concurrent.CopyOnWriteArrayList(); // CraftBukkit - ArrayList -> CopyOnWriteArrayList: Iterator safety
++    private volatile ServerPlayer[] playersView = EMPTY_PLAYERS;
+     private final Map<UUID, ServerPlayer> playersByUUID = Maps.newHashMap();
+     private final UserBanList bans;
+     private final IpBanList ipBans;
+@@ -186,6 +188,10 @@ public abstract class PlayerList {
+     }
+     abstract public void loadAndSaveFiles(); // Paper - fix converting txt to json file; moved from DedicatedPlayerList constructor
+ 
++    private void refreshPlayersView() {
++        this.playersView = this.players.toArray(EMPTY_PLAYERS);
++    }
++
+     public void placeNewPlayer(Connection connection, ServerPlayer player, CommonListenerCookie clientData) {
+         player.isRealPlayer = true; // Paper
+         player.loginTime = System.currentTimeMillis(); // Paper - Replace OfflinePlayer#getLastPlayed
+@@ -332,6 +338,7 @@ public abstract class PlayerList {
+ 
+         // entityplayer.connection.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(this.players)); // CraftBukkit - replaced with loop below
+         this.players.add(player);
++        this.refreshPlayersView();
+         this.playersByName.put(player.getScoreboardName().toLowerCase(java.util.Locale.ROOT), player); // Spigot
+         this.playersByUUID.put(player.getUUID(), player);
+         // this.broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(entityplayer))); // CraftBukkit - replaced with loop below
+@@ -366,9 +373,9 @@ public abstract class PlayerList {
+         // CraftBukkit start - sendAll above replaced with this loop
+         ClientboundPlayerInfoUpdatePacket packet = ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(player)); // Paper - Add Listing API for Player
+ 
+-        final List<ServerPlayer> onlinePlayers = Lists.newArrayListWithExpectedSize(this.players.size() - 1); // Paper - Use single player info update packet on join
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            ServerPlayer entityplayer1 = (ServerPlayer) this.players.get(i);
++        final ServerPlayer[] currentPlayers = this.getPlayersArray();
++        final List<ServerPlayer> onlinePlayers = Lists.newArrayListWithExpectedSize(Math.max(0, currentPlayers.length - 1)); // Paper - Use single player info update packet on join
++        for (ServerPlayer entityplayer1 : currentPlayers) {
+ 
+             if (entityplayer1.getBukkitEntity().canSee(bukkitPlayer)) {
+                 // Paper start - Add Listing API for Player
+@@ -669,6 +676,7 @@ public abstract class PlayerList {
+         entityplayer.retireScheduler(); // Paper - Folia schedulers
+         entityplayer.getAdvancements().stopListening();
+         this.players.remove(entityplayer);
++        this.refreshPlayersView();
+         this.playersByName.remove(entityplayer.getScoreboardName().toLowerCase(java.util.Locale.ROOT)); // Spigot
+         this.server.getCustomBossEvents().onPlayerDisconnect(entityplayer);
+         UUID uuid = entityplayer.getUUID();
+@@ -685,8 +693,7 @@ public abstract class PlayerList {
+         // CraftBukkit start
+         // this.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(entityplayer.getUUID())));
+         ClientboundPlayerInfoRemovePacket packet = new ClientboundPlayerInfoRemovePacket(List.of(entityplayer.getUUID()));
+-        for (int i = 0; i < this.players.size(); i++) {
+-            ServerPlayer entityplayer2 = (ServerPlayer) this.players.get(i);
++        for (ServerPlayer entityplayer2 : this.getPlayersArray()) {
+ 
+             if (entityplayer2.getBukkitEntity().canSee(entityplayer.getBukkitEntity())) {
+                 entityplayer2.connection.send(packet);
+@@ -711,8 +718,8 @@ public abstract class PlayerList {
+ 
+         ServerPlayer entityplayer;
+ 
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            entityplayer = (ServerPlayer) this.players.get(i);
++        for (ServerPlayer candidate : this.getPlayersArray()) {
++            entityplayer = candidate;
+             if (entityplayer.getUUID().equals(uuid) || (io.papermc.paper.configuration.GlobalConfiguration.get().proxies.isProxyOnlineMode() && entityplayer.getGameProfile().getName().equalsIgnoreCase(gameprofile.getName()))) { // Paper - validate usernames
+                 list.add(entityplayer);
+             }
+@@ -762,7 +769,7 @@ public abstract class PlayerList {
+             event.disallow(PlayerLoginEvent.Result.KICK_BANNED, io.papermc.paper.adventure.PaperAdventure.asAdventure(ichatmutablecomponent)); // Paper - Adventure
+         } else {
+             // return this.players.size() >= this.maxPlayers && !this.canBypassPlayerLimit(gameprofile) ? IChatBaseComponent.translatable("multiplayer.disconnect.server_full") : null;
+-            if (this.players.size() >= this.maxPlayers && !this.canBypassPlayerLimit(gameprofile)) {
++            if (this.getPlayerCount() >= this.maxPlayers && !this.canBypassPlayerLimit(gameprofile)) {
+                 event.disallow(PlayerLoginEvent.Result.KICK_FULL, net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer.legacySection().deserialize(org.spigotmc.SpigotConfig.serverFullMessage)); // Spigot // Paper - Adventure
+             }
+         }
+@@ -830,6 +837,7 @@ public abstract class PlayerList {
+         // Paper end - Expand PlayerRespawnEvent
+         entityplayer.stopRiding(); // CraftBukkit
+         this.players.remove(entityplayer);
++        this.refreshPlayersView();
+         this.playersByName.remove(entityplayer.getScoreboardName().toLowerCase(java.util.Locale.ROOT)); // Spigot
+         entityplayer.serverLevel().removePlayerImmediately(entityplayer, Entity.RemovalReason.DISCARDED);
+         BlockPos blockposition = entityplayer.getRespawnPosition();
+@@ -966,6 +974,7 @@ public abstract class PlayerList {
+         if (!entityplayer.connection.isDisconnected()) {
+             worldserver1.addRespawnedPlayer(entityplayer1);
+             this.players.add(entityplayer1);
++            this.refreshPlayersView();
+             this.playersByName.put(entityplayer1.getScoreboardName().toLowerCase(java.util.Locale.ROOT), entityplayer1); // Spigot
+             this.playersByUUID.put(entityplayer1.getUUID(), entityplayer1);
+         }
+@@ -1026,9 +1035,8 @@ public abstract class PlayerList {
+ 
+     public void tick() {
+         if (++this.sendAllPlayerInfoIn > PlayerList.SEND_PLAYER_INFO_INTERVAL) {
+-            final List<ServerPlayer> players = this.players;
+-            final int playerCount = players.size();
+-            final ServerPlayer[] playerArray = players.toArray(new ServerPlayer[playerCount]);
++            final ServerPlayer[] playerArray = this.getPlayersArray();
++            final int playerCount = playerArray.length;
+             final CraftPlayer[] bukkitPlayers = new CraftPlayer[playerCount];
+             boolean hasVisibilityInversions = false;
+ 
+@@ -1039,7 +1047,7 @@ public abstract class PlayerList {
+             }
+ 
+             if (!hasVisibilityInversions) {
+-                final ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, players);
++                final ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, List.of(playerArray));
+                 for (int i = 0; i < playerCount; ++i) {
+                     playerArray[i].connection.send(packet);
+                 }
+@@ -1080,11 +1088,7 @@ public abstract class PlayerList {
+     }
+ 
+     public void broadcastAll(Packet<?> packet) {
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             entityplayer.connection.send(packet);
+         }
+ 
+@@ -1092,12 +1096,11 @@ public abstract class PlayerList {
+ 
+     // CraftBukkit start - add a world/entity limited version
+     public void broadcastAll(Packet packet, net.minecraft.world.entity.player.Player entityhuman) {
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            ServerPlayer entityplayer =  this.players.get(i);
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             if (entityhuman != null && !entityplayer.getBukkitEntity().canSee(entityhuman.getBukkitEntity())) {
+-                continue;
++               continue;
+             }
+-            ((ServerPlayer) this.players.get(i)).connection.send(packet);
++            entityplayer.connection.send(packet);
+         }
+     }
+ 
+@@ -1110,11 +1113,7 @@ public abstract class PlayerList {
+     // CraftBukkit end
+ 
+     public void broadcastAll(Packet<?> packet, ResourceKey<Level> dimension) {
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             if (entityplayer.level().dimension() == dimension) {
+                 entityplayer.connection.send(packet);
+             }
+@@ -1147,9 +1146,7 @@ public abstract class PlayerList {
+         if (scoreboardteam == null) {
+             this.broadcastSystemMessage(message, false);
+         } else {
+-            for (int i = 0; i < this.players.size(); ++i) {
+-                ServerPlayer entityplayer = (ServerPlayer) this.players.get(i);
+-
++            for (ServerPlayer entityplayer : this.getPlayersArray()) {
+                 if (entityplayer.getTeam() != scoreboardteam) {
+                     entityplayer.sendSystemMessage(message);
+                 }
+@@ -1159,10 +1156,11 @@ public abstract class PlayerList {
+     }
+ 
+     public String[] getPlayerNamesArray() {
+-        String[] astring = new String[this.players.size()];
++        ServerPlayer[] players = this.getPlayersArray();
++        String[] astring = new String[players.length];
+ 
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            astring[i] = ((ServerPlayer) this.players.get(i)).getGameProfile().getName();
++        for (int i = 0; i < players.length; ++i) {
++            astring[i] = players[i].getGameProfile().getName();
+         }
+ 
+         return astring;
+@@ -1253,7 +1251,8 @@ public abstract class PlayerList {
+ 
+     public void broadcast(@Nullable net.minecraft.world.entity.player.Player player, double x, double y, double z, double distance, ResourceKey<Level> worldKey, Packet<?> packet) {
+         boolean reduceBroadcast = this.shouldReduceBroadcast(packet);
+-        int playerCount = this.players.size();
++        final ServerPlayer[] currentPlayers = this.getPlayersArray();
++        int playerCount = currentPlayers.length;
+         int startIndex = 0;
+         int sent = 0;
+ 
+@@ -1265,7 +1264,7 @@ public abstract class PlayerList {
+         }
+ 
+         for (int i = 0; i < playerCount; ++i) {
+-            ServerPlayer entityplayer = (ServerPlayer) this.players.get((i + startIndex) % playerCount);
++            ServerPlayer entityplayer = currentPlayers[(i + startIndex) % playerCount];
+ 
+             // CraftBukkit start - Test if player receiving packet can see the source of the packet
+             if (player != null && !entityplayer.getBukkitEntity().canSee(player.getBukkitEntity())) {
+@@ -1329,8 +1328,7 @@ public abstract class PlayerList {
+         io.papermc.paper.util.MCUtil.ensureMain("Save Players" , () -> { // Paper - Ensure main
+         int numSaved = 0;
+         long now = MinecraftServer.currentTick;
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            ServerPlayer entityplayer = this.players.get(i);
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             if (interval == -1 || now - entityplayer.lastSave >= interval) {
+                 this.save(entityplayer);
+                 if (interval != -1 && ++numSaved >= io.papermc.paper.configuration.GlobalConfiguration.get().playerAutoSave.maxPerTick()) { break; }
+@@ -1393,7 +1391,7 @@ public abstract class PlayerList {
+     }
+ 
+     public int getPlayerCount() {
+-        return this.players.size();
++        return this.playersView.length;
+     }
+ 
+     public int getMaxPlayers() {
+@@ -1411,11 +1409,7 @@ public abstract class PlayerList {
+ 
+     public List<ServerPlayer> getPlayersWithAddress(String ip) {
+         List<ServerPlayer> list = Lists.newArrayList();
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             if (entityplayer.getIpAddress().equals(ip)) {
+                 list.add(entityplayer);
+             }
+@@ -1453,7 +1447,7 @@ public abstract class PlayerList {
+     public void removeAll(boolean isRestarting) {
+         // Paper end
+         // CraftBukkit start - disconnect safely
+-        for (ServerPlayer player : this.players) {
++        for (ServerPlayer player : this.getPlayersArray()) {
+             if (isRestarting) player.connection.disconnect(org.spigotmc.SpigotConfig.restartMessage, org.bukkit.event.player.PlayerKickEvent.Cause.UNKNOWN); else // Paper - kick event cause (cause is never used here)
+             player.connection.disconnect(this.server.server.shutdownMessage(), org.bukkit.event.player.PlayerKickEvent.Cause.UNKNOWN); // CraftBukkit - add custom shutdown message // Paper - Adventure & KickEventCause (cause is never used here)
+         }
+@@ -1484,10 +1478,7 @@ public abstract class PlayerList {
+ 
+     public void broadcastSystemMessage(Component message, Function<ServerPlayer, Component> playerMessageFactory, boolean overlay) {
+         this.server.sendSystemMessage(message);
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             Component ichatbasecomponent1 = (Component) playerMessageFactory.apply(entityplayer);
+ 
+             if (ichatbasecomponent1 != null) {
+@@ -1527,9 +1518,7 @@ public abstract class PlayerList {
+         boolean flag2;
+         Packet<?> disguised = sender != null && unsignedFunction == null ? new net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket(outgoingchatmessage.content(), params.toNetwork(sender.level().registryAccess())) : null; // Paper - don't send player chat packets from vanished players
+ 
+-        for (Iterator iterator = this.players.iterator(); iterator.hasNext(); flag1 |= flag2 && message.isFullyFiltered()) {
+-            ServerPlayer entityplayer1 = (ServerPlayer) iterator.next();
+-
++        for (ServerPlayer entityplayer1 : this.getPlayersArray()) {
+             flag2 = shouldSendFiltered.test(entityplayer1);
+             // Paper start - don't send player chat packets from vanished players
+             if (sender != null && !entityplayer1.getBukkitEntity().canSee(sender.getBukkitEntity())) {
+@@ -1540,6 +1529,7 @@ public abstract class PlayerList {
+             }
+             // Paper end
+             entityplayer1.sendChatMessage(outgoingchatmessage, flag2, params, unsignedFunction == null ? null : unsignedFunction.apply(entityplayer1.getBukkitEntity())); // Paper
++            flag1 |= flag2 && message.isFullyFiltered();
+         }
+ 
+         if (flag1 && sender != null) {
+@@ -1632,6 +1622,10 @@ public abstract class PlayerList {
+         return this.players;
+     }
+ 
++    public ServerPlayer[] getPlayersArray() {
++        return this.playersView;
++    }
++
+     @Nullable
+     public ServerPlayer getPlayer(UUID uuid) {
+         return (ServerPlayer) this.playersByUUID.get(uuid);
+@@ -1658,7 +1652,7 @@ public abstract class PlayerList {
+             advancementdataplayer.reload(this.server.getAdvancements());
+         }*/
+ 
+-        for (ServerPlayer player : this.players) {
++        for (ServerPlayer player : this.getPlayersArray()) {
+             player.getAdvancements().reload(this.server.getAdvancements());
+             player.getAdvancements().flushDirty(player); // CraftBukkit - trigger immediate flush of advancements
+         }
+@@ -1675,11 +1669,7 @@ public abstract class PlayerList {
+         // Paper end - API for updating recipes on clients
+         ClientboundUpdateRecipesPacket packetplayoutrecipeupdate = new ClientboundUpdateRecipesPacket(this.server.getRecipeManager().getRecipes());
+         this.cachedRecipePacket = packetplayoutrecipeupdate;
+-        Iterator iterator1 = this.players.iterator();
+-
+-        while (iterator1.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator1.next();
+-
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             entityplayer.connection.send(packetplayoutrecipeupdate);
+             entityplayer.getRecipeBook().sendInitialRecipeBook(entityplayer);
+         }
+diff --git a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+index f3184be3853dfc4df4ae4b8af764dfef07628ef4..daa44a3ad91570cfed0d562c66850e9166cae780 100644
+--- a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
++++ b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+@@ -2,10 +2,13 @@ package org.bukkit.craftbukkit.scoreboard;
+ 
+ import com.google.common.base.Preconditions;
+ import java.util.Collection;
++import java.util.Collections;
+ import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.Iterator;
+ import java.util.Map;
++import java.util.Set;
++import java.util.WeakHashMap;
+ import java.util.function.Consumer;
+ import net.minecraft.network.protocol.game.ClientboundSetObjectivePacket;
+ import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
+@@ -27,12 +30,15 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+     private final MinecraftServer server;
+     private final Collection<CraftScoreboard> scoreboards = new WeakCollection<>();
+     private final Map<CraftPlayer, CraftScoreboard> playerBoards = new HashMap<>();
++    private final Set<Scoreboard> trackedScoreboards = Collections.newSetFromMap(new WeakHashMap<>());
++    private final Map<ObjectiveCriteria, Integer> criterionObjectiveCounts = new HashMap<>();
+ 
+     public CraftScoreboardManager(MinecraftServer minecraftserver, net.minecraft.world.scores.Scoreboard scoreboardServer) {
+         this.mainScoreboard = new CraftScoreboard(scoreboardServer);
+         mainScoreboard.registeredGlobally = true; // Paper
+         this.server = minecraftserver;
+         this.scoreboards.add(this.mainScoreboard);
++        this.registerTrackedScoreboard(scoreboardServer);
+     }
+ 
+     @Override
+@@ -48,6 +54,7 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+         if (io.papermc.paper.configuration.GlobalConfiguration.get().scoreboards.trackPluginScoreboards) {
+             scoreboard.registeredGlobally = true;
+             scoreboards.add(scoreboard);
++            this.registerTrackedScoreboard(scoreboard.getHandle());
+         }
+         // Paper end
+         return scoreboard;
+@@ -57,6 +64,7 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+     public void registerScoreboardForVanilla(CraftScoreboard scoreboard) {
+         org.spigotmc.AsyncCatcher.catchOp("scoreboard registration");
+         scoreboards.add(scoreboard);
++        this.registerTrackedScoreboard(scoreboard.getHandle());
+     }
+     // Paper end
+ 
+@@ -113,9 +121,44 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+ 
+     // CraftBukkit method
+     public void forAllObjectives(ObjectiveCriteria criteria, ScoreHolder holder, Consumer<ScoreAccess> consumer) {
++        if (this.criterionObjectiveCounts.getOrDefault(criteria, 0) <= 0) {
++            return;
++        }
+         for (CraftScoreboard scoreboard : this.scoreboards) {
+             Scoreboard board = scoreboard.board;
+             board.forAllObjectives(criteria, holder, (score) -> consumer.accept(score));
+         }
+     }
++
++    public void onObjectiveAdded(Scoreboard scoreboard, Objective objective) {
++        if (!this.trackedScoreboards.contains(scoreboard)) {
++            return;
++        }
++        this.incrementObjectiveCriteria(objective.getCriteria(), 1);
++    }
++
++    public void onObjectiveRemoved(Scoreboard scoreboard, Objective objective) {
++        if (!this.trackedScoreboards.contains(scoreboard)) {
++            return;
++        }
++        this.incrementObjectiveCriteria(objective.getCriteria(), -1);
++    }
++
++    private void registerTrackedScoreboard(Scoreboard scoreboard) {
++        if (!this.trackedScoreboards.add(scoreboard)) {
++            return;
++        }
++        for (Objective objective : scoreboard.getObjectives()) {
++            this.incrementObjectiveCriteria(objective.getCriteria(), 1);
++        }
++    }
++
++    private void incrementObjectiveCriteria(ObjectiveCriteria criteria, int delta) {
++        int updated = this.criterionObjectiveCounts.getOrDefault(criteria, 0) + delta;
++        if (updated <= 0) {
++            this.criterionObjectiveCounts.remove(criteria);
++        } else {
++            this.criterionObjectiveCounts.put(criteria, updated);
++        }
++    }
+ }
