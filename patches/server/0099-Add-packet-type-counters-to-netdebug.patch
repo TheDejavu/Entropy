@@ -1,0 +1,247 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 22:52:50 +0200
+Subject: [PATCH] Add packet type counters to netdebug
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+index e0efbbfa4a1a05429d51a06fb5886340bf215680..8e70f01fff5905331771685188c36f93f6455d82 100644
+--- a/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
++++ b/src/main/java/dev/orhidea/starforge/connection/NetDebugReport.java
+@@ -98,6 +98,16 @@ public final class NetDebugReport {
+         long totalImmediatePackets = 0L;
+         long totalFlushCalls = 0L;
+         long totalAvgOut = 0L;
++        long totalChunkPackets = 0L;
++        long totalAddEntityPackets = 0L;
++        long totalMovePackets = 0L;
++        long totalMetadataPackets = 0L;
++        long totalEquipmentPackets = 0L;
++        long totalPlayerInfoPackets = 0L;
++        long totalSoundPackets = 0L;
++        long totalParticlePackets = 0L;
++        long totalKeepAlivePackets = 0L;
++        long totalOtherPackets = 0L;
+         int maxAvgOut = 0;
+ 
+         for (final ConnectionSnapshot snapshot : snapshots) {
+@@ -108,6 +118,16 @@ public final class NetDebugReport {
+             totalImmediatePackets += snapshot.immediatePackets();
+             totalFlushCalls += snapshot.flushCalls();
+             totalAvgOut += snapshot.avgSentPackets();
++            totalChunkPackets += snapshot.chunkPackets();
++            totalAddEntityPackets += snapshot.addEntityPackets();
++            totalMovePackets += snapshot.movePackets();
++            totalMetadataPackets += snapshot.metadataPackets();
++            totalEquipmentPackets += snapshot.equipmentPackets();
++            totalPlayerInfoPackets += snapshot.playerInfoPackets();
++            totalSoundPackets += snapshot.soundPackets();
++            totalParticlePackets += snapshot.particlePackets();
++            totalKeepAlivePackets += snapshot.keepAlivePackets();
++            totalOtherPackets += snapshot.otherPackets();
+             maxAvgOut = Math.max(maxAvgOut, snapshot.avgSentPackets());
+         }
+ 
+@@ -132,6 +152,19 @@ public final class NetDebugReport {
+             totalImmediatePackets,
+             totalFlushCalls
+         );
++        LOGGER.warn(
++            "TimeoutDebug: packetTypes chunk={} add={} move={} meta={} equip={} info={} sound={} particle={} keepalive={} other={}",
++            totalChunkPackets,
++            totalAddEntityPackets,
++            totalMovePackets,
++            totalMetadataPackets,
++            totalEquipmentPackets,
++            totalPlayerInfoPackets,
++            totalSoundPackets,
++            totalParticlePackets,
++            totalKeepAlivePackets,
++            totalOtherPackets
++        );
+ 
+         final int shown = Math.min(EntropyConfig.timeoutDebugReportConnectionLimit, snapshots.size());
+         for (int index = 0; index < shown; ++index) {
+@@ -149,6 +182,16 @@ public final class NetDebugReport {
+         long queuedPackets,
+         long immediatePackets,
+         long flushCalls,
++        long chunkPackets,
++        long addEntityPackets,
++        long movePackets,
++        long metadataPackets,
++        long equipmentPackets,
++        long playerInfoPackets,
++        long soundPackets,
++        long particlePackets,
++        long keepAlivePackets,
++        long otherPackets,
+         boolean keepAlivePending,
+         int pendingKeepAlives,
+         long keepAliveAgeMillis,
+@@ -167,6 +210,16 @@ public final class NetDebugReport {
+                 connection.getQueuedPacketCount(),
+                 connection.getImmediatePacketCount(),
+                 connection.getFlushCallCount(),
++                connection.getChunkPacketCount(),
++                connection.getAddEntityPacketCount(),
++                connection.getMovePacketCount(),
++                connection.getMetadataPacketCount(),
++                connection.getEquipmentPacketCount(),
++                connection.getPlayerInfoPacketCount(),
++                connection.getSoundPacketCount(),
++                connection.getParticlePacketCount(),
++                connection.getKeepAlivePacketCount(),
++                connection.getOtherPacketCount(),
+                 commonPacketListener.isKeepAlivePendingForDebug(),
+                 commonPacketListener.getPendingKeepAliveCountForDebug(),
+                 commonPacketListener.getKeepAliveAgeMillisForDebug(),
+@@ -186,6 +239,17 @@ public final class NetDebugReport {
+                 + " queuedTotal=" + this.queuedPackets
+                 + " immediateTotal=" + this.immediatePackets
+                 + " flushes=" + this.flushCalls
++                + " types="
++                + "ch:" + this.chunkPackets
++                + " add:" + this.addEntityPackets
++                + " mv:" + this.movePackets
++                + " md:" + this.metadataPackets
++                + " eq:" + this.equipmentPackets
++                + " pi:" + this.playerInfoPackets
++                + " snd:" + this.soundPackets
++                + " prt:" + this.particlePackets
++                + " ka:" + this.keepAlivePackets
++                + " oth:" + this.otherPackets
+                 + " keepalive=" + (this.keepAlivePending ? ("pending " + this.keepAliveAgeMillis + "/" + this.keepAliveLimitMillis + "ms queued=" + this.pendingKeepAlives) : "clear")
+                 + " writable=" + this.writable
+                 + " beforeUnwritable=" + formatBytes(this.bytesBeforeUnwritable);
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 2cd10c000d50e9a58701a1987b73f965342289b2..30d429b9af8c1dcf6a3722274c00147afe28b903 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -49,11 +49,23 @@ import net.minecraft.network.protocol.PacketFlow;
+ import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
+ import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
+ import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
++import net.minecraft.network.protocol.game.ClientboundChunksBiomesPacket;
+ import net.minecraft.network.protocol.game.ClientboundExplodePacket;
++import net.minecraft.network.protocol.game.ClientboundForgetLevelChunkPacket;
++import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
++import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
+ import net.minecraft.network.protocol.game.ClientboundMoveEntityPacket;
++import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
++import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
+ import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
++import net.minecraft.network.protocol.game.ClientboundRotateHeadPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
++import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
++import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
++import net.minecraft.network.protocol.game.ClientboundSoundPacket;
++import net.minecraft.network.protocol.game.ClientboundStopSoundPacket;
++import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
+ import net.minecraft.network.protocol.handshake.ClientIntent;
+ import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+ import net.minecraft.network.protocol.login.ClientLoginPacketListener;
+@@ -128,6 +140,16 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private final AtomicLong queuedPacketCount = new AtomicLong();
+     private final AtomicLong immediatePacketCount = new AtomicLong();
+     private final AtomicLong flushCallCount = new AtomicLong();
++    private long chunkPacketCount;
++    private long addEntityPacketCount;
++    private long movePacketCount;
++    private long metadataPacketCount;
++    private long equipmentPacketCount;
++    private long playerInfoPacketCount;
++    private long soundPacketCount;
++    private long particlePacketCount;
++    private long keepAlivePacketCount;
++    private long otherPacketCount;
+     private volatile int maxPendingActions;
+     @Nullable
+     BandwidthDebugMonitor bandwidthDebugMonitor;
+@@ -542,6 +564,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+     private void sendPacket(Packet<?> packet, @Nullable PacketSendListener callbacks, boolean flush) {
+         ++this.sentPackets;
+         this.immediatePacketCount.incrementAndGet();
++        this.trackSentPacketCategory(packet);
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.doSendPacket(packet, callbacks, flush);
+         } else {
+@@ -1011,6 +1034,46 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         return this.flushCallCount.get();
+     }
+ 
++    public long getChunkPacketCount() {
++        return this.chunkPacketCount;
++    }
++
++    public long getAddEntityPacketCount() {
++        return this.addEntityPacketCount;
++    }
++
++    public long getMovePacketCount() {
++        return this.movePacketCount;
++    }
++
++    public long getMetadataPacketCount() {
++        return this.metadataPacketCount;
++    }
++
++    public long getEquipmentPacketCount() {
++        return this.equipmentPacketCount;
++    }
++
++    public long getPlayerInfoPacketCount() {
++        return this.playerInfoPacketCount;
++    }
++
++    public long getSoundPacketCount() {
++        return this.soundPacketCount;
++    }
++
++    public long getParticlePacketCount() {
++        return this.particlePacketCount;
++    }
++
++    public long getKeepAlivePacketCount() {
++        return this.keepAlivePacketCount;
++    }
++
++    public long getOtherPacketCount() {
++        return this.otherPacketCount;
++    }
++
+     public boolean isChannelWritableForDebug() {
+         return this.channel != null && this.channel.isWritable();
+     }
+@@ -1045,6 +1108,30 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         }
+     }
+ 
++    private void trackSentPacketCategory(final Packet<?> packet) {
++        if (packet instanceof ClientboundLevelChunkWithLightPacket || packet instanceof ClientboundChunksBiomesPacket || packet instanceof ClientboundForgetLevelChunkPacket) {
++            ++this.chunkPacketCount;
++        } else if (packet instanceof ClientboundAddEntityPacket || packet instanceof ClientboundRemoveEntitiesPacket) {
++            ++this.addEntityPacketCount;
++        } else if (packet instanceof ClientboundMoveEntityPacket || packet instanceof ClientboundTeleportEntityPacket || packet instanceof ClientboundRotateHeadPacket || packet instanceof ClientboundSetEntityMotionPacket) {
++            ++this.movePacketCount;
++        } else if (packet instanceof ClientboundSetEntityDataPacket) {
++            ++this.metadataPacketCount;
++        } else if (packet instanceof ClientboundSetEquipmentPacket) {
++            ++this.equipmentPacketCount;
++        } else if (packet instanceof ClientboundPlayerInfoUpdatePacket || packet instanceof ClientboundPlayerInfoRemovePacket) {
++            ++this.playerInfoPacketCount;
++        } else if (packet instanceof ClientboundSoundPacket || packet instanceof ClientboundSoundEntityPacket || packet instanceof ClientboundStopSoundPacket) {
++            ++this.soundPacketCount;
++        } else if (packet instanceof ClientboundLevelParticlesPacket) {
++            ++this.particlePacketCount;
++        } else if (packet instanceof net.minecraft.network.protocol.common.ClientboundKeepAlivePacket) {
++            ++this.keepAlivePacketCount;
++        } else {
++            ++this.otherPacketCount;
++        }
++    }
++
+     private static class InnerUtil { // Attempt to hide these methods from ProtocolLib, so it doesn't accidently pick them up.
+ 
+         @Nullable
