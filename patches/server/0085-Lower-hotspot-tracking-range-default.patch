@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 20:43:07 +0200
+Subject: [PATCH] Lower hotspot tracking range default
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 93ce337478b833d309a6901f489ef0ea478cf259..49af43ac8bb429d13d178afa10d9fa704757226c 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -1,5 +1,4 @@
+ package dev.orhidea.starforge;
+-
+ import it.unimi.dsi.fastutil.ints.Int2IntMap;
+ import net.kyori.adventure.bossbar.BossBar;
+ import net.minecraft.server.MinecraftServer;
+@@ -357,7 +356,7 @@ public class EntropyConfig {
+         hotspotEnableThreshold = Math.max(1, getInt("starforge.performance.hotspot.enable-threshold", 100, "Enable hotspot packet reduction when this many players are within the hotspot radius."));
+         hotspotDisableThreshold = Math.max(1, Math.min(hotspotEnableThreshold, getInt("starforge.performance.hotspot.disable-threshold", 80, "Disable hotspot packet reduction once nearby players drop below this threshold.")));
+         hotspotUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.update-interval", 10, "How often each player recomputes hotspot state, in ticks."));
+-        hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.75D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
++        hotspotTrackingRangeModifier = Math.max(0.05D, Math.min(1.0D, getDouble("starforge.performance.hotspot.tracking-range-modifier", 0.60D, "Multiplier applied to non-player tracking range while a hotspot is active.")));
+         hotspotTrackedPairUpdateInterval = Math.max(1, getInt("starforge.performance.hotspot.tracker-pair-update-interval", 2, "How often to re-check already tracked entity/viewer pairs while a viewer is inside a hotspot."));
+         hotspotAdvancementFlushInterval = Math.max(1, getInt("starforge.performance.hotspot.advancement-flush-interval", 5, "How often hotspot players flush dirty advancement progress."));
+         hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+@@ -583,3 +582,4 @@ public class EntropyConfig {
+ 
+ 
+ 
++
