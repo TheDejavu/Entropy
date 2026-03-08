@@ -1,0 +1,418 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 15:25:53 +0200
+Subject: [PATCH] Rename package namespace to dev.orhidea
+
+
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java b/src/main/java/dev/orhidea/entropy/entity/EntropyFallingBlock.java
+similarity index 86%
+rename from src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java
+rename to src/main/java/dev/orhidea/entropy/entity/EntropyFallingBlock.java
+index b83fa52f4d1269b240d5e86a0875045968de070e..c2b42342d46eb591725c2cf88edc780172bc2013 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyFallingBlock.java
++++ b/src/main/java/dev/orhidea/entropy/entity/EntropyFallingBlock.java
+@@ -1,4 +1,4 @@
+-package xyz.fragmentmc.entropy.entity;
++package dev.orhidea.entropy.entity;
+ 
+ import org.bukkit.entity.FallingBlock;
+ 
+@@ -10,3 +10,4 @@ public interface EntropyFallingBlock extends FallingBlock {
+      */
+     public int getCount();
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java b/src/main/java/dev/orhidea/entropy/entity/EntropyTntPrimed.java
+similarity index 87%
+rename from src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
+rename to src/main/java/dev/orhidea/entropy/entity/EntropyTntPrimed.java
+index 56171546a79bb3668e7c5383b99653bb71f5f1ae..64f0b50b083138fbc643b517a4075cbe8e5d9259 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/entity/EntropyTntPrimed.java
++++ b/src/main/java/dev/orhidea/entropy/entity/EntropyTntPrimed.java
+@@ -1,4 +1,4 @@
+-package xyz.fragmentmc.entropy.entity;
++package dev.orhidea.entropy.entity;
+ 
+ import org.bukkit.entity.TNTPrimed;
+ 
+@@ -14,3 +14,4 @@ public interface EntropyTntPrimed extends TNTPrimed {
+     public int getCount();
+ }
+ 
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java b/src/main/java/dev/orhidea/entropy/event/AssignDurabilityEvent.java
+similarity index 96%
+rename from src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/AssignDurabilityEvent.java
+index 52cc542cebf77fcae2f1a6ae3470207effcb8256..649a32f0613c31e6c0e3b88eacb20c25b0929a47 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/AssignDurabilityEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/AssignDurabilityEvent.java
+@@ -1,4 +1,4 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.Material;
+@@ -43,3 +43,4 @@ public class AssignDurabilityEvent extends Event {
+         return handlers;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java b/src/main/java/dev/orhidea/entropy/event/BubbleColumnEvent.java
+similarity index 83%
+rename from src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/BubbleColumnEvent.java
+index f4b1f9181b4331e43eed4e9bed1b328e2d5e7bd3..5bffb577af3de58436ceaf3d6c1dac8c9785e27e 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/BubbleColumnEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/BubbleColumnEvent.java
+@@ -1,8 +1,8 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++import dev.orhidea.entropy.event.base.EntropyBooleanEvent;
+ 
+ public class BubbleColumnEvent extends EntropyBooleanEvent {
+     private final Entity entity;
+@@ -21,3 +21,4 @@ public class BubbleColumnEvent extends EntropyBooleanEvent {
+         return location;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java b/src/main/java/dev/orhidea/entropy/event/CombinedExplosionEvent.java
+similarity index 75%
+rename from src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/CombinedExplosionEvent.java
+index 3ad15e1d544bef6f8c7c6db166f5d2fcd8632478..f2d8225630ae24e98888d32d6e33b855ea67e676 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/CombinedExplosionEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/CombinedExplosionEvent.java
+@@ -1,12 +1,13 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++import dev.orhidea.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class CombinedExplosionEvent extends EntropyExplosionEvent {
+     public CombinedExplosionEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java b/src/main/java/dev/orhidea/entropy/event/ConcreteHardenEvent.java
+similarity index 60%
+rename from src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/ConcreteHardenEvent.java
+index 6c44641da693028960036c51ba975a13ce878134..ac90910e22876e1bf854530909aa5ec558511b19 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/ConcreteHardenEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/ConcreteHardenEvent.java
+@@ -1,11 +1,12 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
+-import xyz.fragmentmc.entropy.event.base.EntropyFallingBlockEvent;
++import dev.orhidea.entropy.entity.EntropyFallingBlock;
++import dev.orhidea.entropy.event.base.EntropyFallingBlockEvent;
+ 
+ public class ConcreteHardenEvent extends EntropyFallingBlockEvent {
+     public ConcreteHardenEvent(boolean value, @NotNull EntropyFallingBlock fallingBlock) {
+         super(value, fallingBlock);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java b/src/main/java/dev/orhidea/entropy/event/DetermineFallingBlockExposureEvent.java
+similarity index 76%
+rename from src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/DetermineFallingBlockExposureEvent.java
+index 2619b08389ec20370216e62039c9b19a316eff05..3109333db0674e92d9b5090a4d64a420f31bc849 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/DetermineFallingBlockExposureEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/DetermineFallingBlockExposureEvent.java
+@@ -1,12 +1,13 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++import dev.orhidea.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class DetermineFallingBlockExposureEvent extends EntropyExplosionEvent {
+     public DetermineFallingBlockExposureEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java b/src/main/java/dev/orhidea/entropy/event/EntityMergeEvent.java
+similarity index 86%
+rename from src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/EntityMergeEvent.java
+index 6e6f71bad422529a572ed2bc55a889893f26363f..56c809f3d5db43ebda49c38ddb00233eb8ae39cb 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/EntityMergeEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/EntityMergeEvent.java
+@@ -1,8 +1,8 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++import dev.orhidea.entropy.event.base.EntropyBooleanEvent;
+ 
+ public class EntityMergeEvent extends EntropyBooleanEvent {
+     private final Entity mergeIntoEntity;
+@@ -22,3 +22,4 @@ public class EntityMergeEvent extends EntropyBooleanEvent {
+         return mergeDeleteEntity;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java b/src/main/java/dev/orhidea/entropy/event/ExplodeLavaEvent.java
+similarity index 74%
+rename from src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/ExplodeLavaEvent.java
+index 7589a9e9cf3349ab3e165b8a57a2297806352769..eaf3926c9071cc0461c07b17f45a948cd59e36c3 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeLavaEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/ExplodeLavaEvent.java
+@@ -1,12 +1,13 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++import dev.orhidea.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class ExplodeLavaEvent extends EntropyExplosionEvent {
+     public ExplodeLavaEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java b/src/main/java/dev/orhidea/entropy/event/ExplodeWaterloggedEvent.java
+similarity index 75%
+rename from src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/ExplodeWaterloggedEvent.java
+index 1f1cbb5ed0590f5947e80ae9b6458672638baa21..4c51237407be38cdbeba34c02349c7e6a8c6edff 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/ExplodeWaterloggedEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/ExplodeWaterloggedEvent.java
+@@ -1,12 +1,13 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.event.base.EntropyExplosionEvent;
++import dev.orhidea.entropy.event.base.EntropyExplosionEvent;
+ 
+ public class ExplodeWaterloggedEvent extends EntropyExplosionEvent {
+     public ExplodeWaterloggedEvent(boolean value, Entity source, @NotNull Location location) {
+         super(value, source, location);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java b/src/main/java/dev/orhidea/entropy/event/HoneyBlockEvent.java
+similarity index 83%
+rename from src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/HoneyBlockEvent.java
+index 570e757e28d5cdc6d922e7bdd638e57c97903662..30f56bf364b52557a8c6657d348059701710d9ad 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/HoneyBlockEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/HoneyBlockEvent.java
+@@ -1,8 +1,8 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++import dev.orhidea.entropy.event.base.EntropyBooleanEvent;
+ 
+ public class HoneyBlockEvent extends EntropyBooleanEvent {
+     private final Entity entity;
+@@ -21,3 +21,4 @@ public class HoneyBlockEvent extends EntropyBooleanEvent {
+         return location;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java b/src/main/java/dev/orhidea/entropy/event/IsInCannonEvent.java
+similarity index 83%
+rename from src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/IsInCannonEvent.java
+index 3662b50404589daa7a0ce21a640490d21371a0b9..71e92583c402db848a90bb72f3a5c4da0ee0e761 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/IsInCannonEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/IsInCannonEvent.java
+@@ -1,8 +1,8 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++import dev.orhidea.entropy.event.base.EntropyBooleanEvent;
+ 
+ public class IsInCannonEvent extends EntropyBooleanEvent {
+     private final Entity entity;
+@@ -21,3 +21,4 @@ public class IsInCannonEvent extends EntropyBooleanEvent {
+         return location;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java b/src/main/java/dev/orhidea/entropy/event/NonFullBlockCollideEvent.java
+similarity index 83%
+rename from src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/NonFullBlockCollideEvent.java
+index 6dfff2f8a8ebb32f7889a21b3638216b8e3cde09..8b5b42bef6650335480d26b10d426596a39500d2 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/NonFullBlockCollideEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/NonFullBlockCollideEvent.java
+@@ -1,8 +1,8 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+-import xyz.fragmentmc.entropy.event.base.EntropyBooleanEvent;
++import dev.orhidea.entropy.event.base.EntropyBooleanEvent;
+ 
+ public class NonFullBlockCollideEvent extends EntropyBooleanEvent {
+     private final Entity entity;
+@@ -21,3 +21,4 @@ public class NonFullBlockCollideEvent extends EntropyBooleanEvent {
+         return location;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java b/src/main/java/dev/orhidea/entropy/event/TntFlowEvent.java
+similarity index 57%
+rename from src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/TntFlowEvent.java
+index f1c504345acd7b2016912a8a9e0f751035d5893e..94a0a29d62ad1997c903e39ada8152b880365f17 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/TntFlowEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/TntFlowEvent.java
+@@ -1,11 +1,12 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
+-import xyz.fragmentmc.entropy.event.base.EntropyTntEvent;
++import dev.orhidea.entropy.entity.EntropyTntPrimed;
++import dev.orhidea.entropy.event.base.EntropyTntEvent;
+ 
+ public class TntFlowEvent extends EntropyTntEvent {
+     public TntFlowEvent(boolean value, @NotNull EntropyTntPrimed tnt) {
+         super(value, tnt);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java b/src/main/java/dev/orhidea/entropy/event/TntSpreadEvent.java
+similarity index 57%
+rename from src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/TntSpreadEvent.java
+index a164e6b871cfcf541ab556ad3d5fdd085f024cd1..1976950da5ab1e5b3e7a403b0696164421220600 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/TntSpreadEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/TntSpreadEvent.java
+@@ -1,11 +1,12 @@
+-package xyz.fragmentmc.entropy.event;
++package dev.orhidea.entropy.event;
+ 
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
+-import xyz.fragmentmc.entropy.event.base.EntropyTntEvent;
++import dev.orhidea.entropy.entity.EntropyTntPrimed;
++import dev.orhidea.entropy.event.base.EntropyTntEvent;
+ 
+ public class TntSpreadEvent extends EntropyTntEvent {
+     public TntSpreadEvent(boolean value, @NotNull EntropyTntPrimed tnt) {
+         super(value, tnt);
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java b/src/main/java/dev/orhidea/entropy/event/base/EntropyBooleanEvent.java
+similarity index 94%
+rename from src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/base/EntropyBooleanEvent.java
+index 08a3e09a1fe183beea78b0dcd4d76991f71dcdb1..42c8289f43acf021674a5d85b2875a8cebb62117 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyBooleanEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/base/EntropyBooleanEvent.java
+@@ -1,4 +1,4 @@
+-package xyz.fragmentmc.entropy.event.base;
++package dev.orhidea.entropy.event.base;
+ 
+ import org.bukkit.event.Cancellable;
+ import org.bukkit.event.Event;
+@@ -33,3 +33,4 @@ public abstract class EntropyBooleanEvent extends Event implements Cancellable {
+         return handlers;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java b/src/main/java/dev/orhidea/entropy/event/base/EntropyExplosionEvent.java
+similarity index 93%
+rename from src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/base/EntropyExplosionEvent.java
+index ec65686d92855581ae3d55e3f54259baa57e33b3..a5ca2831f3c4d6986469810b2df1b5b68c66faee 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyExplosionEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/base/EntropyExplosionEvent.java
+@@ -1,4 +1,4 @@
+-package xyz.fragmentmc.entropy.event.base;
++package dev.orhidea.entropy.event.base;
+ 
+ import org.bukkit.Location;
+ import org.bukkit.entity.Entity;
+@@ -22,3 +22,4 @@ public abstract class EntropyExplosionEvent extends EntropyBooleanEvent {
+         return this.location;
+     }
+ }
++
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java b/src/main/java/dev/orhidea/entropy/event/base/EntropyFallingBlockEvent.java
+similarity index 81%
+rename from src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/base/EntropyFallingBlockEvent.java
+index 517a0f82b32e44de603cea57df061f8e5e4a442b..3631971ea44fa6c32555ef7123f1b82a6d6982cf 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyFallingBlockEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/base/EntropyFallingBlockEvent.java
+@@ -1,7 +1,7 @@
+-package xyz.fragmentmc.entropy.event.base;
++package dev.orhidea.entropy.event.base;
+ 
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyFallingBlock;
++import dev.orhidea.entropy.entity.EntropyFallingBlock;
+ 
+ public abstract class EntropyFallingBlockEvent extends EntropyBooleanEvent {
+     private final EntropyFallingBlock fallingBlock;
+@@ -14,4 +14,4 @@ public abstract class EntropyFallingBlockEvent extends EntropyBooleanEvent {
+     public EntropyFallingBlock getFallingBlockEntity() {
+         return this.fallingBlock;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java b/src/main/java/dev/orhidea/entropy/event/base/EntropyTntEvent.java
+similarity index 78%
+rename from src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java
+rename to src/main/java/dev/orhidea/entropy/event/base/EntropyTntEvent.java
+index 1478f573b3982b589c921faa2daddc6b7481ead7..0e937fa30d26d4320c3c4c740fd4239fa6fdece3 100644
+--- a/src/main/java/xyz/fragmentmc/entropy/event/base/EntropyTntEvent.java
++++ b/src/main/java/dev/orhidea/entropy/event/base/EntropyTntEvent.java
+@@ -1,7 +1,7 @@
+-package xyz.fragmentmc.entropy.event.base;
++package dev.orhidea.entropy.event.base;
+ 
+ import org.jetbrains.annotations.NotNull;
+-import xyz.fragmentmc.entropy.entity.EntropyTntPrimed;
++import dev.orhidea.entropy.entity.EntropyTntPrimed;
+ 
+ public abstract class EntropyTntEvent extends EntropyBooleanEvent {
+     private final EntropyTntPrimed tnt;
+@@ -15,3 +15,4 @@ public abstract class EntropyTntEvent extends EntropyBooleanEvent {
+         return this.tnt;
+     }
+ }
++
