@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 17:36:31 +0200
+Subject: [PATCH] Keep inert timings report queue
+
+
+diff --git a/src/main/java/co/aikar/timings/Timings.java b/src/main/java/co/aikar/timings/Timings.java
+index ab2791d4400acdc9c1d68cff39a1065be54e7414..40c454de7558234575ca6bd6a8b0c71dbb507182 100644
+--- a/src/main/java/co/aikar/timings/Timings.java
++++ b/src/main/java/co/aikar/timings/Timings.java
+@@ -23,6 +23,7 @@
+  */
+ package co.aikar.timings;
+ 
++import com.google.common.collect.Lists;
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.event.ClickEvent;
+ import net.kyori.adventure.text.format.TextColor;
+@@ -33,12 +34,15 @@ import org.bukkit.plugin.Plugin;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
++import java.util.List;
++
+ /**
+  * @deprecated Timings will likely be replaced with Spark in the future
+  */
+ @Deprecated(forRemoval = true)
+ @SuppressWarnings({"UnusedDeclaration", "WeakerAccess", "SameParameterValue"})
+ public final class Timings {
++    final static List<CommandSender> requestingReport = Lists.newArrayList();
+     public static final Timing NULL_HANDLER = new NullTimingHandler();
+     private static final String SPARK_URL = "https://spark.lucko.me/download";
+     private static final String SPARK_DOCS_URL = "https://spark.lucko.me/docs/Command-Usage";

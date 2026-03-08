@@ -1,0 +1,705 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 17:35:21 +0200
+Subject: [PATCH] Replace timings with spark compatibility shims
+
+
+diff --git a/src/main/java/co/aikar/timings/TimedEventExecutor.java b/src/main/java/co/aikar/timings/TimedEventExecutor.java
+index 8f29c1561ba5916cb5634392edd8bd2a5a294a51..747fa71f50bb6942b75a35b15f9370205ecb4983 100644
+--- a/src/main/java/co/aikar/timings/TimedEventExecutor.java
++++ b/src/main/java/co/aikar/timings/TimedEventExecutor.java
+@@ -23,68 +23,32 @@
+  */
+ package co.aikar.timings;
+ 
+-import org.bukkit.Bukkit;
+ import org.bukkit.event.Event;
+ import org.bukkit.event.EventException;
+ import org.bukkit.event.Listener;
+ import org.bukkit.plugin.EventExecutor;
+ import org.bukkit.plugin.Plugin;
+-
+-import java.lang.reflect.Method;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
++import java.lang.reflect.Method;
++
+ @Deprecated(forRemoval = true)
+ public class TimedEventExecutor implements EventExecutor {
+-
+     private final EventExecutor executor;
+-    private final Timing timings;
+ 
+-    /**
+-     * Wraps an event executor and associates a timing handler to it.
+-     *
+-     * @param executor Executor to wrap
+-     * @param plugin Owning plugin
+-     * @param method EventHandler method
+-     * @param eventClass Owning class
+-     */
+     public TimedEventExecutor(@NotNull EventExecutor executor, @NotNull Plugin plugin, @Nullable Method method, @NotNull Class<? extends Event> eventClass) {
+         this.executor = executor;
+-        String id;
+-
+-        if (method == null) {
+-            if (executor.getClass().getEnclosingClass() != null) { // Oh Skript, how we love you
+-                method = executor.getClass().getEnclosingMethod();
+-            }
+-        }
+-
+-        if (method != null) {
+-            id = method.getDeclaringClass().getName();
+-        } else {
+-            id = executor.getClass().getName();
+-        }
+-
+-
+-        final String eventName = eventClass.getSimpleName();
+-        boolean verbose = "BlockPhysicsEvent".equals(eventName);
+-        this.timings = Timings.ofSafe(plugin, (verbose ? "## " : "") +
+-            "Event: " + id + " (" + eventName + ")");
+     }
+ 
+     @Override
+     public void execute(@NotNull Listener listener, @NotNull Event event) throws EventException {
+-        if (event.isAsynchronous() || !Timings.timingsEnabled || !Bukkit.isPrimaryThread()) {
+-            executor.execute(listener, event);
+-            return;
+-        }
+-        try (Timing ignored = timings.startTiming()){
+-            executor.execute(listener, event);
+-        }
++        this.executor.execute(listener, event);
+     }
+ 
+     @Override
+     @NotNull
+     public String toString() {
+-        return "TimedEventExecutor['" + this.executor.toString() + "']";
++        return "TimedEventExecutor['" + this.executor + "']";
+     }
+ }
+diff --git a/src/main/java/co/aikar/timings/Timings.java b/src/main/java/co/aikar/timings/Timings.java
+index 9812d668ad945aba486fbf6d5bf83c4292cb5d03..ab2791d4400acdc9c1d68cff39a1065be54e7414 100644
+--- a/src/main/java/co/aikar/timings/Timings.java
++++ b/src/main/java/co/aikar/timings/Timings.java
+@@ -23,9 +23,6 @@
+  */
+ package co.aikar.timings;
+ 
+-import com.google.common.base.Preconditions;
+-import com.google.common.collect.EvictingQueue;
+-import com.google.common.collect.Lists;
+ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.text.event.ClickEvent;
+ import net.kyori.adventure.text.format.TextColor;
+@@ -33,10 +30,6 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+ import org.bukkit.Bukkit;
+ import org.bukkit.command.CommandSender;
+ import org.bukkit.plugin.Plugin;
+-
+-import java.util.List;
+-import java.util.Queue;
+-import java.util.logging.Level;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
+@@ -46,112 +39,51 @@ import org.jetbrains.annotations.Nullable;
+ @Deprecated(forRemoval = true)
+ @SuppressWarnings({"UnusedDeclaration", "WeakerAccess", "SameParameterValue"})
+ public final class Timings {
+-
+-    final static List<CommandSender> requestingReport = Lists.newArrayList();
+-    private static final int MAX_HISTORY_FRAMES = 12;
+     public static final Timing NULL_HANDLER = new NullTimingHandler();
++    private static final String SPARK_URL = "https://spark.lucko.me/download";
++    private static final String SPARK_DOCS_URL = "https://spark.lucko.me/docs/Command-Usage";
+     static boolean timingsEnabled = false;
+     static boolean verboseEnabled = false;
+-    private static int historyInterval = -1;
+-    private static int historyLength = -1;
++    private static int historyInterval = 20 * 60 * 5;
++    private static int historyLength = 20 * 60 * 60;
+     private static boolean warnedAboutDeprecationOnEnable;
+ 
+-    private Timings() {}
++    private Timings() {
++    }
+ 
+-    /**
+-     * Returns a Timing for a plugin corresponding to a name.
+-     *
+-     * @param plugin Plugin to own the Timing
+-     * @param name   Name of Timing
+-     * @return Handler
+-     */
+     @NotNull
+     public static Timing of(@NotNull Plugin plugin, @NotNull String name) {
+-        Timing pluginHandler = null;
+-        if (plugin != null) {
+-            pluginHandler = ofSafe(plugin.getName(), "Combined Total", TimingsManager.PLUGIN_GROUP_HANDLER);
+-        }
+-        return of(plugin, name, pluginHandler);
++        return NULL_HANDLER;
+     }
+ 
+-    /**
+-     * <p>Returns a handler that has a groupHandler timer handler. Parent timers should not have their
+-     * start/stop methods called directly, as the children will call it for you.</p>
+-     *
+-     * Parent Timers are used to group multiple subsections together and get a summary of them combined
+-     * Parent Handler can not be changed after first call
+-     *
+-     * @param plugin       Plugin to own the Timing
+-     * @param name         Name of Timing
+-     * @param groupHandler Parent handler to mirror .start/stop calls to
+-     * @return Timing Handler
+-     */
+     @NotNull
+     public static Timing of(@NotNull Plugin plugin, @NotNull String name, @Nullable Timing groupHandler) {
+-        Preconditions.checkNotNull(plugin, "Plugin can not be null");
+-        Bukkit.getLogger().warning(String.format("Plugin '%s' is creating timing '%s' - this is deprecated behavior, please report it to the authors: %s", plugin.getName(), name, String.join(", ", plugin.getDescription().getAuthors())));
+-        return TimingsManager.getHandler(plugin.getName(), name, groupHandler);
++        return NULL_HANDLER;
+     }
+ 
+-    /**
+-     * Returns a Timing object after starting it, useful for Java7 try-with-resources.
+-     *
+-     * try (Timing ignored = Timings.ofStart(plugin, someName)) {
+-     * // timed section
+-     * }
+-     *
+-     * @param plugin Plugin to own the Timing
+-     * @param name   Name of Timing
+-     * @return Timing Handler
+-     */
+     @NotNull
+     public static Timing ofStart(@NotNull Plugin plugin, @NotNull String name) {
+-        return ofStart(plugin, name, null);
++        return NULL_HANDLER;
+     }
+ 
+-    /**
+-     * Returns a Timing object after starting it, useful for Java7 try-with-resources.
+-     *
+-     * try (Timing ignored = Timings.ofStart(plugin, someName, groupHandler)) {
+-     * // timed section
+-     * }
+-     *
+-     * @param plugin       Plugin to own the Timing
+-     * @param name         Name of Timing
+-     * @param groupHandler Parent handler to mirror .start/stop calls to
+-     * @return Timing Handler
+-     */
+     @NotNull
+     public static Timing ofStart(@NotNull Plugin plugin, @NotNull String name, @Nullable Timing groupHandler) {
+-        Timing timing = of(plugin, name, groupHandler);
+-        timing.startTiming();
+-        return timing;
++        return NULL_HANDLER;
+     }
+ 
+-    /**
+-     * Gets whether or not the Spigot Timings system is enabled
+-     *
+-     * @return Enabled or not
+-     */
+     public static boolean isTimingsEnabled() {
+-        return timingsEnabled;
++        return false;
+     }
+ 
+-    /**
+-     * <p>Sets whether or not the Spigot Timings system should be enabled</p>
+-     *
+-     * Calling this will reset timing data.
+-     *
+-     * @param enabled Should timings be reported
+-     */
+     public static void setTimingsEnabled(boolean enabled) {
+-        timingsEnabled = enabled;
+-        warnAboutDeprecationOnEnable();
+-        reset();
++        timingsEnabled = false;
++        if (enabled) {
++            warnAboutDeprecationOnEnable();
++        }
+     }
+ 
+     private static void warnAboutDeprecationOnEnable() {
+-        if (timingsEnabled && !warnedAboutDeprecationOnEnable) {
++        if (!warnedAboutDeprecationOnEnable) {
+             Bukkit.getLogger().warning(PlainTextComponentSerializer.plainText().serialize(deprecationMessage()));
+             warnedAboutDeprecationOnEnable = true;
+         }
+@@ -160,156 +92,63 @@ public final class Timings {
+     public static Component deprecationMessage() {
+         return Component.text()
+             .color(TextColor.color(0xf3ef91))
+-            .append(Component.text("[!] The timings profiler has been enabled but has been scheduled for removal from Paper in the future."))
++            .append(Component.text("[!] Timings have been removed from Starforge."))
+             .append(Component.newline())
+             .append(
+-                Component.text("    We recommend installing the spark profiler as a replacement: ")
+-                    .append(
+-                        Component.text()
+-                            .content("https://spark.lucko.me/")
+-                            .clickEvent(ClickEvent.openUrl("https://spark.lucko.me/")))
++                Component.text("    Install spark: ")
++                    .append(Component.text().content(SPARK_URL).clickEvent(ClickEvent.openUrl(SPARK_URL)))
+             )
+             .append(Component.newline())
+             .append(
+-                Component.text("    For more information please visit: ")
+-                    .append(
+-                        Component.text()
+-                            .content("https://github.com/PaperMC/Paper/issues/8948")
+-                            .clickEvent(ClickEvent.openUrl("https://github.com/PaperMC/Paper/issues/8948")))
++                Component.text("    Command usage: ")
++                    .append(Component.text().content(SPARK_DOCS_URL).clickEvent(ClickEvent.openUrl(SPARK_DOCS_URL)))
+             )
++            .append(Component.newline())
++            .append(Component.text("    After installing spark, use /spark help or /spark profiler --timeout 60"))
+             .build();
+     }
+ 
+-    /**
+-     * <p>Sets whether or not the Timings should monitor at Verbose level.</p>
+-     *
+-     * <p>When Verbose is disabled, high-frequency timings will not be available.</p>
+-     *
+-     * @return Enabled or not
+-     */
+     public static boolean isVerboseTimingsEnabled() {
+-        return verboseEnabled;
++        return false;
+     }
+ 
+-    /**
+-     * <p>Sets whether or not the Timings should monitor at Verbose level.</p>
+-     *
+-     * When Verbose is disabled, high-frequency timings will not be available.
+-     * Calling this will reset timing data.
+-     *
+-     * @param enabled Should high-frequency timings be reported
+-     */
+     public static void setVerboseTimingsEnabled(boolean enabled) {
+-        verboseEnabled = enabled;
+-        TimingsManager.needsRecheckEnabled = true;
++        verboseEnabled = false;
+     }
+ 
+-    /**
+-     * <p>Gets the interval between Timing History report generation.</p>
+-     *
+-     * Defaults to 5 minutes (6000 ticks)
+-     *
+-     * @return Interval in ticks
+-     */
+     public static int getHistoryInterval() {
+         return historyInterval;
+     }
+ 
+-    /**
+-     * <p>Sets the interval between Timing History report generations.</p>
+-     *
+-     * <p>Defaults to 5 minutes (6000 ticks)</p>
+-     *
+-     * This will recheck your history length, so lowering this value will lower your
+-     * history length if you need more than 60 history windows.
+-     *
+-     * @param interval Interval in ticks
+-     */
+     public static void setHistoryInterval(int interval) {
+-        historyInterval = Math.max(20*60, interval);
+-        // Recheck the history length with the new Interval
+-        if (historyLength != -1) {
+-            setHistoryLength(historyLength);
+-        }
++        historyInterval = Math.max(20 * 60, interval);
+     }
+ 
+-    /**
+-     * Gets how long in ticks Timings history is kept for the server.
+-     *
+-     * Defaults to 1 hour (72000 ticks)
+-     *
+-     * @return Duration in Ticks
+-     */
+     public static int getHistoryLength() {
+         return historyLength;
+     }
+ 
+-    /**
+-     * Sets how long Timing History reports are kept for the server.
+-     *
+-     * Defaults to 1 hours(72000 ticks)
+-     *
+-     * This value is capped at a maximum of getHistoryInterval() * MAX_HISTORY_FRAMES (12)
+-     *
+-     * Will not reset Timing Data but may truncate old history if the new length is less than old length.
+-     *
+-     * @param length Duration in ticks
+-     */
+     public static void setHistoryLength(int length) {
+-        // Cap at 12 History Frames, 1 hour at 5 minute frames.
+-        int maxLength = historyInterval * MAX_HISTORY_FRAMES;
+-        // For special cases of servers with special permission to bypass the max.
+-        // This max helps keep data file sizes reasonable for processing on Aikar's Timing parser side.
+-        // Setting this will not help you bypass the max unless Aikar has added an exception on the API side.
+-        if (System.getProperty("timings.bypassMax") != null) {
+-            maxLength = Integer.MAX_VALUE;
+-        }
+-        historyLength = Math.max(Math.min(maxLength, length), historyInterval);
+-        Queue<TimingHistory> oldQueue = TimingsManager.HISTORY;
+-        int frames = (getHistoryLength() / getHistoryInterval());
+-        if (length > maxLength) {
+-            Bukkit.getLogger().log(Level.WARNING, "Timings Length too high. Requested " + length + ", max is " + maxLength + ". To get longer history, you must increase your interval. Set Interval to " + Math.ceil(length / MAX_HISTORY_FRAMES) + " to achieve this length.");
+-        }
+-        TimingsManager.HISTORY = EvictingQueue.create(frames);
+-        TimingsManager.HISTORY.addAll(oldQueue);
++        historyLength = Math.max(length, historyInterval);
+     }
+ 
+-    /**
+-     * Resets all Timing Data
+-     */
+     public static void reset() {
+-        TimingsManager.reset();
++        timingsEnabled = false;
++        verboseEnabled = false;
+     }
+ 
+-    /**
+-     * Generates a report and sends it to the specified command sender.
+-     *
+-     * If sender is null, ConsoleCommandSender will be used.
+-     * @param sender The sender to send to, or null to use the ConsoleCommandSender
+-     */
+     public static void generateReport(@Nullable CommandSender sender) {
+         if (sender == null) {
+             sender = Bukkit.getConsoleSender();
+         }
+-        requestingReport.add(sender);
++        sender.sendMessage(deprecationMessage());
+     }
+ 
+-    /**
+-     * Generates a report and sends it to the specified listener.
+-     * Use with {@link org.bukkit.command.BufferedCommandSender} to get full response when done!
+-     * @param sender The listener to send responses too.
+-     */
+     public static void generateReport(@NotNull TimingsReportListener sender) {
+-        Preconditions.checkNotNull(sender);
+-        requestingReport.add(sender);
++        sender.sendMessage(deprecationMessage());
++        sender.done();
+     }
+ 
+-    /*
+-    =================
+-    Protected API: These are for internal use only in Bukkit/CraftBukkit
+-    These do not have isPrimaryThread() checks in the startTiming/stopTiming
+-    =================
+-    */
+     @NotNull
+     static TimingHandler ofSafe(@NotNull String name) {
+         return ofSafe(null, name, null);
+@@ -317,11 +156,7 @@ public final class Timings {
+ 
+     @NotNull
+     static Timing ofSafe(@Nullable Plugin plugin, @NotNull String name) {
+-        Timing pluginHandler = null;
+-        if (plugin != null) {
+-            pluginHandler = ofSafe(plugin.getName(), "Combined Total", TimingsManager.PLUGIN_GROUP_HANDLER);
+-        }
+-        return ofSafe(plugin != null ? plugin.getName() : "Minecraft - Invalid Plugin", name, pluginHandler);
++        return NULL_HANDLER;
+     }
+ 
+     @NotNull
+@@ -334,4 +169,3 @@ public final class Timings {
+         return TimingsManager.getHandler(groupName, name, groupHandler);
+     }
+ }
+-
+diff --git a/src/main/java/co/aikar/timings/TimingsCommand.java b/src/main/java/co/aikar/timings/TimingsCommand.java
+index e801e79fa57c44b2e5d359647c920f88064826f1..fef2e4b5969d68748ba861bb5d141129e38a2385 100644
+--- a/src/main/java/co/aikar/timings/TimingsCommand.java
++++ b/src/main/java/co/aikar/timings/TimingsCommand.java
+@@ -23,29 +23,19 @@
+  */
+ package co.aikar.timings;
+ 
+-import com.google.common.base.Preconditions;
+-import com.google.common.collect.ImmutableList;
+-import net.kyori.adventure.text.format.NamedTextColor;
+ import org.bukkit.command.CommandSender;
+ import org.bukkit.command.defaults.BukkitCommand;
+-import org.bukkit.util.StringUtil;
+-
+-import java.util.ArrayList;
+-import java.util.List;
+ import org.jetbrains.annotations.NotNull;
+ 
+-import static net.kyori.adventure.text.Component.text;
+-
++import java.util.Collections;
++import java.util.List;
+ 
+ @Deprecated(forRemoval = true)
+ public class TimingsCommand extends BukkitCommand {
+-    private static final List<String> TIMINGS_SUBCOMMANDS = ImmutableList.of("report", "reset", "on", "off", "paste", "verbon", "verboff");
+-    private long lastResetAttempt = 0;
+-
+     public TimingsCommand(@NotNull String name) {
+         super(name);
+-        this.description = "Manages Spigot Timings data to see performance of the server.";
+-        this.usageMessage = "/timings <reset|report|on|off|verbon|verboff>";
++        this.description = "Legacy timings entrypoint. Use spark instead.";
++        this.usageMessage = "/timings";
+         this.setPermission("bukkit.command.timings");
+     }
+ 
+@@ -54,71 +44,13 @@ public class TimingsCommand extends BukkitCommand {
+         if (!testPermission(sender)) {
+             return true;
+         }
+-        if (false) {
+-            sender.sendMessage(Timings.deprecationMessage());
+-        }
+-        if (args.length < 1) {
+-            sender.sendMessage(text("Usage: " + this.usageMessage, NamedTextColor.RED));
+-            return true;
+-        }
+-        final String arg = args[0];
+-        if ("on".equalsIgnoreCase(arg)) {
+-            Timings.setTimingsEnabled(true);
+-            sender.sendMessage(text("Enabled Timings & Reset"));
+-            return true;
+-        } else if ("off".equalsIgnoreCase(arg)) {
+-            Timings.setTimingsEnabled(false);
+-            sender.sendMessage(text("Disabled Timings"));
+-            return true;
+-        }
+-
+-        if (!Timings.isTimingsEnabled()) {
+-            sender.sendMessage(text("Please enable timings by typing /timings on"));
+-            return true;
+-        }
+-
+-        long now = System.currentTimeMillis();
+-        if ("verbon".equalsIgnoreCase(arg)) {
+-            Timings.setVerboseTimingsEnabled(true);
+-            sender.sendMessage(text("Enabled Verbose Timings"));
+-            return true;
+-        } else if ("verboff".equalsIgnoreCase(arg)) {
+-            Timings.setVerboseTimingsEnabled(false);
+-            sender.sendMessage(text("Disabled Verbose Timings"));
+-            return true;
+-        } else if ("reset".equalsIgnoreCase(arg)) {
+-            if (now - lastResetAttempt < 30000) {
+-                TimingsManager.reset();
+-                sender.sendMessage(text("Timings reset. Please wait 5-10 minutes before using /timings report.", NamedTextColor.RED));
+-            } else {
+-                lastResetAttempt = now;
+-                sender.sendMessage(text("WARNING: Timings v2 should not be reset. If you are experiencing lag, please wait 3 minutes and then issue a report. The best timings will include 10+ minutes, with data before and after your lag period. If you really want to reset, run this command again within 30 seconds.", NamedTextColor.RED));
+-            }
+-        } else  if (
+-            "paste".equalsIgnoreCase(arg) ||
+-                "report".equalsIgnoreCase(arg) ||
+-                "get".equalsIgnoreCase(arg) ||
+-                "merged".equalsIgnoreCase(arg) ||
+-                "separate".equalsIgnoreCase(arg)
+-            ) {
+-            Timings.generateReport(sender);
+-        } else {
+-            sender.sendMessage(text("Usage: " + this.usageMessage, NamedTextColor.RED));
+-        }
++        sender.sendMessage(Timings.deprecationMessage());
+         return true;
+     }
+ 
+     @NotNull
+     @Override
+     public List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, @NotNull String[] args) {
+-        Preconditions.checkNotNull(sender, "Sender cannot be null");
+-        Preconditions.checkNotNull(args, "Arguments cannot be null");
+-        Preconditions.checkNotNull(alias, "Alias cannot be null");
+-
+-        if (args.length == 1) {
+-            return StringUtil.copyPartialMatches(args[0], TIMINGS_SUBCOMMANDS,
+-                new ArrayList<String>(TIMINGS_SUBCOMMANDS.size()));
+-        }
+-        return ImmutableList.of();
++        return Collections.emptyList();
+     }
+ }
+diff --git a/src/main/java/org/bukkit/command/Command.java b/src/main/java/org/bukkit/command/Command.java
+index b791358f90fe92bc2264d9a26492245763813af3..5f2f7a6d1e37eb3f56ecad1e3c957183e4b221c0 100644
+--- a/src/main/java/org/bukkit/command/Command.java
++++ b/src/main/java/org/bukkit/command/Command.java
+@@ -33,7 +33,7 @@ public abstract class Command {
+     protected String usageMessage;
+     private String permission;
+     private net.kyori.adventure.text.Component permissionMessage; // Paper
+-    public co.aikar.timings.Timing timings; // Paper
++    public co.aikar.timings.Timing timings = co.aikar.timings.NullTimingHandler.NULL; // Paper
+     @NotNull public String getTimingName() {return getName();} // Paper
+ 
+     protected Command(@NotNull String name) {
+diff --git a/src/main/java/org/bukkit/command/FormattedCommandAlias.java b/src/main/java/org/bukkit/command/FormattedCommandAlias.java
+index 9d4f553c04784cca63901a56a7aea62a5cae1d72..ab280526c5772af2acf4d3483443a1063dff89b4 100644
+--- a/src/main/java/org/bukkit/command/FormattedCommandAlias.java
++++ b/src/main/java/org/bukkit/command/FormattedCommandAlias.java
+@@ -12,7 +12,7 @@ public class FormattedCommandAlias extends Command {
+ 
+     public FormattedCommandAlias(@NotNull String alias, @NotNull String[] formatStrings) {
+         super(alias);
+-        timings = co.aikar.timings.TimingsManager.getCommandTiming("minecraft", this); // Spigot
++        timings = co.aikar.timings.NullTimingHandler.NULL; // Spigot
+         this.formatStrings = formatStrings;
+     }
+ 
+diff --git a/src/main/java/org/bukkit/command/SimpleCommandMap.java b/src/main/java/org/bukkit/command/SimpleCommandMap.java
+index ac9a28922f8a556944a4c3649d74c32c622f0cb0..b50b935a65ac9bf0a3f1798cdcc6bc4be31e83bf 100644
+--- a/src/main/java/org/bukkit/command/SimpleCommandMap.java
++++ b/src/main/java/org/bukkit/command/SimpleCommandMap.java
+@@ -66,7 +66,7 @@ public class SimpleCommandMap implements CommandMap {
+      */
+     @Override
+     public boolean register(@NotNull String label, @NotNull String fallbackPrefix, @NotNull Command command) {
+-        command.timings = co.aikar.timings.TimingsManager.getCommandTiming(fallbackPrefix, command); // Paper
++        command.timings = co.aikar.timings.NullTimingHandler.NULL; // Paper
+         label = label.toLowerCase(java.util.Locale.ENGLISH).trim();
+         fallbackPrefix = fallbackPrefix.toLowerCase(java.util.Locale.ENGLISH).trim();
+         boolean registered = register(label, command, false, fallbackPrefix);
+@@ -143,23 +143,13 @@ public class SimpleCommandMap implements CommandMap {
+             return false;
+         }
+ 
+-        // Paper start - Plugins do weird things to workaround normal registration
+-        if (target.timings == null) {
+-            target.timings = co.aikar.timings.TimingsManager.getCommandTiming(null, target);
+-        }
+-        // Paper end
+-
+         try {
+-            try (co.aikar.timings.Timing ignored = target.timings.startTiming()) { // Paper - use try with resources
+             // Note: we don't return the result of target.execute as thats success / failure, we return handled (true) or not handled (false)
+             target.execute(sender, sentCommandLabel, Arrays.copyOfRange(args, 1, args.length));
+-            } // target.timings.stopTiming(); // Spigot // Paper
+         } catch (CommandException ex) {
+             server.getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+-            //target.timings.stopTiming(); // Spigot // Paper
+             throw ex;
+         } catch (Throwable ex) {
+-            //target.timings.stopTiming(); // Spigot // Paper
+             String msg = "Unhandled exception executing '" + commandLine + "' in " + target;
+             server.getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerCommandException(ex, target, sender, args))); // Paper
+             throw new CommandException(msg, ex);
+diff --git a/src/main/java/org/bukkit/plugin/SimplePluginManager.java b/src/main/java/org/bukkit/plugin/SimplePluginManager.java
+index 899d67fa782fac639fe7fb096e05c551d75bd647..39bc407046cb1c9ea663d2a76612f000c5f639af 100644
+--- a/src/main/java/org/bukkit/plugin/SimplePluginManager.java
++++ b/src/main/java/org/bukkit/plugin/SimplePluginManager.java
+@@ -711,7 +711,6 @@ public final class SimplePluginManager implements PluginManager {
+             throw new IllegalPluginAccessException("Plugin attempted to register " + event + " while not enabled");
+         }
+ 
+-        executor = new co.aikar.timings.TimedEventExecutor(executor, plugin, null, event); // Paper
+         if (false) { // Spigot - RL handles useTimings check now // Paper
+             getEventListeners(event).register(new TimedRegisteredListener(listener, executor, priority, plugin, ignoreCancelled));
+         } else {
+@@ -946,8 +945,7 @@ public final class SimplePluginManager implements PluginManager {
+ 
+     @Override
+     public boolean useTimings() {
+-        if (true) {return this.paperPluginManager.useTimings();} // Paper
+-        return co.aikar.timings.Timings.isTimingsEnabled(); // Spigot
++        return false;
+     }
+ 
+     /**
+@@ -956,7 +954,7 @@ public final class SimplePluginManager implements PluginManager {
+      * @param use True if per event timing code should be used
+      */
+     public void useTimings(boolean use) {
+-        co.aikar.timings.Timings.setTimingsEnabled(use); // Paper
++        // Timings have been removed in favor of spark.
+     }
+ 
+     // Paper start
+diff --git a/src/main/java/org/bukkit/plugin/java/JavaPluginLoader.java b/src/main/java/org/bukkit/plugin/java/JavaPluginLoader.java
+index 301e82369603f3dd6e6c1bd380da4bacacd7ef6c..d7366f19e69387508b0f1d4195d0d60aa949ac17 100644
+--- a/src/main/java/org/bukkit/plugin/java/JavaPluginLoader.java
++++ b/src/main/java/org/bukkit/plugin/java/JavaPluginLoader.java
+@@ -232,7 +232,6 @@ public final class JavaPluginLoader implements PluginLoader {
+         Preconditions.checkArgument(plugin != null, "Plugin can not be null");
+         Preconditions.checkArgument(listener != null, "Listener can not be null");
+ 
+-        boolean useTimings = server.getPluginManager().useTimings();
+         Map<Class<? extends Event>, Set<RegisteredListener>> ret = new HashMap<Class<? extends Event>, Set<RegisteredListener>>();
+         Set<Method> methods;
+         try {
+@@ -293,7 +292,7 @@ public final class JavaPluginLoader implements PluginLoader {
+                 }
+             }
+ 
+-            EventExecutor executor = new co.aikar.timings.TimedEventExecutor(new EventExecutor() { // Paper
++            EventExecutor executor = new EventExecutor() { // Paper
+                 @Override
+                 public void execute(@NotNull Listener listener, @NotNull Event event) throws EventException { // Paper
+                     try {
+@@ -307,7 +306,7 @@ public final class JavaPluginLoader implements PluginLoader {
+                         throw new EventException(t);
+                     }
+                 }
+-            }, plugin, method, eventClass); // Paper
++            }; // Paper
+             if (false) { // Spigot - RL handles useTimings check now
+                 eventSet.add(new TimedRegisteredListener(listener, executor, eh.priority(), plugin, eh.ignoreCancelled()));
+             } else {
+diff --git a/src/main/java/org/spigotmc/CustomTimingsHandler.java b/src/main/java/org/spigotmc/CustomTimingsHandler.java
+index 12946bd55fcf7c40d39081779a7fa30049ee6165..bcea2be991f653bcf3a1402ae7b83b60d735b39d 100644
+--- a/src/main/java/org/spigotmc/CustomTimingsHandler.java
++++ b/src/main/java/org/spigotmc/CustomTimingsHandler.java
+@@ -23,15 +23,9 @@
+  */
+ package org.spigotmc;
+ 
+-import org.bukkit.Bukkit;
+ import org.jetbrains.annotations.NotNull;
+-import org.bukkit.plugin.AuthorNagException;
+ import co.aikar.timings.Timing;
+ import co.aikar.timings.Timings;
+-import co.aikar.timings.TimingsManager;
+-
+-import java.lang.reflect.Method;
+-import java.util.logging.Level;
+ 
+ /**
+  * This is here for legacy purposes incase any plugin used it.
+@@ -46,19 +40,7 @@ public final class CustomTimingsHandler {
+     private final Timing handler;
+ 
+     public CustomTimingsHandler(@NotNull String name) {
+-        Timing timing;
+-
+-        new AuthorNagException("Deprecated use of CustomTimingsHandler. Please Switch to Timings.of ASAP").printStackTrace();
+-        try {
+-            final Method ofSafe = TimingsManager.class.getDeclaredMethod("getHandler", String.class, String.class, Timing.class);
+-            ofSafe.setAccessible(true);
+-            timing = (Timing) ofSafe.invoke(null,"Minecraft", "(Deprecated API) " + name, null);
+-        } catch (Exception e) {
+-            e.printStackTrace();
+-            Bukkit.getLogger().log(Level.SEVERE, "This handler could not be registered");
+-            timing = Timings.NULL_HANDLER;
+-        }
+-        handler = timing;
++        handler = Timings.NULL_HANDLER;
+     }
+ 
+     public void startTiming() { handler.startTiming(); }
