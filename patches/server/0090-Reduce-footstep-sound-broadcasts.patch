@@ -1,0 +1,133 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Sun, 8 Mar 2026 21:06:10 +0200
+Subject: [PATCH] Reduce footstep sound broadcasts
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 93b244b56116eb76dab18b55215af60a7fb0924c..a73ced93113a208adcac3291f54790dfc545cafb 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -293,6 +293,7 @@ public class EntropyConfig {
+     public static boolean hotspotHideExperienceOrbs;
+     public static boolean hotspotHideParticles;
+     public static boolean hotspotHideSounds;
++    public static int maxFootstepPacketsPerBroadcast;
+     private static void performance() {
+         useGameEventCache = getBoolean("starforge.performance.use-game-event-cache", true, "Cache Bukkit game event lookups to reduce repeated registry conversions.");
+         useCustomNameOptimisation = getBoolean("starforge.performance.use-custom-name-optimisation", true, "Skip URL matching when parsing legacy custom names.");
+@@ -365,6 +366,7 @@ public class EntropyConfig {
+         hotspotHideExperienceOrbs = getBoolean("starforge.performance.hotspot.hide-xp-orbs", true, "Stop tracking XP orbs for viewers inside an active hotspot.");
+         hotspotHideParticles = getBoolean("starforge.performance.hotspot.hide-particles", true, "Stop sending particle packets to viewers inside an active hotspot.");
+         hotspotHideSounds = getBoolean("starforge.performance.hotspot.hide-sounds", true, "Stop sending sound packets to viewers inside an active hotspot.");
++        maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
+ 
+         setComment("starforge.performance", "General-purpose performance options imported from Pluto.");
+     }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index e5902e4108e5c8fc23d85be70e99a8e6cdaa25a1..3cc4db281cd80b1e91d35701e8a1a15185747620 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -29,6 +29,7 @@ import net.minecraft.FileUtil;
+ import net.minecraft.commands.CommandSourceStack;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.LayeredRegistryAccess;
++import net.minecraft.core.registries.BuiltInRegistries;
+ import net.minecraft.nbt.CompoundTag;
+ import net.minecraft.nbt.NbtOps;
+ import net.minecraft.network.Connection;
+@@ -60,6 +61,7 @@ import net.minecraft.network.protocol.game.ClientboundSetExperiencePacket;
+ import net.minecraft.network.protocol.game.ClientboundSetPlayerTeamPacket;
+ import net.minecraft.network.protocol.game.ClientboundSetSimulationDistancePacket;
+ import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
++import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
+ import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+ import net.minecraft.network.protocol.game.ClientboundUpdateMobEffectPacket;
+ import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
+@@ -75,6 +77,7 @@ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.server.network.CommonListenerCookie;
+ import net.minecraft.server.network.ServerGamePacketListenerImpl;
+ import net.minecraft.server.network.ServerLoginPacketListenerImpl;
++import net.minecraft.sounds.SoundEvent;
+ import net.minecraft.sounds.SoundEvents;
+ import net.minecraft.sounds.SoundSource;
+ import net.minecraft.stats.ServerStatsCounter;
+@@ -153,6 +156,8 @@ public abstract class PlayerList {
+     private boolean allowCheatsForAllPlayers;
+     private static final boolean ALLOW_LOGOUTIVATOR = false;
+     private int sendAllPlayerInfoIn;
++    private int reducedBroadcastStartIndex;
++    private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
+ 
+     // CraftBukkit start
+     private CraftServer cserver;
+@@ -1209,8 +1214,20 @@ public abstract class PlayerList {
+     }
+ 
+     public void broadcast(@Nullable net.minecraft.world.entity.player.Player player, double x, double y, double z, double distance, ResourceKey<Level> worldKey, Packet<?> packet) {
+-        for (int i = 0; i < this.players.size(); ++i) {
+-            ServerPlayer entityplayer = (ServerPlayer) this.players.get(i);
++        boolean reduceBroadcast = this.shouldReduceBroadcast(packet);
++        int playerCount = this.players.size();
++        int startIndex = 0;
++        int sent = 0;
++
++        if (reduceBroadcast && playerCount > 0) {
++            if (++this.reducedBroadcastStartIndex < 0) {
++                this.reducedBroadcastStartIndex = 0;
++            }
++            startIndex = this.reducedBroadcastStartIndex % playerCount;
++        }
++
++        for (int i = 0; i < playerCount; ++i) {
++            ServerPlayer entityplayer = (ServerPlayer) this.players.get((i + startIndex) % playerCount);
+ 
+             // CraftBukkit start - Test if player receiving packet can see the source of the packet
+             if (player != null && !entityplayer.getBukkitEntity().canSee(player.getBukkitEntity())) {
+@@ -1225,12 +1242,46 @@ public abstract class PlayerList {
+ 
+                 if (d4 * d4 + d5 * d5 + d6 * d6 < distance * distance) {
+                     entityplayer.connection.send(packet);
++                    if (reduceBroadcast && ++sent >= EntropyConfig.maxFootstepPacketsPerBroadcast) {
++                        break;
++                    }
+                 }
+             }
+         }
+ 
+     }
+ 
++    private boolean shouldReduceBroadcast(Packet<?> packet) {
++        if (EntropyConfig.maxFootstepPacketsPerBroadcast < 0) {
++            return false;
++        }
++        if (packet instanceof ClientboundSoundPacket soundPacket) {
++            return this.isReducedBroadcastSound(soundPacket.getSound().value());
++        }
++        if (packet instanceof ClientboundSoundEntityPacket soundPacket) {
++            return this.isReducedBroadcastSound(soundPacket.getSound().value());
++        }
++
++        return false;
++    }
++
++    private boolean isReducedBroadcastSound(SoundEvent sound) {
++        if (this.reducedBroadcastSounds.isEmpty()) {
++            this.prefillReducedBroadcastSounds();
++        }
++
++        return this.reducedBroadcastSounds.contains(sound);
++    }
++
++    private void prefillReducedBroadcastSounds() {
++        for (Map.Entry<ResourceKey<SoundEvent>, SoundEvent> entry : BuiltInRegistries.SOUND_EVENT.entrySet()) {
++            String path = entry.getKey().location().getPath();
++            if (path.contains("step") || path.contains("swim")) {
++                this.reducedBroadcastSounds.add(entry.getValue());
++            }
++        }
++    }
++
+     public void saveAll() {
+         // Paper start - Incremental chunk and player saving
+         this.saveAll(-1);
