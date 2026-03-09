@@ -1,0 +1,78 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 14:13:27 +0200
+Subject: [PATCH] Reduce far-viewer tracker checks
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 45919488ae1d27d7202e0aecb233feabe87594fd..a09ebbb75b0fda57eb992158adc7d438043ab008 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1469,9 +1469,16 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             double deltaX = player.getX() - this.cachedEntityX;
+             double deltaZ = player.getZ() - this.cachedEntityZ;
+             double visibleRange = (double) this.cachedEffectiveRange;
++            double distanceSquared = deltaX * deltaX + deltaZ * deltaZ;
++            double visibleRangeSquared = visibleRange * visibleRange;
++
++            if (distanceSquared > visibleRangeSquared) {
++                return true;
++            }
++
+             double range = Math.min(visibleRange, ChunkMap.this.getPlayerViewDistance(player) * 16);
+ 
+-            return deltaX * deltaX + deltaZ * deltaZ > range * range;
++            return distanceSquared > range * range;
+         }
+         // Paper end - use distance map to optimise tracker
+ 
+@@ -1533,7 +1540,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             }
+             if (player != this.entity) {
+                 final ServerPlayerConnection playerConnection = player.connection;
+-                if (player.supressTrackerForLogin && !this.seenBy.contains(playerConnection)) {
++                final boolean currentlyTracked = this.seenBy.contains(playerConnection);
++                if (player.supressTrackerForLogin && !currentlyTracked) {
+                     return;
+                 }
+                 this.refreshTrackingDataCache();
+@@ -1542,12 +1550,17 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 double vec3d_dx = player.getX() - this.cachedEntityX;
+                 double vec3d_dz = player.getZ() - this.cachedEntityZ;
+                 // Paper end - remove allocation of Vec3D here
+-                int i = ChunkMap.this.getPlayerViewDistance(player);
+                 double visibleRange = (double) this.cachedEffectiveRange;
+-                double d0 = Math.min(visibleRange, i * 16);
+                 double d1 = vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz; // Paper
+-                double d2 = d0 * d0;
+-                boolean flag = d1 <= d2 && ChunkMap.this.isChunkTracked(player, this.cachedChunkX, this.cachedChunkZ) && this.entity.broadcastToPlayer(player);
++                double visibleRangeSquared = visibleRange * visibleRange;
++                boolean flag = false;
++
++                if (d1 <= visibleRangeSquared) {
++                    int i = ChunkMap.this.getPlayerViewDistance(player);
++                    double d0 = Math.min(visibleRange, i * 16);
++                    double d2 = d0 * d0;
++                    flag = d1 <= d2 && ChunkMap.this.isChunkTracked(player, this.cachedChunkX, this.cachedChunkZ) && this.entity.broadcastToPlayer(player);
++                }
+                 // Paper start - Configurable entity tracking range by Y
+                 if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
+                     double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
+@@ -1568,7 +1581,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 }
+                 // CraftBukkit end
+                 if (flag) {
+-                    if (this.seenBy.add(playerConnection)) {
++                    if (!currentlyTracked && this.seenBy.add(playerConnection)) {
+                         if (AsyncTracker.isTrackerThread()) {
+                             ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.addPairing(player));
+                         } else {
+@@ -1579,7 +1592,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                             // Paper end - entity tracking events
+                         }
+                     }
+-                } else if (this.seenBy.remove(playerConnection)) {
++                } else if (currentlyTracked && this.seenBy.remove(playerConnection)) {
+                     if (AsyncTracker.isTrackerThread()) {
+                         ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.removePairing(player));
+                     } else {
