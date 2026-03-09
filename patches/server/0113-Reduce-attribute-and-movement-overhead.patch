@@ -1,0 +1,90 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 11:44:37 +0200
+Subject: [PATCH] Reduce attribute and movement overhead
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index 92105887618cc3512b7a47b2650c9e079439d781..32a76b5f6d4fe51d2c499f9227d8c354291a069c 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -1195,7 +1195,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+                 }
+                 float f = this.getBlockSpeedFactor();
+ 
+-                this.multiplyDeltaMovement((double) f, 1.0D, (double) f);
++                this.applyPlanarBlockSpeedFactor((double) f);
+                 this.level().getProfiler().pop();
+             }
+         }
+@@ -1380,7 +1380,7 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+                 if (EntropyConfig.entityInsideBlockCheck > 0 && (EntropyConfig.entityInsideBlockCheck == 1 || this.tickCount % EntropyConfig.entityInsideBlockCheck == 0)) this.tryCheckInsideBlocks(); // Starforge - Pluto tick controls
+                 float f = this.getBlockSpeedFactor();
+ 
+-                this.multiplyDeltaMovement((double) f, 1.0D, (double) f);
++                this.applyPlanarBlockSpeedFactor((double) f);
+                 // Paper start - remove expensive streams from here
+                 boolean noneMatch = true;
+                 AABB fireSearchBox = this.getBoundingBox().deflate(1.0E-6D);
+@@ -1556,6 +1556,20 @@ public abstract class Entity implements Nameable, EntityAccess, CommandSource, S
+         return !iblockdata.is(Blocks.WATER) && !iblockdata.is(Blocks.BUBBLE_COLUMN) ? ((double) f == 1.0D ? this.level().getBlockState(this.getBlockPosBelowThatAffectsMyMovement()).getBlock().getSpeedFactor() : f) : f;
+     }
+ 
++    private void applyPlanarBlockSpeedFactor(double factor) {
++        if (factor > 0.999999D && factor < 1.000001D) {
++            return;
++        }
++
++        this.syncDeltaMovement();
++        if ((this.movementX < 1.0E-6D && this.movementX > -1.0E-6D) && (this.movementZ < 1.0E-6D && this.movementZ > -1.0E-6D)) {
++            return;
++        }
++
++        this.movementX *= factor;
++        this.movementZ *= factor;
++    }
++
+     protected Vec3 maybeBackOffFromEdge(Vec3 movement, MoverType type) {
+         return movement;
+     }
+diff --git a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+index ebeccc16a2fc371514c2d60a95a17a1227eb4ec4..bf119e154d08db8f442170765cab4aa89d030bce 100644
+--- a/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
++++ b/src/main/java/net/minecraft/world/entity/ai/attributes/AttributeMap.java
+@@ -4,11 +4,12 @@ import com.google.common.collect.Maps;
+ import com.google.common.collect.Multimap;
+ import com.google.common.collect.Sets;
+ import com.mojang.logging.LogUtils;
++import java.util.ArrayList;
++import java.util.Collections;
+ import java.util.Collection;
+ import java.util.Map;
+ import java.util.Set;
+ import java.util.UUID;
+-import java.util.stream.Collectors;
+ import javax.annotation.Nullable;
+ import net.minecraft.Util;
+ import net.minecraft.core.Holder;
+@@ -45,7 +46,21 @@ public class AttributeMap {
+     }
+ 
+     public Collection<AttributeInstance> getSyncableAttributes() {
+-        return this.attributes.values().stream().filter(attribute -> attribute.getAttribute().isClientSyncable()).collect(Collectors.toList());
++        ArrayList<AttributeInstance> syncable = null;
++
++        for (AttributeInstance attribute : this.attributes.values()) {
++            if (!attribute.getAttribute().isClientSyncable()) {
++                continue;
++            }
++
++            if (syncable == null) {
++                syncable = new ArrayList<>(4);
++            }
++
++            syncable.add(attribute);
++        }
++
++        return syncable == null ? Collections.emptyList() : syncable;
+     }
+ 
+ 
