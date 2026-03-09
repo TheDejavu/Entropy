@@ -1,0 +1,182 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 13:16:39 +0200
+Subject: [PATCH] Reduce world player iteration churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 95a35c6adb621a4bc81e7fbd371cd6cbf7458470..2a83a060d175666254ccc069c8462aed5945ed69 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -512,7 +512,7 @@ public class ServerChunkCache extends ChunkSource {
+                 if ((this.spawnFriendlies || this.spawnEnemies) && this.level.paperConfig().entities.spawning.perPlayerMobSpawns) { // don't count mobs when animals and monsters are disabled
+                     if (!gg.pufferfish.pufferfish.PufferfishConfig.enableAsyncMobSpawning) { // Pufferfish - moved down when async processing
+                     // re-set mob counts
+-                    for (ServerPlayer player : this.level.players) {
++                    for (ServerPlayer player : this.level.getPlayersArray()) {
+                         // Paper start - per player mob spawning backoff
+                         for (int ii = 0; ii < ServerPlayer.MOBCATEGORY_TOTAL_ENUMS; ii++) {
+                             player.mobCounts[ii] = 0;
+@@ -540,7 +540,7 @@ public class ServerChunkCache extends ChunkSource {
+ 
+                 // Paper start - optimise chunk tick iteration
+                 ChunkMap playerChunkMap = this.chunkMap;
+-                for (ServerPlayer player : this.level.players) {
++                for (ServerPlayer player : this.level.getPlayersArray()) {
+                     if (!player.affectsSpawning || player.isSpectator()) {
+                         playerChunkMap.playerMobSpawnMap.remove(player);
+                         player.playerNaturallySpawnedEvent = null;
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ac428ff30f1f981d8dce8e8d58571152f3f795eb..2123d8e47816c4f184e3dc20d4adf90736da89cf 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -190,6 +190,8 @@ public class ServerLevel extends Level implements WorldGenLevel {
+     private static final int EMPTY_TIME_NO_TICK = 300;
+     private static final int MAX_SCHEDULED_TICKS_PER_TICK = 65536;
+     final List<ServerPlayer> players;
++    private static final ServerPlayer[] EMPTY_PLAYERS = new ServerPlayer[0];
++    private volatile ServerPlayer[] playersView = EMPTY_PLAYERS;
+     public final ServerChunkCache chunkSource;
+     private final MinecraftServer server;
+     public final PrimaryLevelData serverLevelData; // CraftBukkit - type
+@@ -698,6 +700,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         this.uuid = WorldUUID.getUUID(convertable_conversionsession.levelDirectory.path().toFile());
+         // CraftBukkit end
+         this.players = Lists.newArrayList();
++        this.playersView = EMPTY_PLAYERS;
+         this.entityTickList = new EntityTickList();
+         this.blockTicks = new LevelTicks<>(this::isPositionTickingWithEntitiesLoaded, this.getProfilerSupplier());
+         this.fluidTicks = new LevelTicks<>(this::isPositionTickingWithEntitiesLoaded, this.getProfilerSupplier());
+@@ -974,9 +977,13 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+     private void wakeUpAllPlayers() {
+         this.sleepStatus.removeAllSleepers();
+-        (this.players.stream().filter(LivingEntity::isSleeping).collect(Collectors.toList())).forEach((entityplayer) -> { // CraftBukkit - decompile error
+-            entityplayer.stopSleepInBed(false, false);
+-        });
++        final ServerPlayer[] players = this.playersView;
++        for (int i = 0, len = players.length; i < len; ++i) {
++            ServerPlayer entityplayer = players[i];
++            if (entityplayer.isSleeping()) {
++                entityplayer.stopSleepInBed(false, false);
++            }
++        }
+     }
+     // Paper start - optimise random block ticking
+     private final BlockPos.MutableBlockPos chunkTickMutablePosition = new BlockPos.MutableBlockPos();
+@@ -1185,12 +1192,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                     ichatmutablecomponent = Component.translatable("sleep.players_sleeping", this.sleepStatus.amountSleeping(), this.sleepStatus.sleepersNeeded(i));
+                 }
+ 
+-                Iterator iterator = this.players.iterator();
+-
+-                while (iterator.hasNext()) {
+-                    ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
+-                    entityplayer.displayClientMessage(ichatmutablecomponent, true);
++                final ServerPlayer[] players = this.playersView;
++                for (int i = 0, len = players.length; i < len; ++i) {
++                    players[i].displayClientMessage(ichatmutablecomponent, true);
+                 }
+ 
+             }
+@@ -1295,23 +1299,27 @@ public class ServerLevel extends Level implements WorldGenLevel {
+             this.server.getPlayerList().broadcastAll(new PacketPlayOutGameStateChange(PacketPlayOutGameStateChange.THUNDER_LEVEL_CHANGE, this.thunderLevel));
+         }
+         // */
+-        for (int idx = 0; idx < this.players.size(); ++idx) {
+-            if (((ServerPlayer) this.players.get(idx)).level() == this) {
+-                ((ServerPlayer) this.players.get(idx)).tickWeather();
++        final ServerPlayer[] players = this.playersView;
++        for (int idx = 0, len = players.length; idx < len; ++idx) {
++            ServerPlayer player = players[idx];
++            if (player.level() == this) {
++                player.tickWeather();
+             }
+         }
+ 
+         if (flag != this.isRaining()) {
+             // Only send weather packets to those affected
+-            for (int idx = 0; idx < this.players.size(); ++idx) {
+-                if (((ServerPlayer) this.players.get(idx)).level() == this) {
+-                    ((ServerPlayer) this.players.get(idx)).setPlayerWeather((!flag ? WeatherType.DOWNFALL : WeatherType.CLEAR), false);
++            for (int idx = 0, len = players.length; idx < len; ++idx) {
++                ServerPlayer player = players[idx];
++                if (player.level() == this) {
++                    player.setPlayerWeather((!flag ? WeatherType.DOWNFALL : WeatherType.CLEAR), false);
+                 }
+             }
+         }
+-        for (int idx = 0; idx < this.players.size(); ++idx) {
+-            if (((ServerPlayer) this.players.get(idx)).level() == this) {
+-                ((ServerPlayer) this.players.get(idx)).updateWeather(this.oRainLevel, this.rainLevel, this.oThunderLevel, this.thunderLevel);
++        for (int idx = 0, len = players.length; idx < len; ++idx) {
++            ServerPlayer player = players[idx];
++            if (player.level() == this) {
++                player.updateWeather(this.oRainLevel, this.rainLevel, this.oThunderLevel, this.thunderLevel);
+             }
+         }
+         // CraftBukkit end
+@@ -1559,12 +1567,10 @@ public class ServerLevel extends Level implements WorldGenLevel {
+     }
+ 
+     public List<ServerPlayer> getPlayers(Predicate<? super ServerPlayer> predicate, int limit) {
+-        List<ServerPlayer> list = Lists.newArrayList();
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        final ServerPlayer[] players = this.playersView;
++        List<ServerPlayer> list = Lists.newArrayListWithExpectedSize(Math.min(limit, players.length));
++        for (int i = 0, len = players.length; i < len; ++i) {
++            ServerPlayer entityplayer = players[i];
+             if (predicate.test(entityplayer)) {
+                 list.add(entityplayer);
+                 if (list.size() >= limit) {
+@@ -1921,11 +1927,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+             explosion.clearToBlow();
+         }
+ 
+-        Iterator iterator = this.players.iterator();
+-
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+-
++        final ServerPlayer[] players = this.playersView;
++        for (int i = 0, len = players.length; i < len; ++i) {
++            ServerPlayer entityplayer = players[i];
+             if (entityplayer.distanceToSqr(x, y, z) < 4096.0D) {
+                 entityplayer.connection.send(new ClientboundExplodePacket(x, y, z, power, explosion.getToBlow(), (Vec3) explosion.getHitPlayers().get(entityplayer), explosion.getBlockInteraction(), explosion.getSmallExplosionParticles(), explosion.getLargeExplosionParticles(), explosion.getExplosionSound()));
+             }
+@@ -2252,6 +2256,14 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         return this.players;
+     }
+ 
++    public ServerPlayer[] getPlayersArray() {
++        return this.playersView;
++    }
++
++    private void refreshPlayersView() {
++        this.playersView = this.players.isEmpty() ? EMPTY_PLAYERS : this.players.toArray(EMPTY_PLAYERS);
++    }
++
+     @Override
+     public void onBlockStateChange(BlockPos pos, BlockState oldBlock, BlockState newBlock) {
+         Optional<Holder<PoiType>> optional = PoiTypes.forState(oldBlock);
+@@ -2738,6 +2750,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                 ServerPlayer entityplayer = (ServerPlayer) entity;
+ 
+                 ServerLevel.this.players.add(entityplayer);
++                ServerLevel.this.refreshPlayersView();
+                 ServerLevel.this.updateSleepingPlayerList();
+             }
+ 
+@@ -2824,6 +2837,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+                 ServerPlayer entityplayer = (ServerPlayer) entity;
+ 
+                 ServerLevel.this.players.remove(entityplayer);
++                ServerLevel.this.refreshPlayersView();
+                 ServerLevel.this.updateSleepingPlayerList();
+             }
+ 
