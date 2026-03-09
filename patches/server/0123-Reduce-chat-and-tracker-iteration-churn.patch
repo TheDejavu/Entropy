@@ -1,0 +1,61 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:41:04 +0200
+Subject: [PATCH] Reduce chat and tracker iteration churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 992ac6dc7d486c5e36fad224de3c747a89a0aa66..ba025cb1094a61dea49b2e49a949682a29c478ca 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1644,12 +1644,18 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         }
+ 
+         public void updatePlayers(List<ServerPlayer> players) {
+-            Iterator iterator = players.iterator();
++            if (players instanceof java.util.RandomAccess) {
++                for (int i = 0, len = players.size(); i < len; ++i) {
++                    this.updatePlayer(players.get(i));
++                }
++            } else {
++                Iterator iterator = players.iterator();
+ 
+-            while (iterator.hasNext()) {
+-                ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++                while (iterator.hasNext()) {
++                    ServerPlayer entityplayer = (ServerPlayer) iterator.next();
+ 
+-                this.updatePlayer(entityplayer);
++                    this.updatePlayer(entityplayer);
++                }
+             }
+ 
+         }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index da75c801ba77f66c016d1f97f21b40a43b5b630e..21b6de4d94d2433f07dd7873368ead9a5574363c 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -1603,18 +1603,20 @@ public abstract class PlayerList {
+ 
+         boolean flag2;
+         Packet<?> disguised = sender != null && unsignedFunction == null ? new net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket(outgoingchatmessage.content(), params.toNetwork(sender.level().registryAccess())) : null; // Paper - don't send player chat packets from vanished players
++        final CraftPlayer senderBukkit = sender == null ? null : sender.getBukkitEntity();
+ 
+         for (ServerPlayer entityplayer1 : this.getPlayersArray()) {
+             flag2 = shouldSendFiltered.test(entityplayer1);
++            final CraftPlayer recipientBukkit = entityplayer1.getBukkitEntity();
+             // Paper start - don't send player chat packets from vanished players
+-            if (sender != null && !entityplayer1.getBukkitEntity().canSee(sender.getBukkitEntity())) {
++            if (senderBukkit != null && !recipientBukkit.canSee(senderBukkit)) {
+                 entityplayer1.connection.send(unsignedFunction != null
+-                    ? new net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket(unsignedFunction.apply(entityplayer1.getBukkitEntity()), params.toNetwork(sender.level().registryAccess()))
++                    ? new net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket(unsignedFunction.apply(recipientBukkit), params.toNetwork(sender.level().registryAccess()))
+                     : disguised);
+                 continue;
+             }
+             // Paper end
+-            entityplayer1.sendChatMessage(outgoingchatmessage, flag2, params, unsignedFunction == null ? null : unsignedFunction.apply(entityplayer1.getBukkitEntity())); // Paper
++            entityplayer1.sendChatMessage(outgoingchatmessage, flag2, params, unsignedFunction == null ? null : unsignedFunction.apply(recipientBukkit)); // Paper
+             flag1 |= flag2 && message.isFullyFiltered();
+         }
+ 
