@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 13:58:30 +0200
+Subject: [PATCH] Reduce sleep and world player loop churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 2a83a060d175666254ccc069c8462aed5945ed69..efc0584aedc1492c1cf76479032fc4ea7db1f175 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -669,7 +669,7 @@ public class ServerChunkCache extends ChunkSource {
+     
+         // Pufferfish start - optimize mob spawning
+         if (gg.pufferfish.pufferfish.PufferfishConfig.enableAsyncMobSpawning) {
+-            for (ServerPlayer player : this.level.players) {
++            for (ServerPlayer player : this.level.getPlayersArray()) {
+                 // Paper start - per player mob spawning backoff
+                 for (int ii = 0; ii < ServerPlayer.MOBCATEGORY_TOTAL_ENUMS; ii++) {
+                     player.mobCounts[ii] = 0;
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 70b9635f3eb0ae5967ad7ee0c036bbe3caeebeca..ea1c9dc72ff82f0036c73e220d516df82da0cd11 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -823,7 +823,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         int i = this.getGameRules().getInt(GameRules.RULE_PLAYERS_SLEEPING_PERCENTAGE);
+         long j;
+ 
+-        if (this.sleepStatus.areEnoughSleeping(i) && this.sleepStatus.areEnoughDeepSleeping(i, this.players)) {
++        if (this.sleepStatus.areEnoughSleeping(i) && this.sleepStatus.areEnoughDeepSleeping(i, this.playersView)) {
+             // CraftBukkit start
+             j = this.levelData.getDayTime() + 24000L;
+             TimeSkipEvent event = new TimeSkipEvent(this.getWorld(), TimeSkipEvent.SkipReason.NIGHT_SKIP, (j - j % 24000L) - this.getDayTime());
+@@ -1202,7 +1202,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+     }
+ 
+     public void updateSleepingPlayerList() {
+-        if (!this.players.isEmpty() && this.sleepStatus.update(this.players)) {
++        if (this.playersView.length != 0 && this.sleepStatus.update(this.playersView)) {
+             this.announceSleepStatus();
+         }
+ 
+@@ -1743,7 +1743,7 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+     @Override
+     public void destroyBlockProgress(int entityId, BlockPos pos, int progress) {
+-        Iterator iterator = this.server.getPlayerList().getPlayers().iterator();
++        final ServerPlayer[] players = this.server.getPlayerList().getPlayersArray();
+ 
+         // CraftBukkit start
+         Player entityhuman = null;
+@@ -1762,8 +1762,8 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         }
+         // Paper end - Add BlockBreakProgressUpdateEvent
+ 
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++        for (int i = 0, len = players.length; i < len; ++i) {
++            ServerPlayer entityplayer = players[i];
+ 
+             if (entityplayer != null && entityplayer.level() == this && entityplayer.getId() != entityId) {
+                 double d0 = (double) pos.getX() - entityplayer.getX();
+@@ -2869,8 +2869,9 @@ public class ServerLevel extends Level implements WorldGenLevel {
+             // CraftBukkit start
+             entity.valid = false;
+             if (!(entity instanceof ServerPlayer)) {
+-                for (ServerPlayer player : ServerLevel.this.players) {
+-                    player.getBukkitEntity().onEntityRemove(entity);
++                final ServerPlayer[] players = ServerLevel.this.playersView;
++                for (int i = 0, len = players.length; i < len; ++i) {
++                    players[i].getBukkitEntity().onEntityRemove(entity);
+                 }
+             }
+             // CraftBukkit end
+diff --git a/src/main/java/net/minecraft/server/players/SleepStatus.java b/src/main/java/net/minecraft/server/players/SleepStatus.java
+index 823efad652d8ff9e96b99375b102fef6f017716e..a0d8a983110c929e560e56b97706110202525390 100644
+--- a/src/main/java/net/minecraft/server/players/SleepStatus.java
++++ b/src/main/java/net/minecraft/server/players/SleepStatus.java
+@@ -1,10 +1,8 @@
+ package net.minecraft.server.players;
+ 
+-import java.util.Iterator;
+ import java.util.List;
+ import net.minecraft.server.level.ServerPlayer;
+ import net.minecraft.util.Mth;
+-import net.minecraft.world.entity.player.Player;
+ 
+ public class SleepStatus {
+ 
+@@ -18,12 +16,24 @@ public class SleepStatus {
+     }
+ 
+     public boolean areEnoughDeepSleeping(int percentage, List<ServerPlayer> players) {
+-        // CraftBukkit start
+-        int j = (int) players.stream().filter((eh) -> { return eh.isSleepingLongEnough() || eh.fauxSleeping; }).count();
+-        boolean anyDeepSleep = players.stream().anyMatch(Player::isSleepingLongEnough);
++        return this.areEnoughDeepSleeping(percentage, players.toArray(ServerPlayer[]::new));
++    }
++
++    public boolean areEnoughDeepSleeping(int percentage, ServerPlayer[] players) {
++        int deepSleepingPlayers = 0;
++        boolean anyDeepSleep = false;
+ 
+-        return anyDeepSleep && j >= this.sleepersNeeded(percentage);
+-        // CraftBukkit end
++        for (int i = 0, len = players.length; i < len; ++i) {
++            ServerPlayer player = players[i];
++            if (player.isSleepingLongEnough()) {
++                anyDeepSleep = true;
++                ++deepSleepingPlayers;
++            } else if (player.fauxSleeping) {
++                ++deepSleepingPlayers;
++            }
++        }
++
++        return anyDeepSleep && deepSleepingPlayers >= this.sleepersNeeded(percentage);
+     }
+ 
+     public int sleepersNeeded(int percentage) {
+@@ -39,16 +49,19 @@ public class SleepStatus {
+     }
+ 
+     public boolean update(List<ServerPlayer> players) {
++        return this.update(players.toArray(ServerPlayer[]::new));
++    }
++
++    public boolean update(ServerPlayer[] players) {
+         int i = this.activePlayers;
+         int j = this.sleepingPlayers;
+ 
+         this.activePlayers = 0;
+         this.sleepingPlayers = 0;
+-        Iterator iterator = players.iterator();
+         boolean anySleep = false; // CraftBukkit
+ 
+-        while (iterator.hasNext()) {
+-            ServerPlayer entityplayer = (ServerPlayer) iterator.next();
++        for (int playerIdx = 0, len = players.length; playerIdx < len; ++playerIdx) {
++            ServerPlayer entityplayer = players[playerIdx];
+ 
+             if (!entityplayer.isSpectator()) {
+                 ++this.activePlayers;
