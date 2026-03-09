@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 14:16:28 +0200
+Subject: [PATCH] Skip sendChanges for untracked entities
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index a09ebbb75b0fda57eb992158adc7d438043ab008..674c2e7a33510d887a1f50e52f7f3bc4756e65c5 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1186,6 +1186,10 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+     private boolean trackerEventListeners;
+ 
++    private static boolean shouldSendTrackerChanges(final TrackedEntity tracker) {
++        return !tracker.seenBy.isEmpty() || tracker.entity instanceof ServerPlayer;
++    }
++
+     private final void processTrackQueue() {
+         this.trackerEventListeners = this.hasTrackerEventListeners();
+         final boolean safeAsyncTracker = !this.trackerEventListeners && !org.bukkit.craftbukkit.entity.CraftPlayer.hasAnyVisibilityInversions();
+@@ -1194,7 +1198,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             AsyncTracker.process(this, trackers);
+             this.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
+             for (final TrackedEntity tracker : trackers) {
+-                tracker.serverEntity.sendChanges();
++                if (ChunkMap.shouldSendTrackerChanges(tracker)) {
++                    tracker.serverEntity.sendChanges();
++                }
+             }
+             return;
+         }
+@@ -1211,7 +1217,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+         try {
+             for (TrackedEntity tracker : this.entityMap.values()) {
+-                tracker.serverEntity.sendChanges();
++                if (ChunkMap.shouldSendTrackerChanges(tracker)) {
++                    tracker.serverEntity.sendChanges();
++                }
+             }
+         } finally {
+         }
