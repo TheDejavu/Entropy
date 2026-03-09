@@ -1,0 +1,89 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 14:04:45 +0200
+Subject: [PATCH] Reduce player stat and world loop overhead
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index efc0584aedc1492c1cf76479032fc4ea7db1f175..25f36dd324c7e7e4682bd2e41e8a5ea2175ed5a9 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -536,7 +536,7 @@ public class ServerChunkCache extends ChunkSource {
+                 // Paper end - Optional per player mob spawns
+                 // this.lastSpawnState = spawnercreature_d; // Pufferfish - this is managed asynchronously
+                 gameprofilerfiller.popPush("spawnAndTick");
+-                boolean flag = this.level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING) && !this.level.players().isEmpty(); // CraftBukkit
++                boolean flag = this.level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING) && this.level.getPlayersArray().length != 0; // CraftBukkit
+ 
+                 // Paper start - optimise chunk tick iteration
+                 ChunkMap playerChunkMap = this.chunkMap;
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index ea1c9dc72ff82f0036c73e220d516df82da0cd11..aec0c84f5a2b1ee3a501b907e438d4213392af80 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -621,8 +621,10 @@ public class ServerLevel extends Level implements WorldGenLevel {
+         } else {
+             ServerPlayer nearest = null;
+             double nearestDist = Double.MAX_VALUE;
++            final ServerPlayer[] players = this.playersView;
+ 
+-            for (ServerPlayer player : this.players()) {
++            for (int i = 0, len = players.length; i < len; ++i) {
++                ServerPlayer player = players[i];
+                 double dist = player.distanceToSqr(x, y, z);
+                 if (dist >= nearestDist) {
+                     continue;
+@@ -678,7 +680,24 @@ public class ServerLevel extends Level implements WorldGenLevel {
+ 
+             return nearest;
+         } else {
+-            return this.getNearestEntity(this.players(), targetPredicate, entity, x, y, z);
++            ServerPlayer nearest = null;
++            double nearestDist = Double.MAX_VALUE;
++            final ServerPlayer[] players = this.playersView;
++
++            for (int i = 0, len = players.length; i < len; ++i) {
++                ServerPlayer player = players[i];
++                double dist = player.distanceToSqr(x, y, z);
++                if (dist >= nearestDist) {
++                    continue;
++                }
++
++                if (targetPredicate.test(entity, player)) {
++                    nearest = player;
++                    nearestDist = dist;
++                }
++            }
++
++            return nearest;
+         }
+     }
+ 
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index bbc3d15132867e8e74ecb18b4699ed395e5e7f1e..bca63c216bfe5e6339d8fc1bfa76309ed3c17fa2 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -1767,6 +1767,11 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public void travel(Vec3 movementInput) {
++        if (this.canSkipStatTracking()) {
++            super.travel(movementInput);
++            return;
++        }
++
+         double d0 = this.getX();
+         double d1 = this.getY();
+         double d2 = this.getZ();
+@@ -1777,6 +1782,11 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public void rideTick() {
++        if (this.canSkipStatTracking()) {
++            super.rideTick();
++            return;
++        }
++
+         double d0 = this.getX();
+         double d1 = this.getY();
+         double d2 = this.getZ();
