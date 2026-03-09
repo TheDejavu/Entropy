@@ -1,0 +1,232 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:59:31 +0200
+Subject: [PATCH] Reduce player list and tracker snapshot churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index ba025cb1094a61dea49b2e49a949682a29c478ca..ad56968ff92dffb2884eecb05c4f0f184a164bad 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1636,9 +1636,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 this.cachedEntityX = this.entity.getX();
+                 this.cachedEntityY = this.entity.getY();
+                 this.cachedEntityZ = this.entity.getZ();
+-                ChunkPos chunkPos = this.entity.chunkPosition();
+-                this.cachedChunkX = chunkPos.x;
+-                this.cachedChunkZ = chunkPos.z;
++                this.cachedChunkX = SectionPos.blockToSectionCoord(Mth.floor(this.cachedEntityX));
++                this.cachedChunkZ = SectionPos.blockToSectionCoord(Mth.floor(this.cachedEntityZ));
+                 this.cachedEffectiveRange = this.getEffectiveRange();
+             }
+         }
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 21b6de4d94d2433f07dd7873368ead9a5574363c..d4f1ec9062cd9bb6ee1e6bacf961d6adcf14b77b 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -12,6 +12,7 @@ import java.net.SocketAddress;
+ import java.nio.file.Path;
+ import java.text.SimpleDateFormat;
+ import java.time.Instant;
++import java.util.AbstractList;
+ import java.util.Collection;
+ import java.util.EnumSet;
+ import java.util.Iterator;
+@@ -21,6 +22,7 @@ import java.util.Objects;
+ import java.util.Optional;
+ import java.util.Set;
+ import java.util.UUID;
++import java.util.RandomAccess;
+ import java.util.function.Function;
+ import java.util.function.Predicate;
+ import javax.annotation.Nullable;
+@@ -139,7 +141,7 @@ public abstract class PlayerList {
+     private static final ServerPlayer[] EMPTY_PLAYERS = new ServerPlayer[0];
+     private static final SimpleDateFormat BAN_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd 'at' HH:mm:ss z");
+     private final MinecraftServer server;
+-    public final List<ServerPlayer> players = new java.util.concurrent.CopyOnWriteArrayList(); // CraftBukkit - ArrayList -> CopyOnWriteArrayList: Iterator safety
++    public final List<ServerPlayer> players = new PlayerListSnapshot();
+     private volatile ServerPlayer[] playersView = EMPTY_PLAYERS;
+     private final PlayerInfoBucket[] sendAllPlayerInfoBuckets = new PlayerInfoBucket[PlayerList.SEND_PLAYER_INFO_INTERVAL];
+     private final Map<UUID, ServerPlayer> playersByUUID = Maps.newHashMap();
+@@ -164,6 +166,139 @@ public abstract class PlayerList {
+     private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
+     private ClientboundUpdateRecipesPacket cachedRecipePacket;
+ 
++    private final class PlayerListSnapshot extends AbstractList<ServerPlayer> implements RandomAccess {
++        private ServerPlayer[] players = EMPTY_PLAYERS;
++        private int size;
++
++        @Override
++        public ServerPlayer get(int index) {
++            if (index < 0 || index >= this.size) {
++                throw new IndexOutOfBoundsException(index);
++            }
++            return this.players[index];
++        }
++
++        @Override
++        public int size() {
++            return this.size;
++        }
++
++        @Override
++        public boolean add(ServerPlayer player) {
++            this.add(this.size, player);
++            return true;
++        }
++
++        @Override
++        public void add(int index, ServerPlayer player) {
++            if (index < 0 || index > this.size) {
++                throw new IndexOutOfBoundsException(index);
++            }
++            int currentSize = this.size;
++            ServerPlayer[] currentPlayers = this.players;
++            if (currentSize == currentPlayers.length) {
++                int newSize = currentSize == 0 ? 4 : currentSize << 1;
++                currentPlayers = java.util.Arrays.copyOf(currentPlayers, newSize);
++                this.players = currentPlayers;
++            }
++            if (index != currentSize) {
++                System.arraycopy(currentPlayers, index, currentPlayers, index + 1, currentSize - index);
++            }
++            currentPlayers[index] = player;
++            this.size = currentSize + 1;
++            PlayerList.this.refreshPlayersView();
++        }
++
++        @Override
++        public ServerPlayer remove(int index) {
++            if (index < 0 || index >= this.size) {
++                throw new IndexOutOfBoundsException(index);
++            }
++            ServerPlayer[] currentPlayers = this.players;
++            ServerPlayer removed = currentPlayers[index];
++            int lastIndex = this.size - 1;
++            if (index != lastIndex) {
++                System.arraycopy(currentPlayers, index + 1, currentPlayers, index, lastIndex - index);
++            }
++            currentPlayers[lastIndex] = null;
++            this.size = lastIndex;
++            PlayerList.this.refreshPlayersView();
++            return removed;
++        }
++
++        @Override
++        public boolean remove(Object object) {
++            ServerPlayer[] currentPlayers = this.players;
++            int currentSize = this.size;
++            for (int i = 0; i < currentSize; ++i) {
++                if (currentPlayers[i] == object) {
++                    this.remove(i);
++                    return true;
++                }
++            }
++            return false;
++        }
++
++        @Override
++        public ServerPlayer set(int index, ServerPlayer player) {
++            if (index < 0 || index >= this.size) {
++                throw new IndexOutOfBoundsException(index);
++            }
++            ServerPlayer[] currentPlayers = this.players;
++            ServerPlayer previous = currentPlayers[index];
++            currentPlayers[index] = player;
++            PlayerList.this.refreshPlayersView();
++            return previous;
++        }
++
++        @Override
++        public void clear() {
++            if (this.size == 0) {
++                return;
++            }
++            java.util.Arrays.fill(this.players, 0, this.size, null);
++            this.size = 0;
++            PlayerList.this.refreshPlayersView();
++        }
++
++        @Override
++        public Iterator<ServerPlayer> iterator() {
++            final ServerPlayer[] snapshot = PlayerList.this.playersView;
++            return new Iterator<>() {
++                private int index;
++
++                @Override
++                public boolean hasNext() {
++                    return this.index < snapshot.length;
++                }
++
++                @Override
++                public ServerPlayer next() {
++                    return snapshot[this.index++];
++                }
++            };
++        }
++
++        @Override
++        public Object[] toArray() {
++            return java.util.Arrays.copyOf(PlayerList.this.playersView, PlayerList.this.playersView.length, Object[].class);
++        }
++
++        @Override
++        public <T> T[] toArray(T[] array) {
++            ServerPlayer[] snapshot = PlayerList.this.playersView;
++            int length = snapshot.length;
++            if (array.length < length) {
++                return (T[]) java.util.Arrays.copyOf(snapshot, length, array.getClass());
++            }
++            System.arraycopy(snapshot, 0, array, 0, length);
++            if (array.length > length) {
++                array[length] = null;
++            }
++            return array;
++        }
++    }
++
+     private static final class PlayerInfoBucket {
+         private ServerPlayer[] players = EMPTY_PLAYERS;
+         private int size;
+@@ -219,7 +354,7 @@ public abstract class PlayerList {
+     abstract public void loadAndSaveFiles(); // Paper - fix converting txt to json file; moved from DedicatedPlayerList constructor
+ 
+     private void refreshPlayersView() {
+-        this.playersView = this.players.toArray(EMPTY_PLAYERS);
++        this.playersView = ((PlayerListSnapshot) this.players).size == 0 ? EMPTY_PLAYERS : java.util.Arrays.copyOf(((PlayerListSnapshot) this.players).players, ((PlayerListSnapshot) this.players).size);
+     }
+ 
+     private static int getSendAllPlayerInfoBucketIndex(ServerPlayer player) {
+@@ -399,7 +534,6 @@ public abstract class PlayerList {
+         // entityplayer.connection.send(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(this.players)); // CraftBukkit - replaced with loop below
+         this.players.add(player);
+         this.addToSendAllPlayerInfoBucket(player);
+-        this.refreshPlayersView();
+         this.playersByName.put(player.getScoreboardName().toLowerCase(java.util.Locale.ROOT), player); // Spigot
+         this.playersByUUID.put(player.getUUID(), player);
+         // this.broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(entityplayer))); // CraftBukkit - replaced with loop below
+@@ -746,7 +880,6 @@ public abstract class PlayerList {
+         entityplayer.getAdvancements().stopListening();
+         this.players.remove(entityplayer);
+         this.removeFromSendAllPlayerInfoBucket(entityplayer);
+-        this.refreshPlayersView();
+         this.playersByName.remove(entityplayer.getScoreboardName().toLowerCase(java.util.Locale.ROOT)); // Spigot
+         this.server.getCustomBossEvents().onPlayerDisconnect(entityplayer);
+         UUID uuid = entityplayer.getUUID();
+@@ -919,7 +1052,6 @@ public abstract class PlayerList {
+         entityplayer.stopRiding(); // CraftBukkit
+         this.players.remove(entityplayer);
+         this.removeFromSendAllPlayerInfoBucket(entityplayer);
+-        this.refreshPlayersView();
+         this.playersByName.remove(entityplayer.getScoreboardName().toLowerCase(java.util.Locale.ROOT)); // Spigot
+         entityplayer.serverLevel().removePlayerImmediately(entityplayer, Entity.RemovalReason.DISCARDED);
+         BlockPos blockposition = entityplayer.getRespawnPosition();
+@@ -1057,7 +1189,6 @@ public abstract class PlayerList {
+             worldserver1.addRespawnedPlayer(entityplayer1);
+             this.players.add(entityplayer1);
+             this.addToSendAllPlayerInfoBucket(entityplayer1);
+-            this.refreshPlayersView();
+             this.playersByName.put(entityplayer1.getScoreboardName().toLowerCase(java.util.Locale.ROOT), entityplayer1); // Spigot
+             this.playersByUUID.put(entityplayer1.getUUID(), entityplayer1);
+         }
