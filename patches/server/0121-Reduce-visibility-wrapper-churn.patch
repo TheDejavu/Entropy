@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:31:07 +0200
+Subject: [PATCH] Reduce visibility wrapper churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 871dc201ac6774c03b7b8345468c31bd2e8644cb..992ac6dc7d486c5e36fad224de3c747a89a0aa66 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -103,6 +103,8 @@ import net.minecraft.world.level.storage.DimensionDataStorage;
+ import net.minecraft.world.level.storage.LevelStorageSource;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
+ import org.slf4j.Logger;
++import org.bukkit.craftbukkit.entity.CraftEntity;
++import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import dev.orhidea.starforge.EntropyConfig;
+ 
+ // CraftBukkit start
+@@ -1355,6 +1357,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+         public final ServerEntity serverEntity;
+         final Entity entity;
++        private final CraftEntity trackedBukkitEntity;
+         private final int range;
+         SectionPos lastSectionPos;
+         public final Set<ServerPlayerConnection> seenBy = new it.unimi.dsi.fastutil.objects.ReferenceOpenHashSet<>(); // Paper - Perf: optimise map impl
+@@ -1375,6 +1378,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         public TrackedEntity(Entity entity, int i, int j, boolean flag) {
+             this.serverEntity = new ServerEntity(ChunkMap.this.level, entity, j, flag, this::broadcast, this.seenBy); // CraftBukkit
+             this.entity = entity;
++            this.trackedBukkitEntity = entity.getBukkitEntity();
+             this.range = i;
+             this.lastSectionPos = SectionPos.of((EntityAccess) entity);
+             this.alwaysSearchForPlayers = entity instanceof EnderDragonPart;
+@@ -1548,8 +1552,13 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 }
+                 // Paper end - Configurable entity tracking range by Y
+                 // CraftBukkit start - respect vanish API
+-                if (flag && !player.getBukkitEntity().canSeeChunkMapUpdatePlayer(this.entity.getBukkitEntity())) { // Paper - only consider hits
+-                    flag = false;
++                final boolean trackerEventListeners = ChunkMap.this.trackerEventListeners;
++                CraftPlayer bukkitPlayer = null;
++                if (flag) {
++                    bukkitPlayer = player.getBukkitEntity();
++                    if (!bukkitPlayer.canSeeChunkMapUpdatePlayer(this.trackedBukkitEntity)) { // Paper - only consider hits
++                        flag = false;
++                    }
+                 }
+                 // CraftBukkit end
+                 if (flag) {
+@@ -1558,7 +1567,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                             ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.addPairing(player));
+                         } else {
+                             // Paper start - entity tracking events
+-                            if (!ChunkMap.this.trackerEventListeners || new io.papermc.paper.event.player.PlayerTrackEntityEvent(player.getBukkitEntity(), this.entity.getBukkitEntity()).callEvent()) {
++                            if (!trackerEventListeners || new io.papermc.paper.event.player.PlayerTrackEntityEvent(bukkitPlayer, this.trackedBukkitEntity).callEvent()) {
+                             this.serverEntity.addPairing(player);
+                             }
+                             // Paper end - entity tracking events
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 77c6bae4ea8446906e2c300bf248e66c7af64520..530d97b7de680dc2f0ab252c665529f4daa50dce 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -1122,14 +1122,7 @@ public abstract class PlayerList {
+         if (bucket != null) {
+             final ServerPlayer[] playerArray = this.getPlayersArray();
+             final int playerCount = playerArray.length;
+-            boolean hasVisibilityInversions = false;
+-
+-            for (int i = 0; i < playerCount; ++i) {
+-                if (playerArray[i].getBukkitEntity().hasVisibilityInversions()) {
+-                    hasVisibilityInversions = true;
+-                    break;
+-                }
+-            }
++            final boolean hasVisibilityInversions = CraftPlayer.hasAnyVisibilityInversions();
+ 
+             if (!hasVisibilityInversions) {
+                 final ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, List.of(playerArray));
