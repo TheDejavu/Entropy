@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:52:25 +0200
+Subject: [PATCH] Reduce stats dirty set churn
+
+
+diff --git a/src/main/java/net/minecraft/stats/ServerStatsCounter.java b/src/main/java/net/minecraft/stats/ServerStatsCounter.java
+index f890738d3bb9fb5e70a9d323c6cec97f9948f9cf..e659e89913b5861b5e65ed67502d1c4b6e337500 100644
+--- a/src/main/java/net/minecraft/stats/ServerStatsCounter.java
++++ b/src/main/java/net/minecraft/stats/ServerStatsCounter.java
+@@ -43,7 +43,8 @@ public class ServerStatsCounter extends StatsCounter {
+     private static final Logger LOGGER = LogUtils.getLogger();
+     private final MinecraftServer server;
+     private final File file;
+-    private final Set<Stat<?>> dirty = Sets.newHashSet();
++    private Set<Stat<?>> dirty = Sets.newHashSet();
++    private Set<Stat<?>> dirtyBuffer = Sets.newHashSet();
+ 
+     public ServerStatsCounter(MinecraftServer server, File file) {
+         this.server = server;
+@@ -91,8 +92,13 @@ public class ServerStatsCounter extends StatsCounter {
+     }
+ 
+     private Set<Stat<?>> getDirty() {
+-        Set<Stat<?>> set = Sets.newHashSet(this.dirty);
++        if (this.dirty.isEmpty()) {
++            return java.util.Collections.emptySet();
++        }
+ 
++        Set<Stat<?>> set = this.dirty;
++        this.dirty = this.dirtyBuffer;
++        this.dirtyBuffer = set;
+         this.dirty.clear();
+         return set;
+     }
