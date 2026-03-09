@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:35:35 +0200
+Subject: [PATCH] Reduce player list wrapper churn
+
+
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 530d97b7de680dc2f0ab252c665529f4daa50dce..da75c801ba77f66c016d1f97f21b40a43b5b630e 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -339,7 +339,8 @@ public abstract class PlayerList {
+         String s1 = connection.getLoggableAddress(this.server.logIPs());
+ 
+         // Spigot start - spawn location event
+-        Player spawnPlayer = player.getBukkitEntity();
++        final CraftPlayer bukkitPlayer = player.getBukkitEntity();
++        Player spawnPlayer = bukkitPlayer;
+         org.spigotmc.event.player.PlayerSpawnLocationEvent ev = new com.destroystokyo.paper.event.player.PlayerInitialSpawnEvent(spawnPlayer, spawnPlayer.getLocation()); // Paper use our duplicate event
+         this.cserver.getPluginManager().callEvent(ev);
+ 
+@@ -367,7 +368,7 @@ public abstract class PlayerList {
+ 
+         // Spigot - view distance
+         playerconnection.send(new ClientboundLoginPacket(player.getId(), worlddata.isHardcore(), this.server.levelKeys(), this.getMaxPlayers(), worldserver1.getWorld().getSendViewDistance(), worldserver1.getWorld().getSimulationDistance(), flag1, !flag, flag2, player.createCommonSpawnInfo(worldserver1))); // Paper - replace old player chunk management
+-        player.getBukkitEntity().sendSupportedChannels(); // CraftBukkit
++        bukkitPlayer.sendSupportedChannels(); // CraftBukkit
+         playerconnection.send(new ClientboundChangeDifficultyPacket(worlddata.getDifficulty(), worlddata.isDifficultyLocked()));
+         playerconnection.send(new ClientboundPlayerAbilitiesPacket(player.getAbilities()));
+         playerconnection.send(new ClientboundSetCarriedItemPacket(player.getInventory().selected));
+@@ -410,8 +411,6 @@ public abstract class PlayerList {
+         mountSavedVehicle(player, worldserver1, nbttagcompound);
+         // Paper end - Fire PlayerJoinEvent when Player is actually ready
+         // CraftBukkit start
+-        CraftPlayer bukkitPlayer = player.getBukkitEntity();
+-
+         // Ensure that player inventory is populated with its viewer
+         player.containerMenu.transferTo(player.containerMenu, bukkitPlayer);
+ 
+@@ -765,11 +764,11 @@ public abstract class PlayerList {
+         // this.broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(entityplayer.getUUID())));
+         ClientboundPlayerInfoRemovePacket packet = new ClientboundPlayerInfoRemovePacket(List.of(entityplayer.getUUID()));
+         for (ServerPlayer entityplayer2 : this.getPlayersArray()) {
+-
+-            if (entityplayer2.getBukkitEntity().canSee(bukkitPlayer)) {
++            final CraftPlayer otherBukkit = entityplayer2.getBukkitEntity();
++            if (otherBukkit.canSee(bukkitPlayer)) {
+                 entityplayer2.connection.send(packet);
+             } else {
+-                entityplayer2.getBukkitEntity().onEntityRemove(entityplayer);
++                otherBukkit.onEntityRemove(entityplayer);
+             }
+         }
+         // This removes the scoreboard (and player reference) for the specific player in the manager
+@@ -1179,9 +1178,10 @@ public abstract class PlayerList {
+ 
+     // CraftBukkit start - add a world/entity limited version
+     public void broadcastAll(Packet packet, net.minecraft.world.entity.player.Player entityhuman) {
++        final org.bukkit.entity.Entity sourceBukkit = entityhuman == null ? null : entityhuman.getBukkitEntity();
+         for (ServerPlayer entityplayer : this.getPlayersArray()) {
+-            if (entityhuman != null && !entityplayer.getBukkitEntity().canSee(entityhuman.getBukkitEntity())) {
+-               continue;
++            if (sourceBukkit != null && !entityplayer.getBukkitEntity().canSee(sourceBukkit)) {
++                continue;
+             }
+             entityplayer.connection.send(packet);
+         }
+@@ -1338,6 +1338,7 @@ public abstract class PlayerList {
+         int playerCount = currentPlayers.length;
+         int startIndex = 0;
+         int sent = 0;
++        final org.bukkit.entity.Entity sourceBukkit = player == null ? null : player.getBukkitEntity();
+ 
+         if (reduceBroadcast && playerCount > 0) {
+             if (++this.reducedBroadcastStartIndex < 0) {
+@@ -1350,8 +1351,8 @@ public abstract class PlayerList {
+             ServerPlayer entityplayer = currentPlayers[(i + startIndex) % playerCount];
+ 
+             // CraftBukkit start - Test if player receiving packet can see the source of the packet
+-            if (player != null && !entityplayer.getBukkitEntity().canSee(player.getBukkitEntity())) {
+-               continue;
++            if (sourceBukkit != null && !entityplayer.getBukkitEntity().canSee(sourceBukkit)) {
++                continue;
+             }
+             // CraftBukkit end
+ 
