@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 14:09:41 +0200
+Subject: [PATCH] Reduce tracker and chunk player lookup churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index ad56968ff92dffb2884eecb05c4f0f184a164bad..45919488ae1d27d7202e0aecb233feabe87594fd 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1484,6 +1484,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         }
+ 
+         public void broadcast(Packet<?> packet) {
++            if (this.seenBy.isEmpty()) {
++                return;
++            }
+             Iterator iterator = this.seenBy.iterator();
+ 
+             while (iterator.hasNext()) {
+@@ -1503,6 +1506,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         }
+ 
+         public void broadcastRemoved() {
++            if (this.seenBy.isEmpty()) {
++                return;
++            }
+             Iterator iterator = this.seenBy.iterator();
+ 
+             while (iterator.hasNext()) {
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 25f36dd324c7e7e4682bd2e41e8a5ea2175ed5a9..1c033525337f9c6c49411cfba0c6342d1db6d013 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -506,13 +506,14 @@ public class ServerChunkCache extends ChunkSource {
+             if (this.level.getServer().tickRateManager().runsNormally()) {
+                 gameprofilerfiller.popPush("naturalSpawnCount");
+                 int k = this.distanceManager.getNaturalSpawnChunkCount();
++                final ServerPlayer[] players = this.level.getPlayersArray();
+                 // Paper start - Optional per player mob spawns
+                 int naturalSpawnChunkCount = k;
+                 NaturalSpawner.SpawnState spawnercreature_d; // moved down
+                 if ((this.spawnFriendlies || this.spawnEnemies) && this.level.paperConfig().entities.spawning.perPlayerMobSpawns) { // don't count mobs when animals and monsters are disabled
+                     if (!gg.pufferfish.pufferfish.PufferfishConfig.enableAsyncMobSpawning) { // Pufferfish - moved down when async processing
+                     // re-set mob counts
+-                    for (ServerPlayer player : this.level.getPlayersArray()) {
++                    for (ServerPlayer player : players) {
+                         // Paper start - per player mob spawning backoff
+                         for (int ii = 0; ii < ServerPlayer.MOBCATEGORY_TOTAL_ENUMS; ii++) {
+                             player.mobCounts[ii] = 0;
+@@ -536,11 +537,11 @@ public class ServerChunkCache extends ChunkSource {
+                 // Paper end - Optional per player mob spawns
+                 // this.lastSpawnState = spawnercreature_d; // Pufferfish - this is managed asynchronously
+                 gameprofilerfiller.popPush("spawnAndTick");
+-                boolean flag = this.level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING) && this.level.getPlayersArray().length != 0; // CraftBukkit
++                boolean flag = this.level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING) && players.length != 0; // CraftBukkit
+ 
+                 // Paper start - optimise chunk tick iteration
+                 ChunkMap playerChunkMap = this.chunkMap;
+-                for (ServerPlayer player : this.level.getPlayersArray()) {
++                for (ServerPlayer player : players) {
+                     if (!player.affectsSpawning || player.isSpectator()) {
+                         playerChunkMap.playerMobSpawnMap.remove(player);
+                         player.playerNaturallySpawnedEvent = null;
+@@ -669,7 +670,8 @@ public class ServerChunkCache extends ChunkSource {
+     
+         // Pufferfish start - optimize mob spawning
+         if (gg.pufferfish.pufferfish.PufferfishConfig.enableAsyncMobSpawning) {
+-            for (ServerPlayer player : this.level.getPlayersArray()) {
++            final ServerPlayer[] players = this.level.getPlayersArray();
++            for (ServerPlayer player : players) {
+                 // Paper start - per player mob spawning backoff
+                 for (int ii = 0; ii < ServerPlayer.MOBCATEGORY_TOTAL_ENUMS; ii++) {
+                     player.mobCounts[ii] = 0;
