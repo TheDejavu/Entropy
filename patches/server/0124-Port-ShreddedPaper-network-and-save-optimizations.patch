@@ -1,0 +1,143 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:48:17 +0200
+Subject: [PATCH] Port ShreddedPaper network and save optimizations
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index 695c1cf43e99ab355c28b78133a33876f9703a52..07143734a56ea5d344b509379ed57455d0659b84 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -509,7 +509,9 @@ public class EntropyConfig {
+     public static boolean ipHashing;
+     public static String ipHashingSalt;
+     public static boolean useAlternateKeepAlive;
++    public static boolean useLazyExecuteForNonFlushPackets;
+     public static boolean coalesceMovementFlushes;
++    public static boolean asyncPlayerDataSaves;
+     public static boolean timeoutDebugReportEnabled;
+     public static int timeoutDebugReportCooldownSeconds;
+     public static int timeoutDebugReportConnectionLimit;
+@@ -517,7 +519,9 @@ public class EntropyConfig {
+         ipHashing = getBoolean("starforge.networking.ip-hasing", false, "Replace visible ip addresses with hashes to protect user data.");
+         ipHashingSalt = getString("starforge.networking.ip-hashing-salt", "replace-this", "Set this value to a string that is not used anywhere else. Changing this value will change hashed ips.");
+         useAlternateKeepAlive = getBoolean("starforge.networking.use-alternate-keepalive", false, "Send keepalives every second and accept recent replies to reduce false timeout kicks under packet saturation.");
++        useLazyExecuteForNonFlushPackets = getBoolean("starforge.networking.use-lazy-execute-for-non-flush-packets", true, "Use Netty lazyExecute for non-flush packet dispatch tasks to reduce event loop wakeups.");
+         coalesceMovementFlushes = getBoolean("starforge.networking.coalesce-movement-flushes", true, "Batch movement packet flushes until the next Netty loop turn to reduce writeAndFlush pressure.");
++        asyncPlayerDataSaves = getBoolean("starforge.networking.async-player-data-saves", true, "Write player data files off-thread after main-thread NBT capture to reduce save stalls.");
+         timeoutDebugReportEnabled = getBoolean("starforge.networking.timeout-debug-report.enabled", true, "Log a netdebug snapshot when the first keepalive timeout in a burst happens.");
+         timeoutDebugReportCooldownSeconds = Math.max(1, getInt("starforge.networking.timeout-debug-report.cooldown-seconds", 30, "Minimum seconds between automatic timeout debug dumps."));
+         timeoutDebugReportConnectionLimit = Math.max(1, getInt("starforge.networking.timeout-debug-report.connection-limit", 10, "How many worst connections to print in an automatic timeout debug dump."));
+diff --git a/src/main/java/net/minecraft/network/Connection.java b/src/main/java/net/minecraft/network/Connection.java
+index 7f2181439c5c09dcc12c80e3db277c23b06e1110..1fab9295b9b6282d9aba228d5c43af27fcfc51c9 100644
+--- a/src/main/java/net/minecraft/network/Connection.java
++++ b/src/main/java/net/minecraft/network/Connection.java
+@@ -29,6 +29,7 @@ import io.netty.handler.flow.FlowControlHandler;
+ import io.netty.handler.timeout.ReadTimeoutHandler;
+ import io.netty.handler.timeout.TimeoutException;
+ import io.netty.util.AttributeKey;
++import io.netty.util.concurrent.SingleThreadEventExecutor;
+ import java.net.InetSocketAddress;
+ import java.net.SocketAddress;
+ import java.util.Objects;
+@@ -576,9 +577,12 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.doSendPacket(packet, callbacks, flush);
+         } else {
+-            this.channel.eventLoop().execute(() -> {
+-                this.doSendPacket(packet, callbacks, flush);
+-            });
++            Runnable task = () -> this.doSendPacket(packet, callbacks, flush);
++            if (!flush && EntropyConfig.useLazyExecuteForNonFlushPackets && this.channel.eventLoop() instanceof SingleThreadEventExecutor executor) {
++                executor.lazyExecute(task);
++            } else {
++                this.channel.eventLoop().execute(task);
++            }
+         }
+ 
+     }
+@@ -645,9 +649,7 @@ public class Connection extends SimpleChannelInboundHandler<Packet<?>> {
+         if (this.channel.eventLoop().inEventLoop()) {
+             this.channel.flush();
+         } else {
+-            this.channel.eventLoop().execute(() -> {
+-                this.channel.flush();
+-            });
++            this.channel.eventLoop().execute(this.channel::flush);
+         }
+ 
+     }
+diff --git a/src/main/java/net/minecraft/world/level/storage/PlayerDataStorage.java b/src/main/java/net/minecraft/world/level/storage/PlayerDataStorage.java
+index 63e187c65cb855031f286aad0d25ac4694f7a331..f93b63b6a7e6cf1c53c1887b7b53b3d874e452ce 100644
+--- a/src/main/java/net/minecraft/world/level/storage/PlayerDataStorage.java
++++ b/src/main/java/net/minecraft/world/level/storage/PlayerDataStorage.java
+@@ -2,9 +2,13 @@ package net.minecraft.world.level.storage;
+ 
+ import com.mojang.datafixers.DataFixer;
+ import com.mojang.logging.LogUtils;
++import dev.orhidea.starforge.EntropyConfig;
+ import java.io.File;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
++import java.util.UUID;
++import java.util.concurrent.CompletableFuture;
++import java.util.concurrent.ConcurrentHashMap;
+ import javax.annotation.Nullable;
+ import net.minecraft.Util;
+ import net.minecraft.nbt.CompoundTag;
+@@ -25,6 +29,7 @@ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ public class PlayerDataStorage {
+ 
+     private static final Logger LOGGER = LogUtils.getLogger();
++    private static final ConcurrentHashMap<UUID, CompletableFuture<Void>> ASYNC_SAVE_TASKS = new ConcurrentHashMap<>();
+     private final File playerDir;
+     protected final DataFixer fixerUpper;
+ 
+@@ -37,15 +42,39 @@ public class PlayerDataStorage {
+     public void save(Player player) {
+         if (org.spigotmc.SpigotConfig.disablePlayerDataSaving) return; // Spigot
+         try {
+-            CompoundTag nbttagcompound = player.saveWithoutId(new CompoundTag());
+-            Path path = this.playerDir.toPath();
+-            Path path1 = Files.createTempFile(path, player.getStringUUID() + "-", ".dat");
+-
+-            NbtIo.writeCompressed(nbttagcompound, path1);
+-            Path path2 = path.resolve(player.getStringUUID() + ".dat");
+-            Path path3 = path.resolve(player.getStringUUID() + ".dat_old");
++            final CompoundTag nbttagcompound = player.saveWithoutId(new CompoundTag());
++            final Path path = this.playerDir.toPath();
++            final String playerUuid = player.getStringUUID();
++            final Path path2 = path.resolve(playerUuid + ".dat");
++            final Path path3 = path.resolve(playerUuid + ".dat_old");
++            if (!EntropyConfig.asyncPlayerDataSaves) {
++                final Path path1 = Files.createTempFile(path, playerUuid + "-", ".dat");
++                NbtIo.writeCompressed(nbttagcompound, path1);
++                Util.safeReplaceFile(path2, path1, path3);
++                return;
++            }
+ 
+-            Util.safeReplaceFile(path2, path1, path3);
++            final UUID uniqueId = player.getUUID();
++            ASYNC_SAVE_TASKS.compute(uniqueId, (uuid, previousSave) -> {
++                final CompletableFuture<Void> base = previousSave == null ? CompletableFuture.completedFuture(null) : previousSave;
++                final CompletableFuture<Void> chained = base.handle((ignored, throwable) -> null).thenRunAsync(() -> {
++                    try {
++                        Path path1 = Files.createTempFile(path, playerUuid + "-", ".dat");
++                        NbtIo.writeCompressed(nbttagcompound, path1);
++                        Util.safeReplaceFile(path2, path1, path3);
++                    } catch (Exception exception) {
++                        throw new RuntimeException(exception);
++                    }
++                }, Util.ioPool());
++                chained.whenComplete((ignored, throwable) -> {
++                    if (throwable != null) {
++                        Throwable cause = throwable instanceof java.util.concurrent.CompletionException && throwable.getCause() != null ? throwable.getCause() : throwable;
++                        PlayerDataStorage.LOGGER.warn("Failed to save player data for {}", player.getScoreboardName(), cause);
++                    }
++                    ASYNC_SAVE_TASKS.remove(uuid, chained);
++                });
++                return chained;
++            });
+         } catch (Exception exception) {
+             PlayerDataStorage.LOGGER.warn("Failed to save player data for {}", player.getScoreboardName(), exception); // Paper - Print exception
+         }
