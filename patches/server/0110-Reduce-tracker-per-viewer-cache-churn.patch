@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 11:16:12 +0200
+Subject: [PATCH] Reduce tracker per-viewer cache churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 319d922476b7da6a959021195c16e73a26138e4c..4f860296e526a70bcc9b8bfd489526154bbcf4dd 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -101,7 +101,6 @@ import net.minecraft.world.level.levelgen.structure.StructureStart;
+ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager;
+ import net.minecraft.world.level.storage.DimensionDataStorage;
+ import net.minecraft.world.level.storage.LevelStorageSource;
+-import net.minecraft.world.phys.Vec3;
+ import org.apache.commons.lang3.mutable.MutableBoolean;
+ import org.slf4j.Logger;
+ import dev.orhidea.starforge.EntropyConfig;
+@@ -1361,9 +1360,16 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         private final ReferenceArrayList<ServerPlayerConnection> pendingRemovalChecks = new ReferenceArrayList<>();
+         private final int playerSearchInterval;
+         private final boolean alwaysSearchForPlayers;
+-        private int cachedEffectiveRangeTick = Integer.MIN_VALUE;
++        private int cachedTrackingDataTick = Integer.MIN_VALUE;
+         private int cachedEffectiveRange;
+-        private Vec3 entityPosition;
++        private double cachedEntityX;
++        private double cachedEntityY;
++        private double cachedEntityZ;
++        private int cachedChunkX;
++        private int cachedChunkZ;
++        private double lastEntityX;
++        private double lastEntityY;
++        private double lastEntityZ;
+ 
+         public TrackedEntity(Entity entity, int i, int j, boolean flag) {
+             this.serverEntity = new ServerEntity(ChunkMap.this.level, entity, j, flag, this::broadcast, this.seenBy); // CraftBukkit
+@@ -1372,7 +1378,9 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             this.lastSectionPos = SectionPos.of((EntityAccess) entity);
+             this.alwaysSearchForPlayers = entity instanceof EnderDragonPart;
+             this.playerSearchInterval = entity instanceof net.minecraft.world.entity.player.Player ? EntropyConfig.playerTrackerSearchInterval : Math.max(1, Math.min(j, 20));
+-            this.entityPosition = entity.position();
++            this.lastEntityX = entity.getX();
++            this.lastEntityY = entity.getY();
++            this.lastEntityZ = entity.getZ();
+         }
+ 
+         final boolean shouldLookForPlayers() {
+@@ -1380,9 +1388,17 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 return true;
+             }
+ 
+-            Vec3 lastPosition = this.entityPosition;
+-            this.entityPosition = this.entity.position();
+-            return this.entityPosition.distanceToSqr(lastPosition) >= (double) this.range / 2.0D;
++            double currentX = this.entity.getX();
++            double currentY = this.entity.getY();
++            double currentZ = this.entity.getZ();
++            double deltaX = currentX - this.lastEntityX;
++            double deltaY = currentY - this.lastEntityY;
++            double deltaZ = currentZ - this.lastEntityZ;
++
++            this.lastEntityX = currentX;
++            this.lastEntityY = currentY;
++            this.lastEntityZ = currentZ;
++            return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ >= (double) this.range / 2.0D;
+         }
+ 
+         // Paper start - use distance map to optimise tracker
+@@ -1427,9 +1443,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+             for (int i = 0, len = pendingRemovalChecks.size(); i < len; ++i) {
+                 final ServerPlayerConnection conn = pendingRemovalChecks.get(i);
+-                if (this.seenBy.contains(conn)) {
+-                    this.updatePlayer(conn.getPlayer());
+-                }
++                this.updatePlayer(conn.getPlayer());
+             }
+ 
+             pendingRemovalChecks.clear();
+@@ -1440,9 +1454,10 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 return false;
+             }
+ 
+-            double deltaX = player.getX() - this.entity.getX();
+-            double deltaZ = player.getZ() - this.entity.getZ();
+-            double visibleRange = (double) this.getEffectiveRange();
++            this.refreshTrackingDataCache();
++            double deltaX = player.getX() - this.cachedEntityX;
++            double deltaZ = player.getZ() - this.cachedEntityZ;
++            double visibleRange = (double) this.cachedEffectiveRange;
+             double range = Math.min(visibleRange, ChunkMap.this.getPlayerViewDistance(player) * 16);
+ 
+             return deltaX * deltaX + deltaZ * deltaZ > range * range;
+@@ -1500,22 +1515,23 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
+             }
+             if (player != this.entity) {
++                this.refreshTrackingDataCache();
+                 // Paper start - remove allocation of Vec3D here
+                 // Vec3 vec3d = player.position().subtract(this.entity.position());
+-                double vec3d_dx = player.getX() - this.entity.getX();
+-                double vec3d_dz = player.getZ() - this.entity.getZ();
++                double vec3d_dx = player.getX() - this.cachedEntityX;
++                double vec3d_dz = player.getZ() - this.cachedEntityZ;
+                 // Paper end - remove allocation of Vec3D here
+                 int i = ChunkMap.this.getPlayerViewDistance(player);
+-                double visibleRange = (double) this.getEffectiveRangeCached();
++                double visibleRange = (double) this.cachedEffectiveRange;
+                 double d0 = Math.min(visibleRange, i * 16);
+                 double d1 = vec3d_dx * vec3d_dx + vec3d_dz * vec3d_dz; // Paper
+                 double d2 = d0 * d0;
+-                boolean flag = d1 <= d2 && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.entity.chunkPosition().x, this.entity.chunkPosition().z);
++                boolean flag = d1 <= d2 && this.entity.broadcastToPlayer(player) && ChunkMap.this.isChunkTracked(player, this.cachedChunkX, this.cachedChunkZ);
+                 // Paper start - Configurable entity tracking range by Y
+                 if (flag && level.paperConfig().entities.trackingRangeY.enabled) {
+                     double rangeY = level.paperConfig().entities.trackingRangeY.get(this.entity, -1);
+                     if (rangeY != -1) {
+-                        double vec3d_dy = player.getY() - this.entity.getY();
++                        double vec3d_dy = player.getY() - this.cachedEntityY;
+                         flag = vec3d_dy * vec3d_dy <= rangeY * rangeY;
+                     }
+                 }
+@@ -1593,13 +1609,18 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+             return this.scaledRange(i);
+         }
+ 
+-        private int getEffectiveRangeCached() {
++        private void refreshTrackingDataCache() {
+             int tick = this.entity.tickCount;
+-            if (this.cachedEffectiveRangeTick != tick) {
+-                this.cachedEffectiveRangeTick = tick;
++            if (this.cachedTrackingDataTick != tick) {
++                this.cachedTrackingDataTick = tick;
++                this.cachedEntityX = this.entity.getX();
++                this.cachedEntityY = this.entity.getY();
++                this.cachedEntityZ = this.entity.getZ();
++                ChunkPos chunkPos = this.entity.chunkPosition();
++                this.cachedChunkX = chunkPos.x;
++                this.cachedChunkZ = chunkPos.z;
+                 this.cachedEffectiveRange = this.getEffectiveRange();
+             }
+-            return this.cachedEffectiveRange;
+         }
+ 
+         public void updatePlayers(List<ServerPlayer> players) {
