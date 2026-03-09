@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:02:08 +0200
+Subject: [PATCH] Reduce login and tracker join churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 7c0b8104a6ab25e51dbe7a66a7953bb73ff8340e..5e15c539a2518618f3709ba6f7faa55b1678689f 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1450,10 +1450,16 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+         }
+ 
+         private boolean shouldSkipUntrackedPlayerUpdate(ServerPlayer player) {
+-            if (player == this.entity || this.seenBy.contains(player.connection)) {
++            final ServerPlayerConnection playerConnection = player.connection;
++            if (player == this.entity || this.seenBy.contains(playerConnection)) {
+                 return false;
+             }
+ 
++            // Joining players do not need tracker evaluation until login suppression is lifted.
++            if (player.supressTrackerForLogin) {
++                return true;
++            }
++
+             this.refreshTrackingDataCache();
+             double deltaX = player.getX() - this.cachedEntityX;
+             double deltaZ = player.getZ() - this.cachedEntityZ;
+@@ -1515,6 +1521,10 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 org.spigotmc.AsyncCatcher.catchOp("player tracker update"); // Spigot
+             }
+             if (player != this.entity) {
++                final ServerPlayerConnection playerConnection = player.connection;
++                if (player.supressTrackerForLogin && !this.seenBy.contains(playerConnection)) {
++                    return;
++                }
+                 this.refreshTrackingDataCache();
+                 // Paper start - remove allocation of Vec3D here
+                 // Vec3 vec3d = player.position().subtract(this.entity.position());
+@@ -1542,7 +1552,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                 }
+                 // CraftBukkit end
+                 if (flag) {
+-                    if (this.seenBy.add(player.connection)) {
++                    if (this.seenBy.add(playerConnection)) {
+                         if (AsyncTracker.isTrackerThread()) {
+                             ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.addPairing(player));
+                         } else {
+@@ -1553,7 +1563,7 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+                             // Paper end - entity tracking events
+                         }
+                     }
+-                } else if (this.seenBy.remove(player.connection)) {
++                } else if (this.seenBy.remove(playerConnection)) {
+                     if (AsyncTracker.isTrackerThread()) {
+                         ChunkMap.this.runOnTrackerMainThread(() -> this.serverEntity.removePairing(player));
+                     } else {
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index 0ddfa7d8f71929b3e03424407b336b0810f73b9b..e23d4dc62a0edd5d43500331a43ff22aa420145c 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -783,23 +783,34 @@ public abstract class PlayerList {
+ 
+         // Moved from processLogin
+         UUID uuid = gameprofile.getId();
+-        List<ServerPlayer> list = Lists.newArrayList();
+-
+-        ServerPlayer entityplayer;
++        ServerPlayer firstDuplicate = null;
++        List<ServerPlayer> duplicatePlayers = null;
+ 
+-        for (ServerPlayer candidate : this.getPlayersArray()) {
+-            entityplayer = candidate;
++        for (ServerPlayer entityplayer : this.getPlayersArray()) {
+             if (entityplayer.getUUID().equals(uuid) || (io.papermc.paper.configuration.GlobalConfiguration.get().proxies.isProxyOnlineMode() && entityplayer.getGameProfile().getName().equalsIgnoreCase(gameprofile.getName()))) { // Paper - validate usernames
+-                list.add(entityplayer);
++                if (firstDuplicate == null) {
++                    firstDuplicate = entityplayer;
++                } else {
++                    if (duplicatePlayers == null) {
++                        duplicatePlayers = Lists.newArrayListWithExpectedSize(4);
++                        duplicatePlayers.add(firstDuplicate);
++                    }
++                    duplicatePlayers.add(entityplayer);
++                }
+             }
+         }
+ 
+-        Iterator iterator = list.iterator();
+-
+-        while (iterator.hasNext()) {
+-            entityplayer = (ServerPlayer) iterator.next();
+-            this.save(entityplayer); // CraftBukkit - Force the player's inventory to be saved
+-            entityplayer.connection.disconnect(Component.translatable("multiplayer.disconnect.duplicate_login"), org.bukkit.event.player.PlayerKickEvent.Cause.DUPLICATE_LOGIN); // Paper - kick event cause
++        if (firstDuplicate != null) {
++            if (duplicatePlayers == null) {
++                this.save(firstDuplicate); // CraftBukkit - Force the player's inventory to be saved
++                firstDuplicate.connection.disconnect(Component.translatable("multiplayer.disconnect.duplicate_login"), org.bukkit.event.player.PlayerKickEvent.Cause.DUPLICATE_LOGIN); // Paper - kick event cause
++            } else {
++                for (int i = 0, len = duplicatePlayers.size(); i < len; ++i) {
++                    ServerPlayer entityplayer = duplicatePlayers.get(i);
++                    this.save(entityplayer); // CraftBukkit - Force the player's inventory to be saved
++                    entityplayer.connection.disconnect(Component.translatable("multiplayer.disconnect.duplicate_login"), org.bukkit.event.player.PlayerKickEvent.Cause.DUPLICATE_LOGIN); // Paper - kick event cause
++                }
++            }
+         }
+ 
+         // Instead of kicking then returning, we need to store the kick reason
