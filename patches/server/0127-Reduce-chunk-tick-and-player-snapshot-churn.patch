@@ -1,0 +1,141 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 13:12:05 +0200
+Subject: [PATCH] Reduce chunk tick and player snapshot churn
+
+
+diff --git a/src/main/java/com/destroystokyo/paper/network/PaperServerListPingEventImpl.java b/src/main/java/com/destroystokyo/paper/network/PaperServerListPingEventImpl.java
+index 6ed2114f577ce12d2d493985e798609c7d83f15e..d82fbc20a02aeaf7a11bd6decba55680bd9c592b 100644
+--- a/src/main/java/com/destroystokyo/paper/network/PaperServerListPingEventImpl.java
++++ b/src/main/java/com/destroystokyo/paper/network/PaperServerListPingEventImpl.java
+@@ -20,7 +20,7 @@ class PaperServerListPingEventImpl extends PaperServerListPingEvent {
+ 
+     @Override
+     protected final Object[] getOnlinePlayers() {
+-        return this.server.getPlayerList().players.toArray();
++        return this.server.getPlayerList().getPlayersArray();
+     }
+ 
+     @Override
+diff --git a/src/main/java/io/papermc/paper/util/MCUtil.java b/src/main/java/io/papermc/paper/util/MCUtil.java
+index 2222625a515d9ae6c3e9c92fc4d4a5bf974af5f8..3207fc05dbf187c0ff4c98f2c5d07f02fa4390a8 100644
+--- a/src/main/java/io/papermc/paper/util/MCUtil.java
++++ b/src/main/java/io/papermc/paper/util/MCUtil.java
+@@ -565,7 +565,7 @@ public final class MCUtil {
+         {
+             JsonArray players = new JsonArray();
+             data.add("all-players", players);
+-            List<ServerPlayer> playerList = MinecraftServer.getServer().getPlayerList().players;
++            ServerPlayer[] playerList = MinecraftServer.getServer().getPlayerList().getPlayersArray();
+             for (ServerPlayer player : playerList) {
+                 JsonObject playerData = new JsonObject();
+                 players.add(playerData);
+diff --git a/src/main/java/io/papermc/paper/util/player/NearbyPlayers.java b/src/main/java/io/papermc/paper/util/player/NearbyPlayers.java
+index f164256d59b761264876ca0c85f812d101bfd5de..0892782ce204d97a0bbce12bdc068d561690c730 100644
+--- a/src/main/java/io/papermc/paper/util/player/NearbyPlayers.java
++++ b/src/main/java/io/papermc/paper/util/player/NearbyPlayers.java
+@@ -106,6 +106,12 @@ public final class NearbyPlayers {
+         return chunk == null ? null : chunk.players[type.ordinal()];
+     }
+ 
++    public ReferenceList<ServerPlayer> getPlayers(final long nearbyPlayersCoordinateKey, final NearbyMapType type) {
++        final TrackedChunk chunk = this.byChunk.get(nearbyPlayersCoordinateKey);
++
++        return chunk == null ? null : chunk.players[type.ordinal()];
++    }
++
+     public ReferenceList<ServerPlayer> getPlayersByChunk(final int chunkX, final int chunkZ, final NearbyMapType type) {
+         final TrackedChunk chunk = this.byChunk.get(CoordinateUtils.getChunkKey(chunkX, chunkZ));
+ 
+diff --git a/src/main/java/net/minecraft/server/ServerScoreboard.java b/src/main/java/net/minecraft/server/ServerScoreboard.java
+index 0568b18b3c87bbb30ae8a95ea4bd162a92594d4a..b07c3dc5919bf62491ae8a4c19a37bd1afc4f876 100644
+--- a/src/main/java/net/minecraft/server/ServerScoreboard.java
++++ b/src/main/java/net/minecraft/server/ServerScoreboard.java
+@@ -319,7 +319,7 @@ public class ServerScoreboard extends Scoreboard {
+ 
+     // CraftBukkit start - Send to players
+     private void broadcastAll(Packet packet) {
+-        for (ServerPlayer entityplayer : (List<ServerPlayer>) this.server.getPlayerList().players) {
++        for (ServerPlayer entityplayer : this.server.getPlayerList().getPlayersArray()) {
+             if (entityplayer.getBukkitEntity().getScoreboard().getHandle() == this) {
+                 entityplayer.connection.send(packet);
+             }
+diff --git a/src/main/java/net/minecraft/server/level/ServerChunkCache.java b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+index 35caacfbd931f411760dce25cf9e6539866db672..95a35c6adb621a4bc81e7fbd371cd6cbf7458470 100644
+--- a/src/main/java/net/minecraft/server/level/ServerChunkCache.java
++++ b/src/main/java/net/minecraft/server/level/ServerChunkCache.java
+@@ -601,7 +601,7 @@ public class ServerChunkCache extends ChunkSource {
+ 
+                     // Paper start - optimise chunk tick iteration
+                     com.destroystokyo.paper.util.maplist.ReferenceList<ServerPlayer> playersNearby
+-                        = nearbyPlayers.getPlayers(chunkcoordintpair, io.papermc.paper.util.player.NearbyPlayers.NearbyMapType.SPAWN_RANGE);
++                        = nearbyPlayers.getPlayers(chunk1.nearbyPlayersCoordinateKey, io.papermc.paper.util.player.NearbyPlayers.NearbyMapType.SPAWN_RANGE);
+                     if (playersNearby == null) {
+                         continue;
+                     }
+diff --git a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+index 6f9abefe98879c3ca5980a1033eb2ef1f4a008fb..e0acf22855218415afeb21f9772ba9a963de7a61 100644
+--- a/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+@@ -2402,7 +2402,7 @@ public class ServerGamePacketListenerImpl extends ServerCommonPacketListenerImpl
+                                 return null;
+                             }
+ 
+-                            for (ServerPlayer recipient : ServerGamePacketListenerImpl.this.server.getPlayerList().players) {
++                            for (ServerPlayer recipient : ServerGamePacketListenerImpl.this.server.getPlayerList().getPlayersArray()) {
+                                 recipient.getBukkitEntity().sendMessage(ServerGamePacketListenerImpl.this.player.getUUID(), message);
+                             }
+                         } else {
+diff --git a/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java b/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
+index 679e05a483cd2e818b71a322de72d26a4b1880d7..16cab3e7dbdab4f05d7ef53862075e33035874a4 100644
+--- a/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
++++ b/src/main/java/net/minecraft/world/level/chunk/ChunkAccess.java
+@@ -63,7 +63,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+     protected final ShortList[] postProcessing;
+     protected volatile boolean unsaved;
+     private volatile boolean isLightCorrect;
+-    protected final ChunkPos chunkPos; public final long coordinateKey; public final int locX; public final int locZ; // Paper - cache coordinate key
++    protected final ChunkPos chunkPos; public final long coordinateKey; public final long nearbyPlayersCoordinateKey; public final int locX; public final int locZ; // Paper - cache coordinate key
+     private long inhabitedTime;
+     /** @deprecated */
+     @Nullable
+@@ -137,7 +137,7 @@ public abstract class ChunkAccess implements BlockGetter, BiomeManager.NoiseBiom
+         }
+         // Paper end - rewrite light engine
+         this.locX = pos.x; this.locZ = pos.z; // Paper - reduce need for field lookups
+-        this.chunkPos = pos; this.coordinateKey = ChunkPos.asLong(locX, locZ); // Paper - cache long key
++        this.chunkPos = pos; this.coordinateKey = ChunkPos.asLong(locX, locZ); this.nearbyPlayersCoordinateKey = io.papermc.paper.util.CoordinateUtils.getChunkKey(locX, locZ); // Paper - cache long key
+         this.upgradeData = upgradeData;
+         this.levelHeightAccessor = heightLimitView;
+         this.sections = new LevelChunkSection[heightLimitView.getSectionsCount()];
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index dd6180e6cf01d6d70fe3112d523225dd4a8a10e0..5bda2fbe76778d457dcfdcdbb61f5ecd16a88da3 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -466,7 +466,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     public void playerListName(net.kyori.adventure.text.Component name) {
+         getHandle().listName = name == null ? null : io.papermc.paper.adventure.PaperAdventure.asVanilla(name);
+         if (getHandle().connection == null) return; // Updates are possible before the player has fully joined
+-        for (ServerPlayer player : server.getHandle().players) {
++        for (ServerPlayer player : server.getHandle().getPlayersArray()) {
+             if (player.getBukkitEntity().canSee(this)) {
+                 player.connection.send(new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME, getHandle()));
+             }
+@@ -497,7 +497,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         }
+         this.getHandle().listName = name.equals(this.getName()) ? null : CraftChatMessage.fromStringOrNull(name);
+         if (this.getHandle().connection == null) return; // Paper - Updates are possible before the player has fully joined
+-        for (ServerPlayer player : (List<ServerPlayer>) this.server.getHandle().players) {
++        for (ServerPlayer player : this.server.getHandle().getPlayersArray()) {
+             if (player.getBukkitEntity().canSee(this)) {
+                 player.connection.send(new ClientboundPlayerInfoUpdatePacket(ClientboundPlayerInfoUpdatePacket.Action.UPDATE_DISPLAY_NAME, this.getHandle()));
+             }
+@@ -2079,7 +2079,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+             self.gameProfile = gameProfile;
+             return;
+         }
+-        List<ServerPlayer> players = this.server.getServer().getPlayerList().players;
++        ServerPlayer[] players = this.server.getServer().getPlayerList().getPlayersArray();
+         // First unregister the player for all players with the OLD game profile
+         for (ServerPlayer player : players) {
+             CraftPlayer bukkitPlayer = player.getBukkitEntity();
