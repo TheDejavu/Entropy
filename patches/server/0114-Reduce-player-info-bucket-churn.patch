@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 11:49:14 +0200
+Subject: [PATCH] Reduce player info bucket churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index b8534e024e38e0d964c52064138203be5a724035..457bd96311e0b8ab263e9e2a76ecaea9593b5712 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -923,10 +923,7 @@ public class ServerPlayer extends Player {
+     }
+ 
+     private void updateScoreForCriteria(ObjectiveCriteria criterion, int score) {
+-        // CraftBukkit - Use our scores instead
+-        this.level().getCraftServer().getScoreboardManager().forAllObjectives(criterion, this, (scoreaccess) -> {
+-            scoreaccess.set(score);
+-        });
++        this.level().getCraftServer().getScoreboardManager().setScoreForAllObjectives(criterion, this, score);
+     }
+ 
+     // Paper start - PlayerDeathEvent#getItemsToKeep
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index b580bd8354c2ee09478be29c64a61eeed9ab012a..f57eeafe3e50fa3ac2517d5d9a0bfa4be5b2cc80 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -141,7 +141,7 @@ public abstract class PlayerList {
+     private final MinecraftServer server;
+     public final List<ServerPlayer> players = new java.util.concurrent.CopyOnWriteArrayList(); // CraftBukkit - ArrayList -> CopyOnWriteArrayList: Iterator safety
+     private volatile ServerPlayer[] playersView = EMPTY_PLAYERS;
+-    private final ServerPlayer[][] sendAllPlayerInfoBuckets = new ServerPlayer[PlayerList.SEND_PLAYER_INFO_INTERVAL][];
++    private final PlayerInfoBucket[] sendAllPlayerInfoBuckets = new PlayerInfoBucket[PlayerList.SEND_PLAYER_INFO_INTERVAL];
+     private final Map<UUID, ServerPlayer> playersByUUID = Maps.newHashMap();
+     private final UserBanList bans;
+     private final IpBanList ipBans;
+@@ -164,6 +164,35 @@ public abstract class PlayerList {
+     private final Set<SoundEvent> reducedBroadcastSounds = Sets.newHashSet();
+     private ClientboundUpdateRecipesPacket cachedRecipePacket;
+ 
++    private static final class PlayerInfoBucket {
++        private ServerPlayer[] players = EMPTY_PLAYERS;
++        private int size;
++
++        public void add(ServerPlayer player) {
++            int currentSize = this.size;
++            if (currentSize == this.players.length) {
++                int newSize = currentSize == 0 ? 4 : currentSize << 1;
++                this.players = java.util.Arrays.copyOf(this.players, newSize);
++            }
++            this.players[currentSize] = player;
++            this.size = currentSize + 1;
++        }
++
++        public boolean remove(ServerPlayer player) {
++            int currentSize = this.size;
++            for (int i = 0; i < currentSize; ++i) {
++                if (this.players[i] == player) {
++                    int lastIndex = currentSize - 1;
++                    this.players[i] = this.players[lastIndex];
++                    this.players[lastIndex] = null;
++                    this.size = lastIndex;
++                    return lastIndex == 0;
++                }
++            }
++            return false;
++        }
++    }
++
+     // CraftBukkit start
+     private CraftServer cserver;
+     private final Map<String,ServerPlayer> playersByName = new java.util.HashMap<>();
+@@ -199,42 +228,26 @@ public abstract class PlayerList {
+ 
+     private void addToSendAllPlayerInfoBucket(ServerPlayer player) {
+         final int bucketIndex = PlayerList.getSendAllPlayerInfoBucketIndex(player);
+-        final ServerPlayer[] bucket = this.sendAllPlayerInfoBuckets[bucketIndex];
++        PlayerInfoBucket bucket = this.sendAllPlayerInfoBuckets[bucketIndex];
+ 
+         if (bucket == null) {
+-            this.sendAllPlayerInfoBuckets[bucketIndex] = new ServerPlayer[] {player};
+-            return;
++            bucket = new PlayerInfoBucket();
++            this.sendAllPlayerInfoBuckets[bucketIndex] = bucket;
+         }
+ 
+-        final int length = bucket.length;
+-        final ServerPlayer[] expanded = java.util.Arrays.copyOf(bucket, length + 1);
+-
+-        expanded[length] = player;
+-        this.sendAllPlayerInfoBuckets[bucketIndex] = expanded;
++        bucket.add(player);
+     }
+ 
+     private void removeFromSendAllPlayerInfoBucket(ServerPlayer player) {
+         final int bucketIndex = PlayerList.getSendAllPlayerInfoBucketIndex(player);
+-        final ServerPlayer[] bucket = this.sendAllPlayerInfoBuckets[bucketIndex];
++        final PlayerInfoBucket bucket = this.sendAllPlayerInfoBuckets[bucketIndex];
+ 
+         if (bucket == null) {
+             return;
+         }
+ 
+-        final int length = bucket.length;
+-        if (length == 1) {
+-            if (bucket[0] == player) {
+-                this.sendAllPlayerInfoBuckets[bucketIndex] = null;
+-            }
+-            return;
+-        }
+-
+-        for (int i = 0; i < length; ++i) {
+-            if (bucket[i] == player) {
+-                bucket[i] = bucket[length - 1];
+-                this.sendAllPlayerInfoBuckets[bucketIndex] = java.util.Arrays.copyOf(bucket, length - 1);
+-                return;
+-            }
++        if (bucket.remove(player)) {
++            this.sendAllPlayerInfoBuckets[bucketIndex] = null;
+         }
+     }
+ 
+@@ -1084,7 +1097,7 @@ public abstract class PlayerList {
+     }
+ 
+     public void tick() {
+-        final ServerPlayer[] bucket = this.sendAllPlayerInfoBuckets[this.sendAllPlayerInfoIn];
++        final PlayerInfoBucket bucket = this.sendAllPlayerInfoBuckets[this.sendAllPlayerInfoIn];
+         if (bucket != null) {
+             final ServerPlayer[] playerArray = this.getPlayersArray();
+             final int playerCount = playerArray.length;
+@@ -1099,8 +1112,8 @@ public abstract class PlayerList {
+ 
+             if (!hasVisibilityInversions) {
+                 final ClientboundPlayerInfoUpdatePacket packet = new ClientboundPlayerInfoUpdatePacket(PlayerList.UPDATE_LATENCY_ACTION, List.of(playerArray));
+-                for (int i = 0, length = bucket.length; i < length; ++i) {
+-                    bucket[i].connection.send(packet);
++                for (int i = 0, length = bucket.size; i < length; ++i) {
++                    bucket.players[i].connection.send(packet);
+                 }
+             } else {
+                 final UUID[] playerUuids = new UUID[playerCount];
+@@ -1108,8 +1121,8 @@ public abstract class PlayerList {
+                     playerUuids[i] = playerArray[i].getUUID();
+                 }
+ 
+-                for (int i = 0, bucketLength = bucket.length; i < bucketLength; ++i) {
+-                    final ServerPlayer target = bucket[i];
++                for (int i = 0, bucketLength = bucket.size; i < bucketLength; ++i) {
++                    final ServerPlayer target = bucket.players[i];
+                     final CraftPlayer targetBukkit = target.getBukkitEntity();
+                     final List<ServerPlayer> visiblePlayers = Lists.newArrayListWithExpectedSize(playerCount);
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+index 9d26dfb2a21abba2bed0c8c5dcabc111f0f44407..cc939b946196b4a980a4e726441ab278eb298274 100644
+--- a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
++++ b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+@@ -131,6 +131,16 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+         }
+     }
+ 
++    public void setScoreForAllObjectives(ObjectiveCriteria criteria, ScoreHolder holder, int score) {
++        if (this.criterionObjectiveCounts.getOrDefault(criteria, 0) <= 0) {
++            return;
++        }
++        for (CraftScoreboard scoreboard : this.scoreboards) {
++            Scoreboard board = scoreboard.board;
++            board.forAllObjectives(criteria, holder, scoreAccess -> scoreAccess.set(score));
++        }
++    }
++
+     public boolean hasObjectivesForCriteria(ObjectiveCriteria criteria) {
+         return this.criterionObjectiveCounts.getOrDefault(criteria, 0) > 0;
+     }
