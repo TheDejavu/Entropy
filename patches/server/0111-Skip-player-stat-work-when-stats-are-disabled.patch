@@ -1,0 +1,84 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 11:28:27 +0200
+Subject: [PATCH] Skip player stat work when stats are disabled
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index a7ca5b8547249af5dc2cd1e13b612296f7fa6c36..b8534e024e38e0d964c52064138203be5a724035 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -1777,6 +1777,9 @@ public class ServerPlayer extends Player {
+     }
+ 
+     public void checkMovementStatistics(double deltaX, double deltaY, double deltaZ) {
++        if (this.canSkipStatTracking()) {
++            return;
++        }
+         if (!this.isPassenger() && !ServerPlayer.didNotMove(deltaX, deltaY, deltaZ)) {
+             int i;
+ 
+@@ -1830,6 +1833,9 @@ public class ServerPlayer extends Player {
+     }
+ 
+     private void checkRidingStatistics(double deltaX, double deltaY, double deltaZ) {
++        if (this.canSkipStatTracking()) {
++            return;
++        }
+         if (this.isPassenger() && !ServerPlayer.didNotMove(deltaX, deltaY, deltaZ)) {
+             int i = Math.round((float) Math.sqrt(deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ) * 100.0F);
+             Entity entity = this.getVehicle();
+@@ -1853,8 +1859,19 @@ public class ServerPlayer extends Player {
+         return deltaX == 0.0D && deltaY == 0.0D && deltaZ == 0.0D;
+     }
+ 
++    private boolean canSkipStatTracking() {
++        if (!org.spigotmc.SpigotConfig.disableStatSaving || !org.spigotmc.SpigotConfig.forcedStats.isEmpty()) {
++            return false;
++        }
++
++        return !this.level().getCraftServer().getScoreboardManager().hasStatObjectives();
++    }
++
+     @Override
+     public void awardStat(Stat<?> stat, int amount) {
++        if (this.canSkipStatTracking()) {
++            return;
++        }
+         this.stats.increment(this, stat, amount);
+         this.level().getCraftServer().getScoreboardManager().forAllObjectives(stat, this, (scoreaccess) -> {
+             scoreaccess.add(amount);
+@@ -1863,6 +1880,9 @@ public class ServerPlayer extends Player {
+ 
+     @Override
+     public void resetStat(Stat<?> stat) {
++        if (this.canSkipStatTracking()) {
++            return;
++        }
+         this.stats.setValue(this, stat, 0);
+         this.level().getCraftServer().getScoreboardManager().forAllObjectives(stat, this, ScoreAccess::reset); // CraftBukkit - Get our scores instead
+     }
+diff --git a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+index daa44a3ad91570cfed0d562c66850e9166cae780..2a5a8d132e371e7e5e2d4ea6af7eed92f679bd6d 100644
+--- a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
++++ b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+@@ -130,6 +130,19 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+         }
+     }
+ 
++    public boolean hasObjectivesForCriteria(ObjectiveCriteria criteria) {
++        return this.criterionObjectiveCounts.getOrDefault(criteria, 0) > 0;
++    }
++
++    public boolean hasStatObjectives() {
++        for (ObjectiveCriteria criteria : this.criterionObjectiveCounts.keySet()) {
++            if (criteria instanceof net.minecraft.stats.Stat<?>) {
++                return true;
++            }
++        }
++        return false;
++    }
++
+     public void onObjectiveAdded(Scoreboard scoreboard, Objective objective) {
+         if (!this.trackedScoreboards.contains(scoreboard)) {
+             return;
