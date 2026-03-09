@@ -1,0 +1,215 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 11:53:44 +0200
+Subject: [PATCH] Reduce player tick scoreboard churn
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index 457bd96311e0b8ab263e9e2a76ecaea9593b5712..bbc3d15132867e8e74ecb18b4699ed395e5e7f1e 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -172,6 +172,7 @@ import org.bukkit.craftbukkit.CraftWorld;
+ import org.bukkit.craftbukkit.CraftWorldBorder;
+ import org.bukkit.craftbukkit.entity.CraftPlayer;
+ import org.bukkit.craftbukkit.event.CraftEventFactory;
++import org.bukkit.craftbukkit.scoreboard.CraftScoreboardManager;
+ import org.bukkit.craftbukkit.event.CraftPortalEvent;
+ import org.bukkit.craftbukkit.inventory.CraftItemStack;
+ import org.bukkit.craftbukkit.util.CraftDimensionUtil;
+@@ -804,52 +805,63 @@ public class ServerPlayer extends Player {
+                 }
+             }
+ 
+-            if (this.getHealth() != this.lastSentHealth || this.lastSentFood != this.foodData.getFoodLevel() || this.foodData.getSaturationLevel() == 0.0F != this.lastFoodSaturationZero) {
+-                this.connection.send(new ClientboundSetHealthPacket(this.getBukkitEntity().getScaledHealth(), this.foodData.getFoodLevel(), this.foodData.getSaturationLevel())); // CraftBukkit
+-                this.lastSentHealth = this.getHealth();
+-                this.lastSentFood = this.foodData.getFoodLevel();
+-                this.lastFoodSaturationZero = this.foodData.getSaturationLevel() == 0.0F;
++            final float health = this.getHealth();
++            final int foodLevel = this.foodData.getFoodLevel();
++            final float saturationLevel = this.foodData.getSaturationLevel();
++            final boolean saturationZero = saturationLevel == 0.0F;
++            final float healthAndAbsorption = health + this.getAbsorptionAmount();
++            final int airSupply = this.getAirSupply();
++            final int armorValue = this.getArmorValue();
++            final int totalExperience = this.totalExperience;
++            final int experienceLevel = this.experienceLevel;
++            final CraftPlayer bukkitPlayer = this.getBukkitEntity();
++
++            if (health != this.lastSentHealth || this.lastSentFood != foodLevel || this.lastFoodSaturationZero != saturationZero) {
++                this.connection.send(new ClientboundSetHealthPacket(bukkitPlayer.getScaledHealth(), foodLevel, saturationLevel)); // CraftBukkit
++                this.lastSentHealth = health;
++                this.lastSentFood = foodLevel;
++                this.lastFoodSaturationZero = saturationZero;
+             }
+ 
+-            if (this.getHealth() + this.getAbsorptionAmount() != this.lastRecordedHealthAndAbsorption) {
+-                this.lastRecordedHealthAndAbsorption = this.getHealth() + this.getAbsorptionAmount();
++            if (healthAndAbsorption != this.lastRecordedHealthAndAbsorption) {
++                this.lastRecordedHealthAndAbsorption = healthAndAbsorption;
+                 this.updateScoreForCriteria(ObjectiveCriteria.HEALTH, Mth.ceil(this.lastRecordedHealthAndAbsorption));
+             }
+ 
+-            if (this.foodData.getFoodLevel() != this.lastRecordedFoodLevel) {
+-                this.lastRecordedFoodLevel = this.foodData.getFoodLevel();
++            if (foodLevel != this.lastRecordedFoodLevel) {
++                this.lastRecordedFoodLevel = foodLevel;
+                 this.updateScoreForCriteria(ObjectiveCriteria.FOOD, Mth.ceil((float) this.lastRecordedFoodLevel));
+             }
+ 
+-            if (this.getAirSupply() != this.lastRecordedAirLevel) {
+-                this.lastRecordedAirLevel = this.getAirSupply();
++            if (airSupply != this.lastRecordedAirLevel) {
++                this.lastRecordedAirLevel = airSupply;
+                 this.updateScoreForCriteria(ObjectiveCriteria.AIR, Mth.ceil((float) this.lastRecordedAirLevel));
+             }
+ 
+-            if (this.getArmorValue() != this.lastRecordedArmor) {
+-                this.lastRecordedArmor = this.getArmorValue();
++            if (armorValue != this.lastRecordedArmor) {
++                this.lastRecordedArmor = armorValue;
+                 this.updateScoreForCriteria(ObjectiveCriteria.ARMOR, Mth.ceil((float) this.lastRecordedArmor));
+             }
+ 
+-            if (this.totalExperience != this.lastRecordedExperience) {
+-                this.lastRecordedExperience = this.totalExperience;
++            if (totalExperience != this.lastRecordedExperience) {
++                this.lastRecordedExperience = totalExperience;
+                 this.updateScoreForCriteria(ObjectiveCriteria.EXPERIENCE, Mth.ceil((float) this.lastRecordedExperience));
+             }
+ 
+             // CraftBukkit start - Force max health updates
+             if (this.maxHealthCache != this.getMaxHealth()) {
+-                this.getBukkitEntity().updateScaledHealth();
++                bukkitPlayer.updateScaledHealth();
+             }
+             // CraftBukkit end
+ 
+-            if (this.experienceLevel != this.lastRecordedLevel) {
+-                this.lastRecordedLevel = this.experienceLevel;
++            if (experienceLevel != this.lastRecordedLevel) {
++                this.lastRecordedLevel = experienceLevel;
+                 this.updateScoreForCriteria(ObjectiveCriteria.LEVEL, Mth.ceil((float) this.lastRecordedLevel));
+             }
+ 
+-            if (this.totalExperience != this.lastSentExp) {
+-                this.lastSentExp = this.totalExperience;
+-                this.connection.send(new ClientboundSetExperiencePacket(this.experienceProgress, this.totalExperience, this.experienceLevel));
++            if (totalExperience != this.lastSentExp) {
++                this.lastSentExp = totalExperience;
++                this.connection.send(new ClientboundSetExperiencePacket(this.experienceProgress, totalExperience, experienceLevel));
+             }
+ 
+             if (this.tickCount % 20 == 0) {
+@@ -861,13 +873,13 @@ public class ServerPlayer extends Player {
+                 this.oldLevel = this.experienceLevel;
+             }
+ 
+-            if (this.oldLevel != this.experienceLevel) {
+-                CraftEventFactory.callPlayerLevelChangeEvent(this.getBukkitEntity(), this.oldLevel, this.experienceLevel);
+-                this.oldLevel = this.experienceLevel;
++            if (this.oldLevel != experienceLevel) {
++                CraftEventFactory.callPlayerLevelChangeEvent(bukkitPlayer, this.oldLevel, experienceLevel);
++                this.oldLevel = experienceLevel;
+             }
+ 
+-            if (this.getBukkitEntity().hasClientWorldBorder()) {
+-                ((CraftWorldBorder) this.getBukkitEntity().getWorldBorder()).getHandle().tick();
++            if (bukkitPlayer.hasClientWorldBorder()) {
++                ((CraftWorldBorder) bukkitPlayer.getWorldBorder()).getHandle().tick();
+             }
+             // CraftBukkit end
+         } catch (Throwable throwable) {
+@@ -1062,7 +1074,7 @@ public class ServerPlayer extends Player {
+         // CraftBukkit end
+ 
+         // CraftBukkit - Get our scores instead
+-        this.level().getCraftServer().getScoreboardManager().forAllObjectives(ObjectiveCriteria.DEATH_COUNT, this, ScoreAccess::increment);
++        this.level().getCraftServer().getScoreboardManager().incrementScoreForAllObjectives(ObjectiveCriteria.DEATH_COUNT, this);
+         LivingEntity entityliving = this.getKillCredit();
+ 
+         if (entityliving != null) {
+@@ -1098,11 +1110,11 @@ public class ServerPlayer extends Player {
+             super.awardKillScore(entityKilled, score, damageSource);
+             this.increaseScore(score);
+             // CraftBukkit - Get our scores instead
+-            this.level().getCraftServer().getScoreboardManager().forAllObjectives(ObjectiveCriteria.KILL_COUNT_ALL, this, ScoreAccess::increment);
++            this.level().getCraftServer().getScoreboardManager().incrementScoreForAllObjectives(ObjectiveCriteria.KILL_COUNT_ALL, this);
+             if (entityKilled instanceof Player) {
+                 this.awardStat(Stats.PLAYER_KILLS);
+                 // CraftBukkit - Get our scores instead
+-                this.level().getCraftServer().getScoreboardManager().forAllObjectives(ObjectiveCriteria.KILL_COUNT_PLAYERS, this, ScoreAccess::increment);
++                this.level().getCraftServer().getScoreboardManager().incrementScoreForAllObjectives(ObjectiveCriteria.KILL_COUNT_PLAYERS, this);
+             } else {
+                 this.awardStat(Stats.MOB_KILLS);
+             }
+@@ -1121,7 +1133,7 @@ public class ServerPlayer extends Player {
+ 
+             if (i >= 0 && i < criterions.length) {
+                 // CraftBukkit - Get our scores instead
+-                this.level().getCraftServer().getScoreboardManager().forAllObjectives(criterions[i], targetScoreHolder, ScoreAccess::increment);
++                this.level().getCraftServer().getScoreboardManager().incrementScoreForAllObjectives(criterions[i], targetScoreHolder);
+             }
+         }
+ 
+@@ -1870,9 +1882,7 @@ public class ServerPlayer extends Player {
+             return;
+         }
+         this.stats.increment(this, stat, amount);
+-        this.level().getCraftServer().getScoreboardManager().forAllObjectives(stat, this, (scoreaccess) -> {
+-            scoreaccess.add(amount);
+-        });
++        this.level().getCraftServer().getScoreboardManager().addScoreForAllObjectives(stat, this, amount);
+     }
+ 
+     @Override
+@@ -1881,7 +1891,7 @@ public class ServerPlayer extends Player {
+             return;
+         }
+         this.stats.setValue(this, stat, 0);
+-        this.level().getCraftServer().getScoreboardManager().forAllObjectives(stat, this, ScoreAccess::reset); // CraftBukkit - Get our scores instead
++        this.level().getCraftServer().getScoreboardManager().resetScoreForAllObjectives(stat, this); // CraftBukkit - Get our scores instead
+     }
+ 
+     @Override
+diff --git a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+index cc939b946196b4a980a4e726441ab278eb298274..bca30e53240fabfaeecef3d3ea101bf4a915b229 100644
+--- a/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
++++ b/src/main/java/org/bukkit/craftbukkit/scoreboard/CraftScoreboardManager.java
+@@ -141,6 +141,36 @@ public final class CraftScoreboardManager implements ScoreboardManager {
+         }
+     }
+ 
++    public void incrementScoreForAllObjectives(ObjectiveCriteria criteria, ScoreHolder holder) {
++        if (this.criterionObjectiveCounts.getOrDefault(criteria, 0) <= 0) {
++            return;
++        }
++        for (CraftScoreboard scoreboard : this.scoreboards) {
++            Scoreboard board = scoreboard.board;
++            board.forAllObjectives(criteria, holder, ScoreAccess::increment);
++        }
++    }
++
++    public void addScoreForAllObjectives(ObjectiveCriteria criteria, ScoreHolder holder, int amount) {
++        if (this.criterionObjectiveCounts.getOrDefault(criteria, 0) <= 0) {
++            return;
++        }
++        for (CraftScoreboard scoreboard : this.scoreboards) {
++            Scoreboard board = scoreboard.board;
++            board.forAllObjectives(criteria, holder, scoreAccess -> scoreAccess.add(amount));
++        }
++    }
++
++    public void resetScoreForAllObjectives(ObjectiveCriteria criteria, ScoreHolder holder) {
++        if (this.criterionObjectiveCounts.getOrDefault(criteria, 0) <= 0) {
++            return;
++        }
++        for (CraftScoreboard scoreboard : this.scoreboards) {
++            Scoreboard board = scoreboard.board;
++            board.forAllObjectives(criteria, holder, ScoreAccess::reset);
++        }
++    }
++
+     public boolean hasObjectivesForCriteria(ObjectiveCriteria criteria) {
+         return this.criterionObjectiveCounts.getOrDefault(criteria, 0) > 0;
+     }
