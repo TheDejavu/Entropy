@@ -1,0 +1,171 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:09:04 +0200
+Subject: [PATCH] Harden async tracker safety boundary
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index f9ddf3dcbc7480de37a017a7b59f2d04d97988ab..aadec8efb36e22c690c2eef413fef9f554d34694 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -285,6 +285,7 @@ public class EntropyConfig {
+     public static int maxFootstepPacketsPerBroadcast;
+     public static boolean disableCriterionTriggers;
+     public static boolean asyncTrackerEnabled;
++    public static boolean asyncTrackerSafeOnly;
+     public static int asyncTrackerThreads;
+     public static double playerTrackingRangeMultiplier;
+     public static int playerTrackerSearchInterval;
+@@ -354,6 +355,7 @@ public class EntropyConfig {
+         maxFootstepPacketsPerBroadcast = Math.max(-1, getInt("starforge.performance.sounds.max-footstep-packets-per-broadcast", -1, "Limit how many players receive each broadcast footstep/swim sound packet. Use -1 to disable the cap."));
+         disableCriterionTriggers = getBoolean("starforge.performance.disable-criterion-triggers", org.spigotmc.SpigotConfig.disableAdvancementSaving || org.spigotmc.SpigotConfig.disabledAdvancements.contains("*"), "Skip advancement criterion trigger evaluation entirely.", "Enable this when advancements are disabled to remove criterion work from hot player paths.");
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
++        asyncTrackerSafeOnly = getBoolean("starforge.performance.tracker.async.safe-only", true, "Allow async tracker work only when plugin visibility inversions and track events are absent.", "Leave this enabled if you want async tracker gains without Folia-style plugin breakage risk.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+         playerTrackerSearchInterval = Math.max(1, getInt("starforge.performance.tracker.player-search-interval", 2, "How often tracked player entities rescan nearby viewers for add/remove decisions.", "Higher values reduce tracker CPU at the cost of slightly delayed visibility updates near the tracking edge."));
+diff --git a/src/main/java/net/minecraft/server/level/ChunkMap.java b/src/main/java/net/minecraft/server/level/ChunkMap.java
+index 5e15c539a2518618f3709ba6f7faa55b1678689f..871dc201ac6774c03b7b8345468c31bd2e8644cb 100644
+--- a/src/main/java/net/minecraft/server/level/ChunkMap.java
++++ b/src/main/java/net/minecraft/server/level/ChunkMap.java
+@@ -1186,7 +1186,8 @@ public class ChunkMap extends ChunkStorage implements ChunkHolder.PlayerProvider
+ 
+     private final void processTrackQueue() {
+         this.trackerEventListeners = this.hasTrackerEventListeners();
+-        if (EntropyConfig.asyncTrackerEnabled && !this.entityMap.isEmpty()) {
++        final boolean safeAsyncTracker = !this.trackerEventListeners && !org.bukkit.craftbukkit.entity.CraftPlayer.hasAnyVisibilityInversions();
++        if (EntropyConfig.asyncTrackerEnabled && !this.entityMap.isEmpty() && (!EntropyConfig.asyncTrackerSafeOnly || safeAsyncTracker)) {
+             final TrackedEntity[] trackers = this.entityMap.values().toArray(new TrackedEntity[0]);
+             AsyncTracker.process(this, trackers);
+             this.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index e23d4dc62a0edd5d43500331a43ff22aa420145c..77c6bae4ea8446906e2c300bf248e66c7af64520 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -682,7 +682,8 @@ public abstract class PlayerList {
+     }
+     public net.kyori.adventure.text.Component remove(ServerPlayer entityplayer, net.kyori.adventure.text.Component leaveMessage) {
+         // Paper end - Fix kick event leave message not being sent
+-        dev.orhidea.starforge.task.BossBarTask.removeFromAll(entityplayer.getBukkitEntity()); // Starforge
++        final CraftPlayer bukkitPlayer = entityplayer.getBukkitEntity();
++        dev.orhidea.starforge.task.BossBarTask.removeFromAll(bukkitPlayer); // Starforge
+         ServerLevel worldserver = entityplayer.serverLevel();
+ 
+         entityplayer.awardStat(Stats.LEAVE_GAME);
+@@ -693,9 +694,10 @@ public abstract class PlayerList {
+             entityplayer.closeContainer(org.bukkit.event.inventory.InventoryCloseEvent.Reason.DISCONNECT); // Paper - Inventory close reason
+         }
+ 
+-        PlayerQuitEvent playerQuitEvent = new PlayerQuitEvent(entityplayer.getBukkitEntity(), net.kyori.adventure.text.Component.translatable("multiplayer.player.left", net.kyori.adventure.text.format.NamedTextColor.YELLOW, io.papermc.paper.configuration.GlobalConfiguration.get().messages.useDisplayNameInQuitMessage ? entityplayer.getBukkitEntity().displayName() : io.papermc.paper.adventure.PaperAdventure.asAdventure(entityplayer.getDisplayName())), entityplayer.quitReason); // Paper - Adventure & Add API for quit reason
++        PlayerQuitEvent playerQuitEvent = new PlayerQuitEvent(bukkitPlayer, net.kyori.adventure.text.Component.translatable("multiplayer.player.left", net.kyori.adventure.text.format.NamedTextColor.YELLOW, io.papermc.paper.configuration.GlobalConfiguration.get().messages.useDisplayNameInQuitMessage ? bukkitPlayer.displayName() : io.papermc.paper.adventure.PaperAdventure.asAdventure(entityplayer.getDisplayName())), entityplayer.quitReason); // Paper - Adventure & Add API for quit reason
+         this.cserver.getPluginManager().callEvent(playerQuitEvent);
+-        entityplayer.getBukkitEntity().disconnect(playerQuitEvent.getQuitMessage());
++        bukkitPlayer.clearVisibilityInversions();
++        bukkitPlayer.disconnect(playerQuitEvent.getQuitMessage());
+ 
+         if (server.isSameThread()) entityplayer.doTick(); // SPIGOT-924 // Paper - don't tick during emergency shutdowns (Watchdog)
+         // CraftBukkit end
+@@ -764,14 +766,14 @@ public abstract class PlayerList {
+         ClientboundPlayerInfoRemovePacket packet = new ClientboundPlayerInfoRemovePacket(List.of(entityplayer.getUUID()));
+         for (ServerPlayer entityplayer2 : this.getPlayersArray()) {
+ 
+-            if (entityplayer2.getBukkitEntity().canSee(entityplayer.getBukkitEntity())) {
++            if (entityplayer2.getBukkitEntity().canSee(bukkitPlayer)) {
+                 entityplayer2.connection.send(packet);
+             } else {
+                 entityplayer2.getBukkitEntity().onEntityRemove(entityplayer);
+             }
+         }
+         // This removes the scoreboard (and player reference) for the specific player in the manager
+-        this.cserver.getScoreboardManager().removePlayer(entityplayer.getBukkitEntity());
++        this.cserver.getScoreboardManager().removePlayer(bukkitPlayer);
+         // CraftBukkit end
+ 
+         return playerQuitEvent.quitMessage(); // Paper - Adventure
+diff --git a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+index 3c4f9acfc538ce9be3199db64c24ec27ea32e977..dd6180e6cf01d6d70fe3112d523225dd4a8a10e0 100644
+--- a/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
++++ b/src/main/java/org/bukkit/craftbukkit/entity/CraftPlayer.java
+@@ -28,6 +28,7 @@ import java.util.Map;
+ import java.util.Optional;
+ import java.util.Set;
+ import java.util.UUID;
++import java.util.concurrent.atomic.AtomicInteger;
+ import java.util.WeakHashMap;
+ import java.util.logging.Level;
+ import java.util.logging.Logger;
+@@ -190,6 +191,7 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     private final Map<UUID, Set<WeakReference<Plugin>>> invertedVisibilityEntities = new it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap<>();
+     private final Set<UUID> unlistedEntities = new HashSet<>(); // Paper - Add Listing API for Player
+     private static final WeakHashMap<Plugin, WeakReference<Plugin>> pluginWeakReferences = new WeakHashMap<>();
++    private static final AtomicInteger activeVisibilityInversionPlayers = new AtomicInteger();
+     private int hash = 0;
+     private double health = 20;
+     private boolean scaledHealth = false;
+@@ -1941,6 +1943,9 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         invertedPlugins = new HashSet<>();
+         invertedPlugins.add(CraftPlayer.getPluginWeakReference(plugin));
+         this.invertedVisibilityEntities.put(entity.getUniqueId(), invertedPlugins);
++        if (this.invertedVisibilityEntities.size() == 1) {
++            activeVisibilityInversionPlayers.incrementAndGet();
++        }
+ 
+         return true;
+     }
+@@ -1978,6 +1983,8 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+ 
+         if (this.invertedVisibilityEntities.remove(entity.getUniqueId()) == null) {
+             this.untrackAndHideEntity(entity);
++        } else if (this.invertedVisibilityEntities.isEmpty()) {
++            activeVisibilityInversionPlayers.decrementAndGet();
+         }
+     }
+ 
+@@ -2027,6 +2034,9 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+             return false; // Some other plugins still want the entity inverted
+         }
+         this.invertedVisibilityEntities.remove(entity.getUniqueId());
++        if (this.invertedVisibilityEntities.isEmpty()) {
++            activeVisibilityInversionPlayers.decrementAndGet();
++        }
+ 
+         return true;
+     }
+@@ -2102,6 +2112,8 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+ 
+         if (this.invertedVisibilityEntities.remove(entity.getUniqueId()) == null) {
+             this.trackAndShowEntity(entity);
++        } else if (this.invertedVisibilityEntities.isEmpty()) {
++            activeVisibilityInversionPlayers.decrementAndGet();
+         }
+     }
+     // Paper start
+@@ -2134,7 +2146,16 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+     // Paper end
+ 
+     public void onEntityRemove(Entity entity) {
+-        this.invertedVisibilityEntities.remove(entity.getUUID());
++        if (this.invertedVisibilityEntities.remove(entity.getUUID()) != null && this.invertedVisibilityEntities.isEmpty()) {
++            activeVisibilityInversionPlayers.decrementAndGet();
++        }
++    }
++
++    public void clearVisibilityInversions() {
++        if (!this.invertedVisibilityEntities.isEmpty()) {
++            this.invertedVisibilityEntities.clear();
++            activeVisibilityInversionPlayers.decrementAndGet();
++        }
+     }
+ 
+     @Override
+@@ -2155,6 +2176,10 @@ public class CraftPlayer extends CraftHumanEntity implements Player {
+         return !this.invertedVisibilityEntities.isEmpty();
+     }
+ 
++    public static boolean hasAnyVisibilityInversions() {
++        return activeVisibilityInversionPlayers.get() != 0;
++    }
++
+     public boolean canSee(UUID uuid) {
+         org.bukkit.entity.Entity entity = this.getServer().getPlayer(uuid);
+         if (entity == null) {
