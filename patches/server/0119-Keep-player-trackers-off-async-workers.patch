@@ -1,0 +1,104 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:14:47 +0200
+Subject: [PATCH] Keep player trackers off async workers
+
+
+diff --git a/src/main/java/dev/orhidea/starforge/EntropyConfig.java b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+index aadec8efb36e22c690c2eef413fef9f554d34694..695c1cf43e99ab355c28b78133a33876f9703a52 100644
+--- a/src/main/java/dev/orhidea/starforge/EntropyConfig.java
++++ b/src/main/java/dev/orhidea/starforge/EntropyConfig.java
+@@ -286,6 +286,7 @@ public class EntropyConfig {
+     public static boolean disableCriterionTriggers;
+     public static boolean asyncTrackerEnabled;
+     public static boolean asyncTrackerSafeOnly;
++    public static boolean asyncTrackerIncludePlayers;
+     public static int asyncTrackerThreads;
+     public static double playerTrackingRangeMultiplier;
+     public static int playerTrackerSearchInterval;
+@@ -356,6 +357,7 @@ public class EntropyConfig {
+         disableCriterionTriggers = getBoolean("starforge.performance.disable-criterion-triggers", org.spigotmc.SpigotConfig.disableAdvancementSaving || org.spigotmc.SpigotConfig.disabledAdvancements.contains("*"), "Skip advancement criterion trigger evaluation entirely.", "Enable this when advancements are disabled to remove criterion work from hot player paths.");
+         asyncTrackerEnabled = getBoolean("starforge.performance.tracker.async.enabled", false, "Run the entity tracker visibility pass on worker threads while applying pair add/remove on the main thread.", "This can help mass joins, but keep it disabled if you notice tracker regressions.");
+         asyncTrackerSafeOnly = getBoolean("starforge.performance.tracker.async.safe-only", true, "Allow async tracker work only when plugin visibility inversions and track events are absent.", "Leave this enabled if you want async tracker gains without Folia-style plugin breakage risk.");
++        asyncTrackerIncludePlayers = getBoolean("starforge.performance.tracker.async.include-players", false, "Allow player entity trackers to use worker threads.", "Keep this disabled on player-dense servers. Player trackers are the most expensive and the most likely to turn async tracker into a latency regression.");
+         asyncTrackerThreads = Math.max(1, getInt("starforge.performance.tracker.async.threads", Math.max(1, Runtime.getRuntime().availableProcessors() / 4), "Worker threads used by the async tracker visibility pass."));
+         playerTrackingRangeMultiplier = Math.max(0.1D, getDouble("starforge.performance.tracker.player-tracking-range-multiplier", 1.0D, "Multiply player entity tracking range by this value before movement packets are broadcast."));
+         playerTrackerSearchInterval = Math.max(1, getInt("starforge.performance.tracker.player-search-interval", 2, "How often tracked player entities rescan nearby viewers for add/remove decisions.", "Higher values reduce tracker CPU at the cost of slightly delayed visibility updates near the tracking edge."));
+diff --git a/src/main/java/net/minecraft/server/level/AsyncTracker.java b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+index 3e9598a6c4426667fbc041a2306b4250bcfc5bf4..ecd8abfff1b48b09913c145a6f740e88bd38e2c4 100644
+--- a/src/main/java/net/minecraft/server/level/AsyncTracker.java
++++ b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+@@ -24,9 +24,39 @@ public final class AsyncTracker {
+     }
+ 
+     static void process(final ChunkMap chunkMap, final ChunkMap.TrackedEntity[] trackers) {
+-        final int threadCount = Math.min(Math.max(1, EntropyConfig.asyncTrackerThreads), trackers.length);
+-        if (threadCount <= 1) {
++        ChunkMap.TrackedEntity[] asyncTrackers = trackers;
++        if (!EntropyConfig.asyncTrackerIncludePlayers) {
++            int asyncTrackerCount = 0;
+             for (final ChunkMap.TrackedEntity tracker : trackers) {
++                if (!(tracker.entity instanceof ServerPlayer)) {
++                    ++asyncTrackerCount;
++                }
++            }
++
++            if (asyncTrackerCount == 0) {
++                for (final ChunkMap.TrackedEntity tracker : trackers) {
++                    processTracker(chunkMap, tracker);
++                }
++                chunkMap.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
++                return;
++            }
++
++            if (asyncTrackerCount != trackers.length) {
++                asyncTrackers = new ChunkMap.TrackedEntity[asyncTrackerCount];
++                int writeIndex = 0;
++                for (final ChunkMap.TrackedEntity tracker : trackers) {
++                    if (tracker.entity instanceof ServerPlayer) {
++                        processTracker(chunkMap, tracker);
++                    } else {
++                        asyncTrackers[writeIndex++] = tracker;
++                    }
++                }
++            }
++        }
++
++        final int threadCount = Math.min(Math.max(1, EntropyConfig.asyncTrackerThreads), asyncTrackers.length);
++        if (threadCount <= 1) {
++            for (final ChunkMap.TrackedEntity tracker : asyncTrackers) {
+                 processTracker(chunkMap, tracker);
+             }
+             chunkMap.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
+@@ -35,11 +65,11 @@ public final class AsyncTracker {
+ 
+         final ThreadPoolExecutor executor = AsyncTracker.getExecutor(threadCount);
+         final CountDownLatch latch = new CountDownLatch(threadCount);
+-        final int batchSize = Math.max(1, (trackers.length + threadCount - 1) / threadCount);
++        final int batchSize = Math.max(1, (asyncTrackers.length + threadCount - 1) / threadCount);
+ 
+         for (int worker = 0; worker < threadCount; ++worker) {
+             final int start = worker * batchSize;
+-            final int end = Math.min(trackers.length, start + batchSize);
++            final int end = Math.min(asyncTrackers.length, start + batchSize);
+             if (start >= end) {
+                 latch.countDown();
+                 continue;
+@@ -49,7 +79,7 @@ public final class AsyncTracker {
+                 TRACKER_THREAD.set(Boolean.TRUE);
+                 try {
+                     for (int index = start; index < end; ++index) {
+-                        processTracker(chunkMap, trackers[index]);
++                        processTracker(chunkMap, asyncTrackers[index]);
+                     }
+                 } catch (final Throwable throwable) {
+                     MinecraftServer.LOGGER.error("Failed to process async tracker slice", throwable);
+@@ -64,7 +94,7 @@ public final class AsyncTracker {
+         while (latch.getCount() > 0L) {
+             chunkMap.drainTrackerMainThreadTasks(256);
+             try {
+-                latch.await(250L, TimeUnit.MICROSECONDS);
++                latch.await(1L, TimeUnit.MILLISECONDS);
+             } catch (final InterruptedException ex) {
+                 interrupted = true;
+                 break;

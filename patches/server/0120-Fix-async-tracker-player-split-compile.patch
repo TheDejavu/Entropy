@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dejavu <thedeejayv1@gmail.com>
+Date: Mon, 9 Mar 2026 12:20:57 +0200
+Subject: [PATCH] Fix async tracker player split compile
+
+
+diff --git a/src/main/java/net/minecraft/server/level/AsyncTracker.java b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+index ecd8abfff1b48b09913c145a6f740e88bd38e2c4..9af71b6f7dc282da55f958593b9a742b28b51302 100644
+--- a/src/main/java/net/minecraft/server/level/AsyncTracker.java
++++ b/src/main/java/net/minecraft/server/level/AsyncTracker.java
+@@ -54,9 +54,10 @@ public final class AsyncTracker {
+             }
+         }
+ 
+-        final int threadCount = Math.min(Math.max(1, EntropyConfig.asyncTrackerThreads), asyncTrackers.length);
++        final ChunkMap.TrackedEntity[] trackersToProcess = asyncTrackers;
++        final int threadCount = Math.min(Math.max(1, EntropyConfig.asyncTrackerThreads), trackersToProcess.length);
+         if (threadCount <= 1) {
+-            for (final ChunkMap.TrackedEntity tracker : asyncTrackers) {
++            for (final ChunkMap.TrackedEntity tracker : trackersToProcess) {
+                 processTracker(chunkMap, tracker);
+             }
+             chunkMap.drainTrackerMainThreadTasks(Integer.MAX_VALUE);
+@@ -65,11 +66,11 @@ public final class AsyncTracker {
+ 
+         final ThreadPoolExecutor executor = AsyncTracker.getExecutor(threadCount);
+         final CountDownLatch latch = new CountDownLatch(threadCount);
+-        final int batchSize = Math.max(1, (asyncTrackers.length + threadCount - 1) / threadCount);
++        final int batchSize = Math.max(1, (trackersToProcess.length + threadCount - 1) / threadCount);
+ 
+         for (int worker = 0; worker < threadCount; ++worker) {
+             final int start = worker * batchSize;
+-            final int end = Math.min(asyncTrackers.length, start + batchSize);
++            final int end = Math.min(trackersToProcess.length, start + batchSize);
+             if (start >= end) {
+                 latch.countDown();
+                 continue;
+@@ -79,7 +80,7 @@ public final class AsyncTracker {
+                 TRACKER_THREAD.set(Boolean.TRUE);
+                 try {
+                     for (int index = start; index < end; ++index) {
+-                        processTracker(chunkMap, asyncTrackers[index]);
++                        processTracker(chunkMap, trackersToProcess[index]);
+                     }
+                 } catch (final Throwable throwable) {
+                     MinecraftServer.LOGGER.error("Failed to process async tracker slice", throwable);
